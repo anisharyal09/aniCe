@@ -36,8 +36,9 @@ class NotificationCallStyleTest {
             .build()
 
         val extras = notification.extras
-        assertTrue(isIncomingCallStyle(
+        assertTrue(isIncomingCallNotification(
             extras.getString(Notification.EXTRA_TEMPLATE), extras.getInt("android.callType"),
+            notification.category, true, notification.actions.orEmpty().map { it.title.toString() },
         ))
         val (targets, actions) = notificationActions(notification, incomingCall = true)
         assertEquals(2, actions.size)

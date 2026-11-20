@@ -19,7 +19,7 @@ def parse(raw):
     if len(raw) > 128:
         raise ValueError("malformed")
     try:
-        row = cbor2.loads(raw)
+        row = cbor2.loads(raw, max_depth=8)
     except cbor2.CBORDecodeError as error:
         raise ValueError("malformed") from error
     if encode(row) != raw:
@@ -84,7 +84,8 @@ def vectors():
         else:
             raise AssertionError("Negative fixture accepted: " + name)
     unknown = encode(["another feature", 1, 1, [0]])
-    assert parse(unknown) is None
+    if parse(unknown) is not None:
+        raise AssertionError("Pause oracle accepted another feature's tag")
     return dict(valid=positives, invalid=negatives,
                 unrecognized=[dict(name="other-tag", payloadHex=unknown.hex())])
 
@@ -97,7 +98,8 @@ if __name__ == "__main__":
     path = Path(__file__).with_name("vectors.json")
     rendered = json.dumps(rows, indent=2) + "\n"
     if args.check:
-        assert path.read_text() == rendered, "Pause fixtures differ from their independent oracle"
+        if path.read_text() != rendered:
+            raise SystemExit("Pause fixtures differ from their independent oracle")
     else:
         path.write_text(rendered)
     print(f"Connection pause: {len(rows['valid'])} valid / {len(rows['invalid'])} invalid")

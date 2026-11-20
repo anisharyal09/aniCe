@@ -52,8 +52,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { compose = true }
-    sourceSets.getByName("main").jniLibs.srcDir("build/native")
-    sourceSets.getByName("main").assets.srcDir("build/pairing-notices")
+    sourceSets.getByName("main").jniLibs.directories.add("build/native")
+    sourceSets.getByName("main").assets.directories.add("build/pairing-notices")
     sourceSets.getByName("test").resources.directories.add("../../../protocol/test-vectors")
     sourceSets.getByName("androidTest").assets.directories.add("../../../protocol/test-vectors")
 }
@@ -64,6 +64,7 @@ val buildPairingNative by tasks.registering(Exec::class) {
     workingDir(rootProject.projectDir.parentFile.parentFile)
     commandLine("python3", "scripts/build-pairing-native.py", "android")
     inputs.dir("../../../core/rust/pairing/src")
+    inputs.file("../../../core/rust/pairing/Cargo.toml")
     inputs.file("../../../core/rust/pairing/Cargo.lock")
     inputs.file("../../../core/rust/pairing/THIRD_PARTY_NOTICES.md")
     inputs.file("../../../scripts/build-pairing-native.py")

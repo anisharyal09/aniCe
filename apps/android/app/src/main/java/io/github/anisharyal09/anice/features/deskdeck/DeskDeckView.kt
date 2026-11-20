@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Presents live Mac meters and explicit controls in a responsive phone-first deck.
 package io.github.anisharyal09.anice.features.deskdeck
+import io.github.anisharyal09.anice.infrastructure.connections.displayName
 
 import android.content.Context
 import android.text.format.DateUtils
@@ -124,7 +125,7 @@ fun DeskDeckView(
                         FilterChip(
                             selected = record.peer.deviceId == selectedID,
                             onClick = { selectedID = record.peer.deviceId },
-                            label = { Text(record.peer.deviceName, maxLines = 1) },
+                            label = { Text(record.peer.displayName, maxLines = 1) },
                         )
                     }
                 }
@@ -171,7 +172,7 @@ private fun DeskDeckGrid(
     val fresh = owner.readingsAreFresh && connected
     val thermal = sample?.let { listOf("Nominal", "Fair", "Serious", "Critical").getOrElse(it.thermalState.toInt()) { "Unavailable" } } ?: "Waiting"
     val memoryAvailable = sample != null && sample.memoryTotal > 0 && sample.memoryUsed >= 0
-    val memoryPercent = if (memoryAvailable) sample!!.memoryUsed.toFloat() / sample.memoryTotal else 0f
+    val memoryPercent = if (memoryAvailable) sample.memoryUsed.toFloat() / sample.memoryTotal else 0f
     val memoryTitle = if (sample != null && sample.protocolVersion < 3L) "Memory (legacy)" else "Memory used"
 
     val microphone: @Composable () -> Unit = {
@@ -182,7 +183,7 @@ private fun DeskDeckGrid(
             fresh && !owner.isBusy(2)) {
             if (supported) {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                sample?.let { owner.command(2, if (mute) 1 else 0, it.microphoneTarget, it.microphoneRevision) }
+                owner.command(2, if (mute) 1 else 0, sample.microphoneTarget, sample.microphoneRevision)
             } else microphoneHelp = true
         }
     }
@@ -232,7 +233,7 @@ private fun DeskDeckGrid(
                         verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(target?.deviceName ?: "Mac", style = MaterialTheme.typography.titleSmall,
+                Text(target?.displayName ?: "Mac", style = MaterialTheme.typography.titleSmall,
                                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(connectionSummary(owner, connected, sample), style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -257,7 +258,7 @@ private fun DeskDeckGrid(
                     sample?.cpuPercent?.coerceAtLeast(0)?.toFloat()?.div(100f) ?: 0f, { cpuDetails = true }, "Across all cores")
             }
             item {
-                MeterCard(memoryTitle, if (memoryAvailable) "${bytesAsGB(sample!!.memoryUsed)} GiB" else "Unavailable",
+                MeterCard(memoryTitle, if (memoryAvailable) "${bytesAsGB(sample.memoryUsed)} GiB" else "Unavailable",
                     memoryPercent, { memoryDetails = true }, if (sample != null && sample.memoryTotal > 0) "of ${bytesAsGB(sample.memoryTotal)} GiB" else "Waiting for Mac")
             }
             if (wide) {

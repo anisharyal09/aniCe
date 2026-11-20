@@ -55,8 +55,10 @@ struct IdentityRecovery: Equatable {
 @MainActor @Observable
 final class IdentityViewModel {
   var onIdentityReset: () -> Void = {}
+  var onRename: () -> Void = {}
   var local: LocalIdentity?
   var recovery: IdentityRecovery?
+  var renameFailure = false
   var canReset: Bool { local != nil || recovery?.canReset == true }
   var isWorking = false
   var showingDetails = false
@@ -95,11 +97,13 @@ final class IdentityViewModel {
   func rename(_ name: String) async {
     guard !isWorking else { return }
     isWorking = true
+    renameFailure = false
     defer { isWorking = false }
     do {
       local = try await service.rename(name)
       recovery = nil
-    } catch { recovery = IdentityRecovery(error: error as? IdentityError) }
+      onRename()
+    } catch { renameFailure = true }
   }
 
   private func report(_ error: Error) {

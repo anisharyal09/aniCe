@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Verifies pairing contracts, durable trust and exclusive BLE ownership across native lifecycle faults.
+import AppKit
 import CoreBluetooth
 import CryptoKit
 import Foundation
@@ -291,9 +292,11 @@ extension PairingTests {
   var events: ((PeripheralEvent) -> Void)?
   var holdDrain = false
   var draining = false
+  var starts = 0
   func begin(
     event: @escaping (PeripheralEvent) -> Void, read: @escaping (Bool, Int) -> DiscoveryRead
   ) {
+    starts += 1
     events = event
     event(.available)
   }
@@ -309,6 +312,95 @@ extension PairingTests {
 }
 
 extension PairingTests {
+  @MainActor func testStopAtInvitationReadCompletionCannotPublishOrRestartRadio() async throws {
+    for method: PairingMethod in [.qr, .pin] {
+      try await cancelledInvitationRead(method, sleep: false)
+    }
+  }
+
+  @MainActor func testSleepAtInvitationReadCompletionCannotPublishOrRestartRadio() async throws {
+    for method: PairingMethod in [.qr, .pin] {
+      try await cancelledInvitationRead(method, sleep: true)
+    }
+  }
+
+  @MainActor private func cancelledInvitationRead(_ method: PairingMethod, sleep: Bool) async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "anice-cancelled-invitation-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+    let identity = IdentityService(
+      storage: PairingMemoryIdentity(), deviceName: "Mac test", tagPrefix: "test.")
+    let radio = PairingRadioFake()
+    let discovery = MacDiscoveryModel(adapter: radio)
+    let stopped = expectation(description: "Cancelled invitation cleanup completes")
+    var invalidate: () -> Void = {}
+    let model = MacPairingModel(identity: identity, discovery: discovery, makeStore: { store },
+      readInvitation: { engine in
+        let qr = await engine.qr?.text
+        let pin = await engine.pin
+        // Deliver Stop/sleep at the final actor-read boundary, before the owner resumes.
+        invalidate()
+        return (qr, pin)
+      })
+    defer { model.cancel() }
+    model.afterPairing = { stopped.fulfill() }
+    invalidate = { [weak model] in
+      if sleep {
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.willSleepNotification, object: nil)
+      } else { model?.cancel(message: "Explicit Stop") }
+    }
+    model.start(method)
+    await fulfillment(of: [stopped], timeout: 5)
+    XCTAssertFalse(model.active)
+    XCTAssertEqual(model.phase, "idle")
+    XCTAssertNil(model.qrText)
+    XCTAssertNil(model.qrImage)
+    XCTAssertNil(model.pin)
+    XCTAssertEqual(radio.starts, 0, "A retired startup must never restart native discovery")
+    XCTAssertFalse(discovery.session.active)
+    XCTAssertNil(radio.pairingWrite)
+    let local = try await identity.publicIdentity()
+    XCTAssertTrue(store.list(localFingerprint: local.fingerprint).isEmpty)
+  }
+
+  @MainActor func testReplacementAtInvitationReadCompletionPublishesOnlyTheNewInvitation() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "anice-replaced-invitation-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+    let identity = IdentityService(
+      storage: PairingMemoryIdentity(), deviceName: "Mac test", tagPrefix: "test.")
+    let radio = PairingRadioFake()
+    let discovery = MacDiscoveryModel(adapter: radio)
+    var replace: (() -> Void)?
+    let model = MacPairingModel(identity: identity, discovery: discovery, makeStore: { store },
+      readInvitation: { engine in
+        let qr = await engine.qr?.text
+        let pin = await engine.pin
+        let replacement = replace
+        replace = nil
+        replacement?()
+        return (qr, pin)
+      })
+    defer { model.cancel() }
+    replace = { [weak model] in model?.start(.pin) }
+    model.start(.qr)
+    try await waitFor {
+      model.method == .pin && model.pin != nil &&
+        ["starting", "invitation"].contains(model.phase)
+    }
+    XCTAssertTrue(model.active)
+    XCTAssertNil(model.qrText)
+    XCTAssertNil(model.qrImage)
+    XCTAssertEqual(model.pin?.count, 6)
+    XCTAssertEqual(radio.starts, 1, "Only the replacement may start native discovery")
+    XCTAssertTrue(discovery.session.active)
+    XCTAssertTrue(radio.pairingWrite?(PairingCodec.message(1)) == true)
+    try await waitFor { radio.output.count == 1 }
+    XCTAssertEqual(try PairingCodec.unpack(radio.output[0], type: 2, count: 3)[0], Data([2]))
+  }
+
   @MainActor func testMacDeclineWaitsForTransportThenStopsAndAllowsFreshInvitation() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
       "anice-decline-test-" + UUID().uuidString)

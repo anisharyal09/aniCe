@@ -176,6 +176,11 @@ class WorkflowPolicyTests(unittest.TestCase):
                 for forbidden in ("cargo test", "gradlew", "xcodebuild", "unittest", "pytest"):
                     self.assertNotIn(forbidden, run, "%s:%s" % (job_name, forbidden))
 
+        rust_setup = next(step["run"] for step in jobs["verify-rust"]["steps"]
+                          if step.get("name") == "Set up Rust")
+        self.assertIn("--component rustfmt", rust_setup)
+        self.assertIn("--component clippy", rust_setup)
+
     def test_required_lanes_always_upload_evidence(self):
         document = workflow_documents()["ci.yml"]
         for job_name in REQUIRED_JOBS:
@@ -650,6 +655,12 @@ PY
         self.assertIn("Xcode_26.3.app", codeql_swift.get("env", {}).get("DEVELOPER_DIR", ""))
         self.assertEqual(codeql_swift.get("permissions"), {"contents": "read", "security-events": "write"})
         self.assertEqual(set(document["jobs"]), {"codeql", "codeql-swift"})
+        for job in document["jobs"].values():
+            init = next(step for step in job["steps"] if step.get("name") == "Initialize CodeQL")
+            analyze = next(step for step in job["steps"] if step.get("name") == "Perform CodeQL Analysis")
+            self.assertEqual(init["uses"].split("@")[1], analyze["uses"].split("@")[1])
+            self.assertEqual(init["with"].get("tools"), "linked")
+            self.assertNotIn("6bb031afdd8eb862ea3fc1848194185e076637e5", init["uses"])
 
     def test_compiled_codeql_languages_have_explicit_builds_before_analysis(self):
         jobs = workflow_documents()['security.yml']['jobs']
@@ -712,6 +723,14 @@ PY
             "/apps/macos/aniCe/Update/",
             "/apps/macos/aniCeTests/MacUpdateSignatureTests.swift",
             "/scripts/requirements.txt",
+            "/protocol/",
+            "/core/rust/pairing/",
+            "/apps/android/app/src/main/java/io/github/anisharyal09/anice/infrastructure/identity/",
+            "/apps/android/app/src/main/java/io/github/anisharyal09/anice/infrastructure/pairing/",
+            "/apps/android/app/src/main/java/io/github/anisharyal09/anice/infrastructure/session/",
+            "/apps/macos/aniCe/Infrastructure/Identity/",
+            "/apps/macos/aniCe/Infrastructure/Pairing/",
+            "/apps/macos/aniCe/Infrastructure/Session/",
         ):
             self.assertIn(required, patterns)
 

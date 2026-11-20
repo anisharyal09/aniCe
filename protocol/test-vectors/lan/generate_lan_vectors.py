@@ -41,20 +41,23 @@ if __name__ == '__main__':
     parser.add_argument('--check', action='store_true')
     args = parser.parse_args()
     rows = vectors()
-    assert len(rows['valid']) >= 8 and len(rows['invalid']) >= 10
+    if len(rows['valid']) < 8 or len(rows['invalid']) < 10:
+        raise AssertionError('LAN fixture inventory shrank')
     for row in rows['valid']:
         oracle(bytes.fromhex(row['frameHex']))
     for row in rows['invalid']:
         try:
             oracle(bytes.fromhex(row['frameHex']))
         except ValueError as error:
-            assert str(error) == row['reason']
+            if str(error) != row['reason']:
+                raise AssertionError('LAN rejection reason changed: ' + row['name'])
         else:
             raise AssertionError(row['name'])
     destination = Path(__file__).with_name('lan-vectors.json')
     rendered = json.dumps(rows, indent=2) + '\n'
     if args.check:
-        assert destination.read_text() == rendered, 'LAN fixture drift'
+        if destination.read_text() != rendered:
+            raise SystemExit('LAN fixture drift')
     else:
         destination.write_text(rendered)
     print('LAN fixtures: 8 valid, 10 invalid; independent struct oracle passed')

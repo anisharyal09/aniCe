@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Generates independent deterministic CBOR file transfer fixtures for both native codecs.
 import argparse
-import json, copy
+import json
 from pathlib import Path
 
 # Independent RFC 8949 encoder; deliberately does not import application codecs.
@@ -105,8 +105,8 @@ out['invalid'] += [
     {'name': 'oversized-record', 'bytesHex': enc(msg(5, [batch_id, file_id1, 0, bytes(3950)])).hex()}
 ]
 
-assert len(out['valid']) >= 12, f"Expected at least 12 valid fixtures, found {len(out['valid'])}"
-assert len(out['invalid']) >= 20, f"Expected at least 20 invalid fixtures, found {len(out['invalid'])}"
+if len(out['valid']) < 12 or len(out['invalid']) < 20:
+    raise AssertionError("Transfer fixture inventory shrank")
 
 target = Path(__file__).resolve().parent / 'transfer-vectors.json'
 content = json.dumps(out, indent=2) + '\n'

@@ -37,6 +37,8 @@ struct MainWindowView: View {
   @State var settingsFocusToken = UUID()
   @State var settingsScroller = SettingsScrollCoordinator()
   @State var showingLocalIdentity = false
+  @State var editingLocalName = false
+  @State var nicknamePeer: DeviceIdentity?
   @State var updates = MacUpdateModel.shared
   var colorScheme: ColorScheme {
     WindowAppearance.stored(appearance).colorScheme(system: systemAppearance.colorScheme)
@@ -49,14 +51,6 @@ struct MainWindowView: View {
 
   @AppStorage("window.appearance") var appearance = WindowAppearance.system.rawValue
   @AppStorage("ui.fontScale") var fontScale: Double = 1.0
-
-  private var dynamicTypeSizeForScale: DynamicTypeSize {
-    if fontScale < 0.88 { return .small }
-    else if fontScale < 0.98 { return .medium }
-    else if fontScale <= 1.05 { return .large }
-    else if fontScale <= 1.15 { return .xLarge }
-    else { return .xxLarge }
-  }
 
   var body: some View {
     let sidebarMinimumWidth = MainWindowSizing.sidebarMinimumWidth(fontScale: fontScale)
@@ -97,6 +91,14 @@ struct MainWindowView: View {
     .sheet(isPresented: $showingLocalIdentity) {
       IdentityView(model: identity).preferredColorScheme(colorScheme)
     }
+    .sheet(isPresented: $editingLocalName) {
+      MacDeviceNamePanel(model: identity).preferredColorScheme(colorScheme)
+    }
+    .sheet(isPresented: Binding(get: { nicknamePeer != nil }, set: { if !$0 { nicknamePeer = nil } })) {
+      if let peer = nicknamePeer {
+        MacNicknamePanel(model: pairing, peer: peer).preferredColorScheme(colorScheme)
+      }
+    }
     .disclosureGroupStyle(ClickableDisclosureStyle())
     .preferredColorScheme(colorScheme)
     .frame(minWidth: 620, minHeight: 420)
@@ -116,6 +118,9 @@ struct MainWindowView: View {
     .onChange(of: identity.local?.identity.fingerprint) { _, _ in Task { await pairing.refresh() } }
     .onAppear { updateKeyboardTrackpadTargets() }
     .onChange(of: pairing.peers.map(\.peer)) { _, _ in updateKeyboardTrackpadTargets() }
+    .onChange(of: pairing.peers.isEmpty) { _, empty in
+      if !empty && !pairing.active && discovery.nearbyAvailable { discovery.stop() }
+    }
     .onChange(of: session.authenticatedPeer) { _, _ in updateKeyboardTrackpadTargets() }
     .onChange(of: lan.authenticatedPeer) { _, _ in updateKeyboardTrackpadTargets() }
     .onChange(of: navigation.focusedPeer) { _, _ in updateKeyboardTrackpadTargets() }
@@ -123,6 +128,7 @@ struct MainWindowView: View {
     .onChange(of: identity.local?.identity.deviceName) { old, new in
       if old != nil, old != new, pairing.active {
         pairing.cancel(message: "Device name updated. Start a fresh invitation to share it.")
+        pairing.nearbyAvailabilityChanged()
       }
     }
     .onChange(of:navigation.destination) { _,_ in if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) } }
@@ -142,6 +148,34 @@ struct MainWindowView: View {
   private var detailContent: some View {
     VStack(spacing: 0) {
       MacUpdateNotice(model: updates)
+      if pairing.trustedPeersLoaded && pairing.peers.isEmpty && !pairing.trustRecoveryNeeded &&
+          (!pairing.active || pairing.nearbyEnabled) && !session.allowing {
+        HStack(spacing: 12) {
+          VStack(alignment: .leading, spacing: 4) {
+            Text("Nearby setup").font(.subheadline.weight(.medium))
+            Text(pairing.nearbySetupDetail)
+              .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          }
+          Spacer()
+          if pairing.nearbyNeedsSettings {
+            Button("Open Settings", action: pairing.openNearbySettings)
+              .buttonStyle(AniCeButtonStyle())
+          } else if discovery.session.recovery == .permissionSettings ||
+              discovery.session.recovery == .bluetoothSettings {
+            Button("Open Settings", action: discovery.openSettings)
+              .buttonStyle(AniCeButtonStyle())
+          }
+          if pairing.nearbyEnabled {
+            Button("Pause") { pairing.pauseNearby() }
+              .buttonStyle(AniCeButtonStyle())
+          } else {
+            Button("Find nearby") { pairing.resumeNearby() }
+              .buttonStyle(AniCeButtonStyle())
+          }
+          Button("Manual pair") { pairing.pauseNearby(); navigation.show(.devices, route: .pairing) }
+            .buttonStyle(AniCeButtonStyle())
+        }.padding(16).background(AniCePalette.surface(colorScheme))
+      }
       pendingRequestRows
       destinationContent
     }
@@ -151,6 +185,16 @@ struct MainWindowView: View {
     .background(AniCePalette.background(colorScheme))
     .overlay(alignment: .top) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
     .background(TitlebarWordmarkFormatter(colorScheme: colorScheme))
+    .overlay {
+      if pairing.nearbyEnabled, pairing.comparisonCode != nil,
+        ["comparison", "waiting"].contains(pairing.phase),
+        navigation.deviceRoute != .pairing, !showingLocalIdentity {
+        ZStack {
+          AniCePalette.background(colorScheme).opacity(0.75).ignoresSafeArea()
+          MacComparisonCard(model: pairing).frame(maxWidth: 420).padding(24)
+        }
+      }
+    }
   }
 
   @ViewBuilder private var pendingRequestRows: some View {
@@ -159,7 +203,8 @@ struct MainWindowView: View {
         navigation.select(.settings)
       }
     }
-    if pairing.active && !(navigation.destination == .devices && navigation.deviceRoute == .pairing) {
+    if pairing.active && !["nearby", "comparison", "waiting", "cooldown"].contains(pairing.phase) &&
+        !(navigation.destination == .devices && navigation.deviceRoute == .pairing) {
       PendingRequestRow(title: pairing.phase == "approval" ? "Review pairing" : "Pairing in progress",
         detail: pairing.status) { navigation.show(.devices, route: .pairing) }
     }

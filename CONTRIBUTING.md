@@ -32,6 +32,30 @@ For platform-specific testing:
 
 The `ci-integrity` lane also requires actionlint 1.7.12 on `PATH`; it is not installed by pip.
 
+### What each lane verifies
+
+| Lane | Evidence |
+| --- | --- |
+| `ci-integrity` | actionlint and workflow authorization/pinning tests |
+| `contracts` | Structure/documentation links, every fixture generator in check-only mode, independent session crypto-oracle tests and Python harness tests |
+| `rust` | `cargo fmt --check`, warning-free Clippy and all PAKE bridge tests with the lockfile |
+| `android` | Fresh JVM test reports, Android lint and instrumentation-source compilation |
+| `macos` | Fresh native bridge, Release build, arm64/code-signature checks and hosted tests including isolated Keychain tests |
+| `connected` | Android instrumentation on one explicitly selected authorized target |
+| `interchange` | Native Mac/Android identity, LAN and session harnesses on a prepared test installation |
+
+The connected lane uses the isolated UI preview package on emulators. Companion-only regressions are SDK-gated to API 31+; synthetic comparison/setup presentation fixtures require the UI-preview emulator, not a physical installation. Native interchange and real-radio/player tests require their explicit harness or setup. Physical-device runs and interchange can install/replace the normal Debug package; use a dedicated test installation and pass `--serial`, not a phone whose app state must be preserved. Keyboard-specific manual diagnostics are described in the [IME probe](tools/ime-probe/README.md).
+
+Reports live under `build/reports/verification/run-*/`. A zero exit alone is insufficient: missing/truncated results, duplicate test cases, failures and unreviewed skips are rejected. Count floors guard against suite disappearance; only passing native cases count toward them. Change a floor only after reviewing actual test removal, not to make a failing run green.
+
+In command reports, `timeout_seconds: 1800` is a 30-minute upper bound, not a required wait. Commands return as soon as they finish; some platform steps have longer limits.
+
+Run Android build/test lanes sequentially within one checkout: JVM, connected, interchange and preview builds share Gradle outputs. Use a single `--only android --only connected --serial DEVICE_SERIAL` invocation for ordered host and runtime acceptance.
+
+Keep regression tests that exercise distinct failure boundaries. Remove superseded probes or unused fixtures only after checking their callers, native resource membership and documented purpose. Update dependency pins for a reviewed fix or compatibility need, then verify fixture bytes and native behavior; do not refresh versions merely because newer ones exist.
+
+Physical BLE, minimum-OS behavior, real-player controls, permission persistence and signed update/rollback acceptance are separate from host-suite success. Document omissions rather than treating them as passed.
+
 ## Pull requests
 
 - Describe the problem, resulting behavior and the checks performed.
@@ -46,6 +70,7 @@ The `ci-integrity` lane also requires actionlint 1.7.12 on `PATH`; it is not ins
 - **Swift (`apps/macos/`):** Follow Swift 6 modern concurrency patterns and target Apple Silicon (`arm64`).
 - **Kotlin (`apps/android/`):** Follow modern Android architecture and Jetpack Compose conventions (minSdk 29).
 - **Python (`scripts/`):** Target Python 3.11+ using standard library wherever possible.
+- **Markdown:** Keep each prose paragraph or list item on one source line and let the viewer wrap it. Preserve intentional newlines in code blocks, tables and separate list items.
 
 ## Security & Sensitive Areas
 

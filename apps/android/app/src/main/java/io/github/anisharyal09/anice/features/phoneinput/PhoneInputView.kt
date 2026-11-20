@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Presents phone-side typing with the normal Android keyboard and explicit BLE session controls.
 package io.github.anisharyal09.anice.features.phoneinput
+import io.github.anisharyal09.anice.infrastructure.connections.displayName
 
 import android.content.Context.INPUT_METHOD_SERVICE
 import android.graphics.Color
@@ -232,7 +233,7 @@ fun PhoneInputView(
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         when {
             connectedPeer != null -> {
-                Text(connectedPeer.deviceName, style = MaterialTheme.typography.titleSmall)
+                Text(connectedPeer.displayName, style = MaterialTheme.typography.titleSmall)
                 Text(
                     "Bluetooth · Connected",
                     style = MaterialTheme.typography.bodySmall,
@@ -240,7 +241,7 @@ fun PhoneInputView(
                 )
             }
             pairedMac != null -> {
-                Text("Connect to ${pairedMac.deviceName} over Bluetooth to type.",
+                Text("Connect to ${pairedMac.displayName} over Bluetooth to type.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedButton(
                     onClick = { onOpenDevice(pairedMac) },

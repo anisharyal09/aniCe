@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Presents device-scoped actions and explicit transport details using the existing session owners.
 package io.github.anisharyal09.anice.features.session
+import io.github.anisharyal09.anice.infrastructure.connections.displayName
 
 import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
 import io.github.anisharyal09.anice.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import io.github.anisharyal09.anice.features.backgroundprobe.hasConnectionSetup
-import io.github.anisharyal09.anice.features.backgroundprobe.companionSetupIntent
+import io.github.anisharyal09.anice.features.backgroundprobe.rememberCompanionSetup
+import io.github.anisharyal09.anice.features.backgroundprobe.CompanionSetupCopy
 import androidx.compose.ui.res.painterResource
 import android.content.pm.ApplicationInfo
 import androidx.activity.compose.BackHandler
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -45,8 +48,10 @@ import io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 
 @Composable
-fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscoveryCheck: () -> Unit, compact: Boolean = false, overview: Boolean = false, flatDeviceLayout: Boolean = false, onOpenDevice: (String) -> Unit = {}, focusedPeer: String? = null, onFocusConsumed: () -> Unit = {}) {
+fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscoveryCheck: () -> Unit, compact: Boolean = false, overview: Boolean = false, flatDeviceLayout: Boolean = false, onOpenDevice: (String) -> Unit = {}, focusedPeer: String? = null, onFocusConsumed: () -> Unit = {},
+    onRenamePeer: ((io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity) -> Unit)? = null) {
     val context = LocalContext.current
+    val companionSetup = rememberCompanionSetup()
     val scope = rememberCoroutineScope()
     var automaticChanging by remember { mutableStateOf(false) }
     var automaticNotice by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -127,7 +132,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                 val connectionOptions: (@Composable () -> Unit)? = if (nearby.available && automaticConfigured) {
                     {
                         ConnectionPauseMenu(
-                            peerName = record.peer.deviceName,
+                            peerName = record.peer.displayName,
                             paused = nearby.connectionPaused,
                             enabled = !automaticChanging,
                             expanded = expandedPauseMenu == record.peer.deviceId,
@@ -149,7 +154,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                                     try { nearby.resumeNow() }
                                     catch (error: CancellationException) { throw error }
                                     catch (_: Exception) {
-                                        automaticNotice = record.peer.deviceId to "Check automatic setup in Diagnostics → Setup settings."
+                                        automaticNotice = record.peer.deviceId to "Couldn't resume auto connect. Try enabling it again."
                                     } finally { automaticChanging = false }
                                 }
                             }
@@ -157,7 +162,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                     }
                 } else null
                 Column(Modifier.fillMaxWidth().padding(vertical = if (compact || flatDeviceLayout) 0.dp else 8.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else if (flatDeviceLayout) 4.dp else 8.dp)) {
-                DeviceSessionCard(record.peer.deviceName, summary.state,
+                DeviceSessionCard(record.peer.displayName, summary.state,
                     if (compact) "" else feedback, canUsePeer, { connect(record) }, model::disconnect,
                     onConnectionDetails = { if (compact) onOpenDevice(record.peer.deviceId) else { diagnostics = false; showEvents = false; details = if (details == record.peer.deviceId + ":" + record.peer.fingerprint) null else record.peer.deviceId + ":" + record.peer.fingerprint } },
                     summary = summaryText, action = summary.action,
@@ -168,7 +173,8 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                         localNetworkConnected = lanState == ConnectionState.SECURED && !checkingLan,
                         powerSummary = if (summary.state == ConnectionState.SECURED)
                             model.devicePower.macShortSummary(record.peer) else null,
-                        connectionOptions = connectionOptions)
+                        connectionOptions = connectionOptions,
+                        onRename = onRenamePeer?.let { rename -> { rename(record.peer) } })
                 if (!compact) {
                 val groupOutline = MaterialTheme.colorScheme.outlineVariant
                 Column(Modifier.fillMaxWidth()
@@ -193,22 +199,14 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                 if (!compact && nearby.available) {
                     val enabled = nearby.armed && nearby.peerId == record.peer.deviceId &&
                         nearby.fingerprint == record.peer.fingerprint
-                    AutomaticConnectionToggle(checked = enabled, enabled = canUsePeer && !automaticChanging,
-                        label = "Auto connect", description = pauseStatus ?: "Reconnect when this device is available.", compact = flatDeviceLayout,
+                    AutomaticConnectionToggle(checked = enabled,
+                        enabled = canUsePeer && !automaticChanging && companionSetup.canStart,
+                        label = "Auto connect", description = pauseStatus ?: CompanionSetupCopy.explanation, compact = flatDeviceLayout,
                         onCheckedChange = { checked ->
                             automaticNotice = null
                             if (!checked) {
                                 if (hasConnectionSetup(record.peer, nearby.peerId, nearby.fingerprint)) nearby.disable()
-                            } else if (hasConnectionSetup(record.peer, nearby.peerId, nearby.fingerprint) && nearby.address != null && model.missingPermissions().isEmpty()) {
-                                automaticChanging = true
-                                scope.launch {
-                                    try { nearby.resumeNow() }
-                                    catch (error: CancellationException) { throw error }
-                                    catch (_: Exception) {
-                                        automaticNotice = record.peer.deviceId to "Check automatic setup in Diagnostics → Setup settings."
-                                    } finally { automaticChanging = false }
-                                }
-                            } else context.startActivity(companionSetupIntent(context, record.peer.deviceId, enable = true))
+                            } else companionSetup.start(record.peer)
                         })
                 }
                 if (!compact) {
@@ -267,13 +265,10 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
                         if (diagnostics) {
                             Text("Idle local network follows the background timeout in Settings. Approved active work keeps it connected.",
                                 style = MaterialTheme.typography.bodySmall)
-                            if (nearby.available) {
+                            if (nearby.available && hasConnectionSetup(record.peer, nearby.peerId, nearby.fingerprint)) {
                                 TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = {
-                                    context.startActivity(companionSetupIntent(context, record.peer.deviceId))
-                                }) { Text("Setup settings") }
-                            } else {
-                                Text("Automatic Bluetooth connection is unavailable in this build.",
-                                    style = MaterialTheme.typography.bodySmall)
+                                    nearby.stop("Auto-connect setup cleared.", preserveForegroundSession = true)
+                                }, enabled = companionSetup.canStart) { Text("Reset auto connect") }
                             }
                             if (hasConnectionSetup(record.peer, nearby.peerId, nearby.fingerprint) &&
                                 context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
@@ -333,7 +328,7 @@ fun SessionPanel(model: SessionViewModel, peers: List<PeerTrustRecord>, onDiscov
             title = { Text("Pause connection") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Choose when aniCe should reconnect to ${record.peer.deviceName}.")
+                    Text("Choose when aniCe should reconnect to ${record.peer.displayName}.")
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedTextField(
                             value = customPauseHours,
@@ -458,7 +453,8 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
     onCancel: () -> Unit = onDisconnect,
     bluetoothConnected: Boolean = false, localNetworkConnected: Boolean = false,
     powerSummary: String? = null,
-    connectionOptions: (@Composable () -> Unit)? = null) {
+    connectionOptions: (@Composable () -> Unit)? = null,
+    onRename: (() -> Unit)? = null) {
     val statusColor = when (state) {
         ConnectionState.SECURED -> MaterialTheme.colorScheme.onSurfaceVariant
         ConnectionState.FAILED -> MaterialTheme.colorScheme.error
@@ -468,7 +464,9 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(painterResource(R.drawable.ic_laptop), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
-            Column(Modifier.weight(1f).clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Open devices for $name", onClick = onConnectionDetails)
+            Column(Modifier.weight(1f).combinedClickable(role = androidx.compose.ui.semantics.Role.Button,
+                onClickLabel = "Open devices for $name", onClick = onConnectionDetails,
+                onLongClickLabel = "Edit private name for $name", onLongClick = onRename)
                 .heightIn(min = 48.dp), verticalArrangement = Arrangement.Center) {
                 Text(name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleSmall)
@@ -493,8 +491,10 @@ fun DeviceSessionCard(name: String, state: ConnectionState, status: String,
         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Icon(painterResource(R.drawable.ic_laptop), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
-            Column(Modifier.weight(1f).clickable(role = androidx.compose.ui.semantics.Role.Button,
-                onClickLabel = "Device details for $name", onClick = onConnectionDetails).heightIn(min = 48.dp), verticalArrangement = Arrangement.spacedBy(4.dp, androidx.compose.ui.Alignment.CenterVertically)) {
+            Column(Modifier.weight(1f).combinedClickable(role = androidx.compose.ui.semantics.Role.Button,
+                onClickLabel = "Device details for $name", onClick = onConnectionDetails,
+                onLongClickLabel = "Edit private name for $name", onLongClick = onRename)
+                .heightIn(min = 48.dp), verticalArrangement = Arrangement.spacedBy(4.dp, androidx.compose.ui.Alignment.CenterVertically)) {
                 Text(name, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
                 ConnectionStatusLine(state, summary, bluetoothConnected, localNetworkConnected, statusColor, powerSummary)
             }

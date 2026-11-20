@@ -70,12 +70,12 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
   }
 
   var accessibilityName: String {
-    let phone = model.targetPeer?.deviceName ?? "no phone selected"
+    let phone = model.targetPeer?.displayName ?? "no phone selected"
     return "Floating Key for \(phone), \(statusDescription)"
   }
 
   var accessibilityHint: String {
-    guard let phone = model.targetPeer?.deviceName else {
+    guard let phone = model.targetPeer?.displayName else {
       return "Open full controls to choose a trusted phone and use its keyboard or trackpad."
     }
     return "Click to type directly on \(phone). Right-click for full controls, including a trackpad to move and scroll the phone."

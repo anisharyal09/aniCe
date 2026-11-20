@@ -117,9 +117,6 @@ private fun isCallStyleTemplate(template: String?): Boolean =
     template == "android.app.Notification\$CallStyle" ||
         template == "androidx.core.app.NotificationCompat\$CallStyle"
 
-internal fun isIncomingCallStyle(template: String?, callType: Int?): Boolean =
-    callType == 1 && isCallStyleTemplate(template)
-
 internal fun hasIncomingCallActionLabels(titles: List<String>): Boolean {
     val labels = titles.map { it.trim().lowercase(Locale.ROOT) }
     val hasAnswer = labels.any { label -> listOf("answer", "accept", "pick up", "pickup").any(label::contains) }
@@ -137,12 +134,8 @@ internal fun isIncomingCallNotification(
     if (callType == 2 || callType == 3) return false
     if (callType == 1) return true
     val hasIncomingControls = hasAnswerAndDeclineIntents || hasIncomingCallActionLabels(actionTitles)
-    if (isIncomingCallStyle(template, callType) ||
-        (isCallStyleTemplate(template) && hasIncomingControls) ||
-        (callType == 1 && hasAnswerAndDeclineIntents)) return true
-    if (category != Notification.CATEGORY_CALL) return false
     // Ringing notifications can be clearable; explicit Answer/Decline controls identify the call.
-    return hasIncomingControls
+    return hasIncomingControls && (isCallStyleTemplate(template) || category == Notification.CATEGORY_CALL)
 }
 
 internal fun visibleCallerLabel(dialerName: String, values: List<String>): String? {

@@ -12,14 +12,16 @@ Contracts define required behavior.
 | :--- | :--- | :--- | :--- | :--- |
 | **Device Identity** | `1` | Provisional | [`schemas/identity.schema.json`](schemas/identity.schema.json) | Protected native P-256 public identity and fingerprint |
 | **BLE Discovery** | `1` | Provisional | [`bluetooth/README.md`](bluetooth/README.md) | Unauthenticated 20-byte BLE compatibility probe |
+| **Foreground companion setup** | `1` | Capability gated | [`bluetooth/COMPANION_SETUP.md`](bluetooth/COMPANION_SETUP.md) | Bounded same-channel generic advertising for native approval of the currently authenticated Mac |
 | **Classic Bluetooth HID input** | System profile | Implemented on macOS | [`bluetooth/classic-hid.md`](bluetooth/classic-hid.md) | Local keyboard and pointer reports to a system-paired Android HID host |
-| **Pairing** | `1` | Provisional | [`pairing/README.md`](pairing/README.md) | QR/PIN authentication, mutual approval and peer trust |
+| **Pairing** | `1` | Provisional | [`pairing/README.md`](pairing/README.md) | QR/PIN authentication, nearby SAS comparison, mutual approval and peer trust |
 | **Trusted-device sessions** | `1` | Implemented | [`session/README.md`](session/README.md) | Pinned EDHOC, directional AES-GCM records and BLE v2 |
 | **Connection pause notice** | `1` | Implemented | [`connection-pause/README.md`](connection-pause/README.md) | Authenticated peer pause presentation before teardown; local preferences remain independent |
 | **Now Playing** | `1` | Implemented | [`media/README.md`](media/README.md) | Subscribed playback and directed commands in secured DATA |
 | **Player volume** | `1` | Capability gated | [`media/PLAYER_VOLUME.md`](media/PLAYER_VOLUME.md) | Separately negotiated selected-player integer volume |
 | **Mac Desk Deck** | `1`–`5` | Implemented | [`desk-deck/README.md`](desk-deck/README.md) | Subscribed Mac telemetry, renewable leases, approved app shortcuts and trusted-phone controls in secured DATA |
 | **Device Power** | `1` | Implemented | [`device-power/README.md`](device-power/README.md) | Peer battery and charging status on existing device surfaces over authenticated DATA, with no new connection lease |
+| **Device Names** | `1` | Capability gated | [`device-names/README.md`](device-names/README.md) | Revisioned device-owned display names over existing authenticated DATA; private aliases remain local |
 | **LAN Binding** | `3` (legacy `1`/`2`) | Implemented | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
 | **Automatic LAN rendezvous** | `2` (legacy `1`) | Implemented | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Authenticated BLE direct locators and event/demand-triggered LAN admission |
 | **In-flight LAN renewal** | `1` | Implemented | [`lan/RENEWAL.md`](lan/RENEWAL.md) | Authenticated drain barriers and fresh EDHOC over a retained socket |
@@ -27,6 +29,8 @@ Contracts define required behavior.
 | **SMS Relay** | `3` | Implemented | [`sms/README.md`](sms/README.md) | Provider thread/history/search reads, live SMS events, optional SIM choice and replies inside secured DATA |
 | **Notification Mirroring** | `1` | Implemented | [`notifications/README.md`](notifications/README.md) | Selected Android app alerts and bounded source icons, native Mac actions and synchronized dismissal inside secured DATA |
 | **File Transfer** | `1` | Implemented | [`transfer/README.md`](transfer/README.md) | Bounded sequential batch file transfer over authenticated DATA |
+| **Find Device** | `1` | Implemented | [`find-device/README.md`](find-device/README.md) | Peer alert requests and correlated native-submission results |
+| **DND sync** | `1` | Implemented | [`dnd-sync/README.md`](dnd-sync/README.md) | Phone-to-Mac DND changes through locally configured Shortcuts |
 | **Phone-to-Mac input** | 1 | Implemented | [phone-input/README.md](phone-input/README.md) | Authenticated Android-to-Mac text and input events over secured BLE DATA |
 
 ---
@@ -91,6 +95,7 @@ Full specification, byte framing, cryptographic derivation, and lifetime rules a
 - **Authentication Modes:**
   - **QR Code:** P-256 ECDH with 256-bit PSK and SHA-256 identity fingerprint commitment.
   - **Six-Digit PIN:** OPAQUE PAKE (`opaque-ke 4.0.1`, Ristretto255, TripleDH, Argon2id).
+  - **Nearby comparison:** Provisional [method-3 SAS](pairing/SAS.md), committed P-256 exchange and mutual six-digit comparison before salted identity disclosure.
 - **Transport Security:** AES-256-GCM directional encryption, transcript-bound identity proofs, and mutually signed storage receipts.
 
 ---
@@ -131,7 +136,7 @@ protocol/
 │   └── connection-pause.cddl      # Additive pause/resume DATA notices
 ├── desk-deck/
 │   ├── README.md                  # Mac telemetry, app approval and control behavior
-│   └── desk-deck.cddl             # Bounded Desk Deck v1–v4 messages
+│   └── desk-deck.cddl             # Bounded Desk Deck v1–v5 messages
 ├── device-power/
 │   ├── README.md                  # Reciprocal phone power status behavior
 │   └── device-power.cddl          # Shared device-power capability and report
@@ -168,12 +173,13 @@ protocol/
     │   ├── vectors.json           # Canonical pause/resume and rejected notices
     │   └── generate.py            # Independent CBOR pause-notice oracle
     ├── discovery-vectors.json     # Positive & negative BLE discovery test vectors
-    ├── desk-deck-vectors.json      # Desk Deck v1–v4 samples, actions and invalid records
+    ├── desk-deck-vectors.json      # Desk Deck v1–v5 samples, actions and invalid records
     ├── device-power-vectors.json   # Phone power states and invalid records
     ├── identity-vectors.json      # Positive & negative P-256 identity & DER signature vectors
     ├── generate_identity_vectors.py # Deterministic OpenSSL fixture regeneration script
     ├── lan/
     │   ├── bulk-probe-vectors.json # Positive & negative bulk probe framing vectors
+    │   ├── lan-512-vectors.json    # Current LAN profile-4 AES-GCM digest and rejection fixtures
     │   ├── generate_bulk_probe_vectors.py # Bulk probe fixture generator
     │   ├── lan-vectors.json       # Positive & negative TCP stream envelope framing vectors
     │   ├── generate_lan_vectors.py # Independent Python oracle and fixture generator
@@ -182,6 +188,8 @@ protocol/
     │   └── generate_lan_control_vectors.py # Independent CBOR and numeric-IP control oracle
     ├── pairing-vectors.json       # Deterministic QR, HKDF, MAC & encryption test vectors
     ├── generate_pairing_vectors.py  # Independent Python/cryptography test vector generator
+    ├── sas-vectors.json           # Independent method-3 commitments, key derivation and leading-zero comparison
+    ├── generate_sas_vectors.py    # Independent SAS fixture generator
     ├── phone-input/
     │   ├── phone-input-vectors.json # Positive & negative Phone-to-Mac input fixtures
     │   └── generate.py              # Independent Phone-to-Mac input fixture generator

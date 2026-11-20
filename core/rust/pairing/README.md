@@ -7,7 +7,7 @@ This crate provides a narrow C/JNI bridge around the pinned [`opaque-ke 4.0.1`](
 - **Scope:** Ephemeral in-memory manual invitation setup and OPAQUE login only.
 - **Isolation:** Has zero access to disk, persistent identity keys, Bluetooth radios, or network sockets.
 - **Memory Hygiene:** PIN buffers and temporary exported secrets are wiped via the `zeroize` crate upon completion.
-- **Resource Bounds:** Process-local handles are capped at 64 concurrent sessions and expire after 300 seconds of inactivity.
+- **Resource Bounds:** Process-local handles are capped at 64 concurrent sessions. Entries idle for 300 seconds are rejected and pruned before the next command; there is no background expiry thread.
 - **Error Handling:** All C ABI and JNI calls catch Rust panics (`std::panic::catch_unwind`) and fail closed (returning `-1` or throwing an exception).
 
 ## C ABI Reference (`anice_pake`)
@@ -23,9 +23,11 @@ Every `input` payload consists of `uint32` big-endian length-prefixed fields: `f
 | `1` | `ServerRegister` | `PIN` (6B), `rendezvous` (16B) | `serverHandle` (8B) | Registers local in-memory OPAQUE record on macOS |
 | `2` | `ClientLoginStart` | `PIN` (6B) | `clientHandle` (8B), `request` | Initiates OPAQUE client login on Android |
 | `3` | `ServerLoginStart` | `serverHandle` (8B), `request`, `context` | `response` | Evaluates login request; bounded to 5 attempts |
-| `4` | `ClientLoginFinish`| `clientHandle` (8B), `PIN` (6B), `response`, `context` | `finalization`, `sessionKey` (32B) | Completes client login; consumes client handle |
-| `5` | `ServerLoginFinish`| `serverHandle` (8B), `finalization` | `sessionKey` (32B) | Verifies client finalization; outputs session key |
+| `4` | `ClientLoginFinish`| `clientHandle` (8B), `PIN` (6B), `response`, `context` | `finalization`, `sessionKey` (64B) | Completes client login; consumes client handle |
+| `5` | `ServerLoginFinish`| `serverHandle` (8B), `finalization` | `sessionKey` (64B) | Verifies client finalization; outputs session key |
 | `6` | `ReleaseHandle` | `handle` (8B) | `[1]` | Explicitly drops session state from memory |
+
+The SHA-512 OPAQUE session key is 64 bytes. Both native pairing owners derive their 32-byte bootstrap key with the contract's HKDF-SHA256; the bridge does not truncate the OPAQUE output.
 
 ## Prerequisites & Building
 
@@ -48,5 +50,7 @@ python3 scripts/build-pairing-native.py macos
 python3 scripts/build-pairing-native.py android
 
 # Run unit tests
-cargo test --locked --manifest-path core/rust/pairing/Cargo.toml
+python3 scripts/verify-suite.py --only rust
 ```
+
+The Rust lane runs formatting, warning-free Clippy and all bridge tests. Keep `opaque-ke` pinned: changing its suite or dependency graph requires native interchange validation, not only a successful Cargo build.

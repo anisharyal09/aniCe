@@ -108,4 +108,11 @@ enum GattCandidateAdmission {
   ) -> Bool {
     !hasCandidate && advertising && subscribed && !retired && !blocked
   }
+
+  /// A delayed unsubscribe for a retired attribute cannot close a currently subscribed replacement.
+  static func mayRetireSubscription(
+    candidateMatches: Bool, characteristicMatches: Bool, subscriptionRemains: Bool
+  ) -> Bool {
+    candidateMatches && characteristicMatches && !subscriptionRemains
+  }
 }

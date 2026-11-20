@@ -958,12 +958,18 @@ class LanSessionController(private val app: AniCeApplication,
         automaticJob?.cancel(); automaticJob = null
         scheduleAutomatic()
         val engine = connection
+        // Only a ready channel may send a best-effort close. Pending discovery/EDHOC
+        // must retire synchronously instead of publishing Disconnected with live work.
+        if (state != ConnectionState.SECURED || engine == null) {
+            end("Local-network connection disconnected.")
+            return
+        }
         val op = generation
         state = ConnectionState.DISCONNECTED
         status = "Disconnecting local network…"
         scope.launch {
             try {
-                withTimeoutOrNull(2000) { withContext(Dispatchers.IO) { engine?.disconnect() } }
+                withTimeoutOrNull(2000) { withContext(Dispatchers.IO) { engine.disconnect() } }
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {

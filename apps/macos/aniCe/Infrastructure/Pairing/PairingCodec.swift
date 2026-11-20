@@ -11,6 +11,7 @@ enum PairingFailure: Error {
 enum PairingMethod: UInt8, Codable {
   case qr = 1
   case pin = 2
+  case sas = 3
 }
 
 /// Representation of an ephemeral QR pairing payload.

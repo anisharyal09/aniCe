@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.LayoutDirection
 import io.github.anisharyal09.anice.R
+import io.github.anisharyal09.anice.features.backgroundprobe.CompanionSetupCopy
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -56,6 +57,10 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
     automatic: Boolean = false, onAutomaticChanged: (Boolean) -> Unit = {},
     automaticLan: Boolean = true, onAutomaticLanChanged: (Boolean) -> Unit = {},
     onDismiss: () -> Unit = {}) {
+    if (model.comparingNearby) {
+        ComparisonContent(model, manualPair = model::cancel)
+        return
+    }
     val context = LocalContext.current
     var camera by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -108,8 +113,9 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
                 if (automaticAvailable) onAutomaticChanged(enabled)
                 onAutomaticLanChanged(enabled)
             },
-            label = "Connect automatically after pairing")
-        if (!automaticAvailable) Text("Automatic Bluetooth is unavailable in this build.", style = MaterialTheme.typography.bodySmall)
+            label = "Reconnect automatically",
+            description = CompanionSetupCopy.explanation)
+        if (!automaticAvailable) Text("Background Bluetooth is unavailable on this phone.", style = MaterialTheme.typography.bodySmall)
         if (!enterCode || model.phase != "idle") {
             Text(model.status,
                 style = if (model.phase == "idle") MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall,
@@ -271,7 +277,8 @@ fun PairingScreen(model: PairingViewModel, automaticAvailable: Boolean = false,
                 Text(peer.fingerprint.chunked(4).joinToString(" "),
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth())
             }
-            Text("Approve on both devices to finish pairing.", style = MaterialTheme.typography.bodySmall)
+            Text(if (model.comparingNearby) "Both confirmed. Verifying and saving trust…"
+                else "Approve on both devices to finish pairing.", style = MaterialTheme.typography.bodySmall)
         }
         if (model.phase == "approval")
             OutlinedButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = model::approve, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
@@ -380,7 +387,7 @@ fun TrustedDevicesSection(model: PairingViewModel) {
                             onClickLabel = "Show security fingerprint for ${r.peer.deviceName}",
                             onClick = { credentialPeer = if (credentialPeer == r.peer.deviceId) null else r.peer.deviceId })
                             .heightIn(min = 48.dp), verticalArrangement = Arrangement.Center) {
-                            Text(r.peer.deviceName, style = MaterialTheme.typography.bodyMedium)
+                             Text(model.displayedName(r.peer), style = MaterialTheme.typography.bodyMedium)
                             Text("Trusted device", style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -389,8 +396,10 @@ fun TrustedDevicesSection(model: PairingViewModel) {
                             onClick = { forget = r.peer.deviceId }) { Text("Forget…") }
                     }
                     if (credentialPeer == r.peer.deviceId) {
-                        Column(Modifier.fillMaxWidth().padding(start = 16.dp, bottom = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                         Column(Modifier.fillMaxWidth().padding(start = 16.dp, bottom = 12.dp),
+                             verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                             Text("Device name: ${model.deviceName(r.peer)}", style = MaterialTheme.typography.bodySmall)
+                             NicknameEditor(model, r.peer)
                             Text("Security fingerprint", style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                             SelectionContainer {
@@ -430,4 +439,26 @@ fun TrustedDevicesSection(model: PairingViewModel) {
             },
             dismissButton = { TextButton(shape = MaterialTheme.shapes.small, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp), onClick = { forget = null }) { Text("Cancel") } },
         )
+}
+
+@Composable
+private fun NicknameEditor(model: PairingViewModel,
+    peer: io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity) {
+    var name by remember(peer.deviceId, peer.fingerprint) { mutableStateOf(model.nickname(peer)?.name.orEmpty()) }
+    var enabled by remember(peer.deviceId, peer.fingerprint) { mutableStateOf(model.nickname(peer)?.enabled ?: false) }
+    LaunchedEffect(model.nickname(peer)) {
+        name = model.nickname(peer)?.name.orEmpty()
+        enabled = model.nickname(peer)?.enabled ?: false
+    }
+    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Private nickname") },
+        singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !model.savingNickname,
+        supportingText = { Text("Only on this phone. Device name remains the default.") })
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Checkbox(checked = enabled, onCheckedChange = { enabled = it }, enabled = !model.savingNickname)
+        Text("Use nickname", style = MaterialTheme.typography.bodyMedium)
+    }
+    TextButton(onClick = { model.saveNickname(peer, name, enabled) },
+        enabled = !model.savingNickname && name.trim().codePointCount(0, name.trim().length) <= 64 &&
+            (!enabled || name.trim().isNotBlank())) { Text("Save nickname") }
+    if (model.nicknameFailure) Text("Could not save nickname. Try again.", color = MaterialTheme.colorScheme.error)
 }

@@ -135,15 +135,6 @@ class NotificationWireTests {
         assertFalse(isMissedCallNotification("call", "Incoming call", "Supri"))
     }
 
-    @Test fun incomingCallRecognitionRequiresKnownCallStyleAndIncomingType() {
-        assertTrue(isIncomingCallStyle("android.app.Notification\$CallStyle", 1))
-        assertTrue(isIncomingCallStyle("androidx.core.app.NotificationCompat\$CallStyle", 1))
-        assertFalse(isIncomingCallStyle("android.app.Notification\$CallStyle", 2))
-        assertFalse(isIncomingCallStyle("android.app.Notification\$CallStyle", null))
-        assertFalse(isIncomingCallStyle("com.example.CustomCallNotification", 1))
-        assertFalse(isIncomingCallStyle(null, 1))
-    }
-
     @Test fun incomingCallRecognitionCoversActionableSystemCallsWithoutMirroringMissedCalls() {
         assertTrue(isIncomingCallNotification(null, 1, null, false, emptyList()))
         assertTrue(isIncomingCallNotification(
@@ -178,6 +169,12 @@ class NotificationWireTests {
         ))
         assertFalse(isIncomingCallNotification(
             "android.app.Notification\$CallStyle", 2, "call", true, listOf("Answer", "Decline"),
+        ))
+        assertTrue(isIncomingCallNotification(
+            "androidx.core.app.NotificationCompat\$CallStyle", null, null, true, emptyList(),
+        ))
+        assertFalse(isIncomingCallNotification(
+            "com.example.CustomCallNotification", null, null, true, emptyList(),
         ))
     }
 

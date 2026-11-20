@@ -3,20 +3,37 @@
 package io.github.anisharyal09.anice.features.backgroundprobe
 
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
+import io.github.anisharyal09.anice.infrastructure.connections.CompanionSetupTarget
+import io.github.anisharyal09.anice.infrastructure.connections.companionSetupPeerMatches
 import org.junit.Assert.*
 import org.junit.Test
 
 class CompanionSettingsTests {
-  @Test fun automaticSetupRequiresTrustedSelectionAndAvailableIdlePresentation() {
-    val peer = DeviceIdentity("mac", "Mac", "macos", "key", "fingerprint")
-    var ready = 0
-    var blocked = 0
-    for (selected in listOf(null, peer)) for (available in listOf(false, true)) for (busy in listOf(false, true)) {
-      val result = automaticSetupReady(selected, available, busy)
-      assertEquals(selected != null && available && !busy, result)
-      if (result) ready++ else blocked++
+  @Test fun approvalLaunchIsOneShotAndRetiredGenerationsCannotReclaimIt() {
+    val gate = CompanionApprovalGate()
+    assertFalse(gate.owns(1))
+    assertTrue(gate.claim(1))
+    repeat(10) { assertFalse(gate.claim(1)) }
+    assertTrue(gate.owns(1))
+    assertTrue(gate.claim(3))
+    assertFalse(gate.claim(1))
+    assertFalse(gate.claim(2))
+    assertFalse(gate.owns(1))
+    assertTrue(gate.owns(3))
+    assertTrue(gate.claim(4))
+  }
+  @Test fun pendingPhasesBlockAnotherEnrollmentWithoutDisablingSavedSettings() {
+    val idle = setOf(CompanionSetupPhase.READY, CompanionSetupPhase.FAILED)
+    for (phase in CompanionSetupPhase.entries) {
+      assertEquals(phase !in idle, phase.busy)
     }
-    assertEquals(1, ready); assertEquals(7, blocked)
+  }
+  @Test fun nativeApprovalOwnsProgressWithoutReleasingTheBusyGate() {
+    assertTrue(CompanionSetupPhase.APPROVAL.busy)
+    assertFalse(CompanionSetupPhase.APPROVAL.showsProgress)
+    for (phase in CompanionSetupPhase.entries) {
+      assertEquals(phase.busy && phase != CompanionSetupPhase.APPROVAL, phase.showsProgress)
+    }
   }
   @Test fun settingsBelongToTheDisplayedRelationship() {
     val a = DeviceIdentity("00000000-0000-4000-8000-000000000001", "Mac A", "macos", "", "11".repeat(32))
@@ -29,5 +46,18 @@ class CompanionSettingsTests {
     assertFalse(hasConnectionSetup(a, null, a.fingerprint))
     assertFalse(hasConnectionSetup(a, a.deviceId, null))
     assertFalse(hasConnectionSetup(a, null, null))
+  }
+
+  @Test fun savedRelationshipPresentationCannotAuthorizeAChangedPublicKey() {
+    val peer = DeviceIdentity("id", "Mac", "macos", "original-key", "fingerprint")
+    val changed = peer.copy(publicKey = "replacement-key")
+    // Deliberately inconsistent metadata tests the boundary, not a valid key rotation.
+    assertTrue(hasConnectionSetup(changed, peer.deviceId, peer.fingerprint))
+    assertFalse(companionSetupPeerMatches(peer, changed))
+    assertFalse(CompanionSetupTarget(peer, "02:00:00:00:00:01", "channel", 60_000)
+      .matches(changed, "channel", 0))
+    val renamed = peer.copy(deviceName = "Renamed Mac")
+    assertTrue(hasConnectionSetup(renamed, peer.deviceId, peer.fingerprint))
+    assertTrue(companionSetupPeerMatches(peer, renamed))
   }
 }

@@ -24,7 +24,7 @@ extension MainWindowView {
           } else {
             VStack(alignment: .leading, spacing: 12) {
               Text("Connect your Android phone").font(.title3.weight(.semibold))
-              Text("Choose Add device on this Mac. Then choose Add device on your phone to scan the QR code or enter the six-digit code shown here.")
+              Text("Open aniCe on your Android phone and bring it close. Confirm the matching code on both screens. Use Add device for QR or manual-code pairing.")
                 .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
               Button("Add device") { navigation.show(.devices, route: .pairing) }.buttonStyle(AniCeButtonStyle())
             }
@@ -104,7 +104,7 @@ extension MainWindowView {
           Image(systemName: "arrow.up.to.line").font(.system(size: 24)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           VStack(alignment: .leading, spacing: 6) {
             Text("Send files").font(.system(size: 14 * fontScale, weight: .medium))
-            Text(transfer.connectedAndroidRecipient.map { "Drop files here to send to " + $0.deviceName } ?? "Connect a compatible Android phone to send files")
+            Text(transfer.connectedAndroidRecipient.map { "Drop files here to send to " + $0.displayName } ?? "Connect a compatible Android phone to send files")
               .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
           Spacer(minLength: 12)
@@ -144,12 +144,13 @@ extension MainWindowView {
               details: Binding(get: { navigation.details && navigation.focusedPeer == record.peer.deviceId },
                 set: { navigation.focusedPeer = record.peer.deviceId; navigation.details = $0 }),
               diagnostics: $navigation.diagnostics, focusedPeer: record.peer.deviceId, discovery: discovery,
-              canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
-              onManageDevices: { navigation.show(.devices, route: .pairing) })
+               canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
+               onManageDevices: { navigation.show(.devices, route: .pairing) },
+               onRenamePeer: { nicknamePeer = $0 })
           }
           if pairing.hasTrustedAndroid || pairing.trustRecoveryNeeded {
             DisclosureGroup("Trust and saved devices") {
-              MacPairingView(model: pairing, showPairingControls: false)
+              MacPairingView(model: pairing, showPairingControls: false, identityModel: identity)
             }.font(.callout).frame(minHeight: 36, alignment: .leading).padding(.top, 8)
           }
 
@@ -162,7 +163,10 @@ extension MainWindowView {
             Spacer()
             Image(systemName: "chevron.forward").accessibilityHidden(true)
           }.frame(minHeight: 36).contentShape(Rectangle())
-        }.buttonStyle(AniCeHoverButtonStyle())
+         }.buttonStyle(AniCeHoverButtonStyle())
+           .contextMenu { Button("Edit name…") { editingLocalName = true } }
+           .highPriorityGesture(LongPressGesture().onEnded { _ in editingLocalName = true })
+           .accessibilityAction(named: "Edit device name") { editingLocalName = true }
         Divider()
       }.padding(28).frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -179,11 +183,13 @@ extension MainWindowView {
             get: { navigation.automaticAfterPairing && navigation.automaticLanAfterPairing },
             set: { navigation.automaticAfterPairing = $0; navigation.automaticLanAfterPairing = $0 }))
             .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).disabled(pairing.phase == "paired")
-          MacPairingView(model: pairing, embedded: true, showTrustedDevices: false)
-          HStack {
-            Spacer()
-            Button("Cancel") { pairing.cancel(); navigation.show(.devices) }
-              .buttonStyle(AniCeButtonStyle()).keyboardShortcut(.cancelAction)
+          MacPairingView(model: pairing, embedded: true, showTrustedDevices: false, identityModel: identity)
+          if !pairing.nearbyEnabled {
+            HStack {
+              Spacer()
+              Button("Cancel") { pairing.cancel(); navigation.show(.devices) }
+                .buttonStyle(AniCeButtonStyle()).keyboardShortcut(.cancelAction)
+            }
           }
         }.padding(24)
       }.frame(minWidth: 400, idealWidth: 460, maxHeight: 680)
@@ -594,7 +600,7 @@ private struct SettingsSectionLayout: Layout {
 @MainActor final class SettingsScrollCoordinator {
   var anchors: [String: NSView] = [:]
 
-  func scroll(to id: String, animated: Bool, completion: @escaping () -> Void) {
+  func scroll(to id: String, animated: Bool, completion: @escaping @MainActor @Sendable () -> Void) {
     guard let anchor = anchors[id], let scroll = anchor.enclosingScrollView,
           let document = scroll.documentView else { return }
     document.layoutSubtreeIfNeeded()
@@ -619,8 +625,10 @@ private struct SettingsSectionLayout: Layout {
         context.duration = 0.18
         clip.animator().setBoundsOrigin(origin)
       } completionHandler: {
-        scroll.reflectScrolledClipView(clip)
-        completion()
+        Task { @MainActor in
+          scroll.reflectScrolledClipView(clip)
+          completion()
+        }
       }
     } else {
       clip.scroll(to: origin)
@@ -662,7 +670,7 @@ private struct DeskDeckSettingsView: View {
           let peer = record.peer
           VStack(alignment: .leading, spacing: 4) {
             HStack {
-              Text(peer.deviceName).font(.system(size: 13 * fontScale, weight: .medium)).lineLimit(1)
+              Text(peer.displayName).font(.system(size: 13 * fontScale, weight: .medium)).lineLimit(1)
               Spacer()
               Button("Add app…") { chooseApplication(for: peer) }
                 .disabled(model.availableApprovalCount(for: peer) >= 32)
@@ -680,7 +688,7 @@ private struct DeskDeckSettingsView: View {
                     .foregroundStyle(AniCePalette.secondaryText(colorScheme)).lineLimit(1)
                 }
                 Button("Remove") { model.removeApprovedApp(id: app.id, for: peer) }
-                  .accessibilityLabel("Remove \(app.name) for \(peer.deviceName)")
+                  .accessibilityLabel("Remove \(app.name) for \(peer.displayName)")
               }.frame(minHeight: 32)
             }
             if model.availableApprovalCount(for: peer) >= 32 {

@@ -14,7 +14,15 @@ spec = importlib.util.spec_from_file_location("interchange", Path(__file__).with
 harness = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(harness)
 
-PASS = "INSTRUMENTATION_STATUS_CODE: 1\nINSTRUMENTATION_STATUS_CODE: 0\nOK (1 test)\nINSTRUMENTATION_CODE: -1\n"
+def event(code):
+    return (f"INSTRUMENTATION_STATUS: class={harness.TEST_CLASS}\n"
+            "INSTRUMENTATION_STATUS: test=executeInterchange\n"
+            "INSTRUMENTATION_STATUS: numtests=1\n"
+            "INSTRUMENTATION_STATUS: current=1\n"
+            f"INSTRUMENTATION_STATUS_CODE: {code}\n")
+
+
+PASS = event(1) + event(0) + "OK (1 test)\nINSTRUMENTATION_CODE: -1\n"
 
 
 class InstrumentationGateTests(unittest.TestCase):
@@ -35,6 +43,10 @@ class InstrumentationGateTests(unittest.TestCase):
             "failure_marker": PASS + "FAILURES!!!\n",
             "runner_error": PASS + "INSTRUMENTATION_FAILED\n",
             "short_error": PASS + "INSTRUMENTATION_RESULT: shortMsg=Process crashed\n",
+            "wrong_class": PASS.replace(harness.TEST_CLASS, "OtherTest"),
+            "wrong_method": PASS.replace("executeInterchange", "OtherMethod"),
+            "wrong_inventory": PASS.replace("numtests=1", "numtests=2"),
+            "wrong_position": PASS.replace("current=1", "current=2"),
         }
         for name, log in cases.items():
             with self.subTest(name=name), self.assertRaises(RuntimeError):

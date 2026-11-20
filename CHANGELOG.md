@@ -11,11 +11,56 @@ Shared product changes, repository structure, documentation and development conv
 ### Added
 
 - Add a saved automatic update-check opt-out under Updates → More options on phone and Mac, keeping manual checks available.
+- Add authenticated live/reconnect device-name sync and private credential-scoped nicknames with default-off display override across current device surfaces; preserve pairing evidence and secure sessions during metadata changes.
+- Add seamless first-time nearby pairing with matching six-digit comparison, mutual confirmation, a native Mac floating/in-app card and immediate authenticated connection; keep QR/PIN fallback and offer Android background setup afterward.
 - Show authenticated peer pause notices before connection teardown without changing the peer's saved automatic policy.
 - Add authenticated BLE direct-endpoint LAN discovery and negotiated same-socket EDHOC renewal, preserving active transfers and native work ownership.
+
+### Changed
+
+- Join wrapped documentation prose and list entries without changing contracts; clarify that verification timeouts are upper bounds, not required waits.
+- Replace pairing fixture reflection with typed injected presentation and hardware-free handoff regressions; document credential matching and separate visible emulator skips from physical nearby-pairing acceptance.
+- Refresh the host CBOR oracle and Kotlin/Compose build plugin for reviewed security fixes; move CodeQL off its discontinued bundled toolchain and extend code-owner review to shared contracts and native authentication foundations.
+- Remove superseded Core Graphics feasibility probes, retain the focused IME diagnostic, and document each verification lane and its acceptance limits.
+- Simplify all Android auto-connect entry points to one verified-device approval and short note, preserving Android consent while removing device-management detours and unused setup-screen code.
+- Remove the intermediate Android auto-reconnect setup popup, clarify its background/pause purpose and use native Mac glass for floating code comparison.
+- Stabilize Android's first auto-reconnect approval and clarify general device reconnection; remove superseded edge-drop prototype code and stale nearby-setup descriptions while retaining native/product regression coverage.
+- Speed up foreground nearby discovery and add bounded trusted reconnect attempts; retain explicit stop/verification boundaries and wait through Mac pairing handoff.
+- Open first-pair comparison directly for one nearby Mac, make native auto-reconnect approval device-specific, and add direct Devices name editors with a smaller native Mac comparison card.
+- Request Android discovery permission once on first unpaired launch, retain clear denial recovery on Home, and pin immediate Bluetooth handoff to the just-verified Mac.
+- Clarify shared LAN demand gates, file-only Disconnect recovery and single-owner Transfer Preview usage across architecture and setup documentation.
+- Document reusable Home action sizing, single-row transfer navigation and compact grouped Settings spacing.
+- Preserve elapsed background LAN idle deadlines through socket replacement and lock/app handoffs; request enabled LAN for new local file actions and clarify Bluetooth fallback.
+- Shorten LAN peer-loss detection without changing BLE liveness, and fix queued-envelope and picker/MTU handoffs that can interrupt a healthy Bluetooth transfer.
+- Make Cancel invalidate pending Connect-to-Resume work, retain event-scoped recovery and close unfinished admission immediately on Pause.
+- Make Resume immediate and group pause durations, indefinite pause and custom duration in the native menus.
+- Restore the first-install Play Protect alternatives, including temporary scanning disablement and re-enablement afterward.
+- Document direct-first LAN discovery, retained-socket renewal and native background work.
+- Separate behavior guides, wire contracts and developer instructions; remove public test-run diaries.
+- Streamline README introduction with direct download badges, Homebrew instructions, and consolidated setup guide links.
+
+### Fixed
+
+- Preserve actionable Mac Bluetooth-off setup guidance after cleanup and remove an extra Android preparation frame before native auto-connect approval.
+- Fence Mac invitation publication and discovery startup after suspended actor reads so Stop, sleep and replacement cannot revive a retired pairing owner.
+- Isolate mocked Mac LAN lifecycle verification from host-network events while preserving production path gates and bounded admission deadlines.
+- Verify all nineteen fixture configurations, including SAS and LAN profile 4, and independent crypto-oracle regressions; reject optimized-Python bypasses, duplicate/truncated evidence and skip-inflated test floors.
+- Correct SAS sample identities to the required algorithm identifier and verify native decoding before checking their commitments and comparison digits.
+- Isolate emulator instrumentation and native LAN evidence, preserve failure reporting through cleanup, and strengthen PAKE context, one-shot completion, attempt-limit and ABI-bound regression coverage.
+- Retire verification child-process groups on interruption or timeout so failed native runs do not leave orphaned compilers or runner work.
+- Stop unowned Android BLE immediately when the final work lease ends after screen-off; preserve the fifteen-second grace only for unlocked handoffs.
+- Retire pending Android LAN work synchronously on Disconnect rather than publishing completion before its worker and reservation are released.
+- Restore visible phone comparison/search progress and same-attempt Mac Confirm navigation; keep occupied or cooling-down pairing admission out of discovery.
+
+## [v0.9.0-beta.3]
+
+Application release v0.9.0-beta.3, build 90023.
+
+### Added
+
 - Add a user-reviewed GitHub bug-report form with app and OS version fields.
 - **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion during trackpad gesture momentum.
-- **In-App Auto-Updates:** Lightweight, zero-dependency update engine for macOS (detached helper bundle swap with automatic rollback) and Android (streaming download with pre-install integrity checks and PackageInstaller handover).
+- **In-App Auto-Updates:** Native Swift update engine for macOS (detached helper bundle swap with automatic rollback) and Android (streaming download with pre-install integrity checks and PackageInstaller handover).
 - Add daily 19:30 Nepal-time update refresh with overdue catch-up, silent once-per-version release notices and native formatted release-note review.
 - **Timed Connection Pauses:** Temporarily silence background auto-reconnects for 1h, 3h, 6h, a custom interval, or until manually resumed, with real-time countdowns on Mac menu bar and Android Home.
 - **Live Device Power:** Inline peer battery percentage and charging indicator beside connection status on Mac menu bar companion and Android Home/Devices.
@@ -38,16 +83,6 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
-- Clarify shared LAN demand gates, file-only Disconnect recovery and single-owner Transfer Preview usage across architecture and setup documentation.
-- Document reusable Home action sizing, single-row transfer navigation and compact grouped Settings spacing.
-- Preserve elapsed background LAN idle deadlines through socket replacement and lock/app handoffs; request enabled LAN for new local file actions and clarify Bluetooth fallback.
-- Shorten LAN peer-loss detection without changing BLE liveness, and fix queued-envelope and picker/MTU handoffs that can interrupt a healthy Bluetooth transfer.
-- Make Cancel invalidate pending Connect-to-Resume work, retain event-scoped recovery and close unfinished admission immediately on Pause.
-- Make Resume immediate and group pause durations, indefinite pause and custom duration in the native menus.
-- Restore the first-install Play Protect alternatives, including temporary scanning disablement and re-enablement afterward.
-- Document direct-first LAN discovery, retained-socket renewal and native background work.
-- Separate behavior guides, wire contracts and developer instructions; remove public test-run diaries.
-- Streamline README introduction with direct download badges, Homebrew instructions, and consolidated setup guide links.
 - Set the Android and macOS development version to `0.9.0-beta.3` (build `90023`) and update current-version documentation.
 - Bind release device approval to the tag, source commit and SHA-256 of both signed artifacts; add current 512-KiB LAN benchmark selection.
 - Reuse near-black Dock artwork for packaged/default app icons while keeping Mac Dock and Android launcher variants tied to system Light/Dark appearance.

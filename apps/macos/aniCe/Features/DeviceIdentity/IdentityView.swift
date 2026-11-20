@@ -74,7 +74,11 @@ struct IdentityView: View {
                             Text("The new identity is ready. Removing an older key will be retried when identity storage is available.")
                         }
                     }
-                    if model.isWorking { ProgressView("Updating identity…") }
+                     if model.isWorking { ProgressView("Updating identity…") }
+                     if model.renameFailure {
+                         Text("Could not save the device name. Try again.")
+                             .foregroundStyle(AniCePalette.error(colorScheme))
+                     }
                     if let recovery = model.recovery {
                         recoveryPanel(recovery)
                     }

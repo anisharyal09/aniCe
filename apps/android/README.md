@@ -1,6 +1,6 @@
 # aniCe for Android
 
-Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keystore. Pairing includes CameraX/ZXing QR scanning, native QR authentication, shared OPAQUE PIN pairing, mutual approval and local peer trust.
+Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keystore. Pairing includes nearby numeric comparison, CameraX/ZXing QR scanning and shared OPAQUE PIN pairing, mutual approval and local peer trust. The nearby profile is provisional and requires independent security review.
 
 ## Requirements and user setup
 
@@ -100,7 +100,7 @@ For an isolated transfer preview on an explicitly selected test phone, run:
 
 This builds **aniCe Transfer Preview** as `io.github.anisharyal09.anice.preview.transfer`, verifies the package ID and installs alongside the normal aniCe app. It never uninstalls or replaces production; remember that a fresh package starts with its own data and permissions.
 
-The transfer preview contains the native manual and automatic connection controls. Pair it with the isolated Mac preview and grant its own Bluetooth permissions/system companion association; the normal app's identity, trust and connection setup are not shared. Automatic-setup activity routing retains the compiled Kotlin namespace even though the installed application ID has a preview suffix.
+The transfer preview contains the native manual and automatic connection controls. Pair it with the isolated Mac preview and grant its own Bluetooth permissions/system companion association; the normal app's identity, trust and connection setup are not shared. Nearby, QR/PIN and explicit Auto connect use the same single-Mac approval from the normal app, without a separate setup activity or broad device-management chooser.
 
 Run only one branch's Transfer Preview at a time on each platform: branch copies share the preview identity, trust and preferences. New file actions can request enabled LAN after transport Disconnect; other feature demand retains the normal Disconnect gate. Connection Pause and native eligibility always apply.
 
@@ -113,9 +113,11 @@ python3 scripts/verify-suite.py fast --android --vector-python .venv/bin/python
 python3 scripts/verify-suite.py device --serial DEVICE_SERIAL
 ```
 
-`--only android` is the PR-time lane: it executes JVM unit tests, lint, and compiles instrumentation test sources (`assembleDebugAndroidTest`). `--only connected` runs the connected instrumentation suite against an authorized physical device or emulator.
+`--only android` is the PR-time lane: it executes JVM unit tests, lint, and compiles instrumentation test sources (`assembleDebugAndroidTest`). `--only connected` runs the connected instrumentation suite against an authorized physical device or emulator. Emulator runs use the isolated UI-preview package; physical runs can replace the normal Debug installation, so choose a dedicated test phone and an explicit serial.
 
 The suite parses JUnit reports and rejects failures, missing/truncated results and unexpected skips. Native tests can require device setup or explicit instrumentation arguments.
+
+Comparison/approval presentation fixtures are deliberately UI-preview emulator tests; their mutations cannot approve a real pairing or native association. Typed injected presentation replaces compiler-field reflection, while post-trust one-shot candidate handoff has hardware-free JVM coverage. On physical runs, documented fixture skips are printed and do not satisfy the passing-test floor; `--strict-skips` rejects them. Use the [physical pairing checklist](../../docs/PROXIMITY_PAIRING_TESTING.md) for real discovery, consent, routing to one Mac and lifecycle acceptance.
 
 Minimum API 29; compile/target API 36. Gradle uses JDK 21; Kotlin/Java target JVM 17. Key protection is reported from the actual device.
 

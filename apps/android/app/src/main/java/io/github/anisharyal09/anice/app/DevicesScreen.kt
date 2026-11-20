@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,12 +40,16 @@ import io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewModel, session: SessionViewModel, navigation: AppNavigation, nearbyOwner: CompanionProbe, automaticAfterPairing: Boolean, onAutomatic: (Boolean)->Unit, automaticLanAfterPairing: Boolean, onAutomaticLan: (Boolean)->Unit, identity: DeviceIdentityViewModel) {
+internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewModel, session: SessionViewModel, navigation: AppNavigation, nearbyOwner: CompanionProbe, automaticAfterPairing: Boolean, onAutomatic: (Boolean)->Unit, automaticLanAfterPairing: Boolean, onAutomaticLan: (Boolean)->Unit, identity: DeviceIdentityViewModel,
+    nearbySetup: @Composable () -> Unit = {}) {
     when (navigation.route) {
         DeviceRoute.Pairing -> {
             DevicesOverviewContent(pairing, session, navigation, identity)
             ModalBottomSheet(
-                onDismissRequest = navigation::back,
+                onDismissRequest = {
+                    if (pairing.comparingNearby) pairing.declineComparison()
+                    navigation.back()
+                },
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
                 dragHandle = null,
             ) {
@@ -70,6 +75,7 @@ internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewMo
                 }
                 val sendFiles = rememberSendFilesAction(transfer)
                 HomeScreen(pairing.peers.isNotEmpty(), onPair = navigation::pair,
+                    nearbySetup = nearbySetup,
                     showRecentHeading = isResult || session.clipboard.recent != null || session.sms.threads?.isNotEmpty() == true,
                     attention = {
                         if (incoming) TransferView(transfer, open = { navigation.openFeature(AppFeature.Files) }, overview = true)
@@ -204,6 +210,8 @@ private fun DevicesOverviewContent(
     identity: DeviceIdentityViewModel,
 ) {
     var showingIdentity by rememberSaveable { mutableStateOf(false) }
+    var editingName by rememberSaveable { mutableStateOf(false) }
+    var nicknamePeer by remember { mutableStateOf<io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity?>(null) }
     val localName = identity.state.snapshot?.identity?.deviceName
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp)) {
@@ -218,6 +226,7 @@ private fun DevicesOverviewContent(
                 pairing.peers,
                 onDiscoveryCheck = { navigation.route = DeviceRoute.Discovery },
                 flatDeviceLayout = true,
+                onRenamePeer = { nicknamePeer = it },
                 focusedPeer = navigation.focusedPeer,
                 onFocusConsumed = { navigation.focusedPeer = null },
             )
@@ -227,7 +236,9 @@ private fun DevicesOverviewContent(
             }
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 56.dp)
-                    .clickable(role = Role.Button, onClickLabel = "Open this device details", onClick = { showingIdentity = true })
+                    .combinedClickable(role = Role.Button, onClickLabel = "Open this device details",
+                        onClick = { showingIdentity = true }, onLongClickLabel = "Edit this phone's name",
+                        onLongClick = { editingName = true })
                     .padding(vertical = 10.dp),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             ) {
@@ -256,6 +267,18 @@ private fun DevicesOverviewContent(
         }
     }
     if (showingIdentity) LocalIdentitySheet(identity) { showingIdentity = false }
+    if (editingName && localName != null)
+        io.github.anisharyal09.anice.features.deviceidentity.DeviceNameDialog(localName,
+            identity.state.isWorking, identity.state.renameFailure, { editingName = false }, identity::rename)
+    nicknamePeer?.let { peer ->
+        io.github.anisharyal09.anice.features.deviceidentity.DeviceNameDialog(
+            initialName = pairing.nickname(peer)?.name.orEmpty(),
+            busy = pairing.savingNickname, failure = pairing.nicknameFailure,
+            onDismiss = { nicknamePeer = null }, onSave = {},
+            title = "Name on this phone", helper = "Private to this phone. Device name: ${pairing.deviceName(peer)}",
+            initialUseNickname = pairing.nickname(peer)?.enabled ?: false,
+            onSaveNickname = { name, enabled -> pairing.saveNickname(peer, name, enabled) })
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

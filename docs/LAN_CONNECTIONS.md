@@ -31,6 +31,8 @@ Automatic setup runs on connection events and feature demand:
 
 Disconnect pauses local LAN automation for the current app run. Manual Connect/Allow, an explicit preference change or a new file-selection/send action from either updated peer with automatic LAN enabled resumes it. Ordinary traffic and recovery of an existing batch do not undo Disconnect. Turning automation off cancels pending setup but leaves an already-secured channel available manually.
 
+On Android, Disconnect retires pending discovery/authentication, its worker and reservation synchronously. Only an already-secured channel receives the bounded best-effort encrypted close before teardown.
+
 All features use these shared owners and eligibility checks. Only a new file action (including **Connect LAN for speed**) has the Disconnect exception; clipboard, messages, playback and other feature traffic cannot override it. No feature demand overrides connection Pause, disabled automation or trust/native ownership restrictions.
 
 **Cancel** stops only the current attempt and its retries, not the automatic preference. Duplicate readiness callbacks cannot restart that cancelled attempt; a new connection/eligibility event or explicit demand can authorize another.

@@ -16,12 +16,16 @@ Exactly 20 bytes, with no framing, JSON, terminator, or padding:
 | Offset | Bytes | Value |
 | --- | --- | --- |
 | 0 | 2 | Unsigned big-endian protocol version `1` |
-| 2 | 2 | Unsigned big-endian optional capability flags; current discovery uses `0` |
+| 2 | 2 | Unsigned big-endian optional capability flags; `0x0001` offers numeric comparison, `0` otherwise |
 | 4 | 16 | Cryptographically random discovery nonce |
 
 Reject any length other than 20 and versions other than 1. All flag bits are optional: preserve the received numeric flags but ignore unknown bits and never enable unknown behavior. Mandatory incompatible semantics require a new version. Any 16-byte nonce decodes, including all zeros in fixtures; production uses a system CSPRNG. Receivers cannot infer authenticity or freshness from nonce bytes.
 
 The Mac creates a fresh nonce per start, rotates every 30 seconds during its 120-second active window, and erases it on stop. The dynamic characteristic permits unencrypted reads only, no writes or notifications. Reads validate the active deadline and characteristic; offsets 0–20 are valid (20 returns empty), larger offsets fail. Serving a read takes one immutable payload snapshot.
+
+The separate [nearby pairing availability](PROXIMITY.md) owner can retain this anonymous payload without an invitation cutoff while awake/unlocked and eligible. Flag `0x0001` offers [pairing method 3](../pairing/SAS.md) only; it is unauthenticated capability information and cannot establish trust. Explicit compatibility discovery and QR/PIN retain their original bounds and zero flags.
+
+After fresh trusted BLE readiness, [foreground companion enrollment](COMPANION_SETUP.md) can briefly advertise this same generic service while its application slot stays occupied. The OS approval supplies a locator/background lease, not trust.
 
 Android scans for 15 seconds using the service filter, selects a temporary candidate, stops scanning, connects, discovers the assigned readable characteristic, reads and validates, then disconnects/closes. The connection/read deadline is 15 seconds with up to 2 additional seconds for cleanup. Successful validation proves only that the connected endpoint returned this format.
 
@@ -29,7 +33,7 @@ No trust/identity storage is accessed. Android scan addresses remain only in an 
 
 ## Attribute lifetime
 
-The Mac publishes the same public service layout from its first discovery start: this discovery characteristic plus the pairing write/indicate characteristics. Ordinary Stop clears discovery payloads and pairing channels and stops advertising, while retaining the public attribute table. Idle reads fail and pairing messages are unavailable without a confirmed explicit invitation. Radio loss, incomplete startup cancellation, and process termination may recreate the manager with the same layout. This reduces changes to cached GATT attributes without changing the discovery payload or establishing trust. See ADR 0004.
+The Mac publishes the same public service layout from its first discovery start: this discovery characteristic plus the pairing write/indicate characteristics. Ordinary Stop clears discovery payloads and pairing channels and stops advertising, while retaining the public attribute table. Idle reads fail and pairing messages are unavailable without a confirmed explicit invitation or eligible nearby pairing owner. Radio loss, incomplete startup cancellation, and process termination may recreate the manager with the same layout. This reduces changes to cached GATT attributes without changing the discovery payload size or establishing trust. See ADR 0004.
 
 ## Shared fixtures
 

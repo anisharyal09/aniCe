@@ -17,10 +17,6 @@ class StructureTests(unittest.TestCase):
         project = structure.load_project(structure.ROOT / 'apps/macos/aniCe.xcodeproj/project.pbxproj')
         self.assertGreaterEqual(len(project['objects']), 100)
         self.assertEqual(structure.membership_errors(structure.ROOT, project), [])
-        try:
-            import openstep_parser
-        except ImportError:
-            return
         openstep_proj = structure.load_project(structure.ROOT / 'apps/macos/aniCe.xcodeproj/project.pbxproj', engine='openstep')
         # Matching object IDs alone would miss changed paths, types or nested build references.
         self.assertEqual(project, openstep_proj)
@@ -37,13 +33,9 @@ class StructureTests(unittest.TestCase):
     def test_malformed_project_is_rejected_by_each_available_engine(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'broken.pbxproj'
-            engines = ['plutil'] if structure.platform.system() == 'Darwin' else ['openstep']
-            try:
-                import openstep_parser
-                if 'openstep' not in engines:
-                    engines.append('openstep')
-            except ImportError:
-                pass
+            engines = ['openstep']
+            if structure.platform.system() == 'Darwin':
+                engines.append('plutil')
             for content in ('', '{ objects = {', '{ objects = 1; }',
                             '{ objects = {}; rootObject = root; } trailing garbage'):
                 path.write_text(content)
@@ -53,9 +45,9 @@ class StructureTests(unittest.TestCase):
                             structure.load_project(path, engine)
 
     def test_project_trailing_comments_remain_valid(self):
-        engines = ['plutil'] if structure.platform.system() == 'Darwin' else ['openstep']
-        if importlib.util.find_spec('openstep_parser') is not None and 'openstep' not in engines:
-            engines.append('openstep')
+        engines = ['openstep']
+        if structure.platform.system() == 'Darwin':
+            engines.append('plutil')
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'comments.pbxproj'
             for suffix in ('\n', ' /* first */ /* second */\n', ' // first\n // second\n'):
@@ -102,6 +94,12 @@ class StructureTests(unittest.TestCase):
             self.assertTrue(any('helper: missing build input' in error for error in structure.membership_errors(root, project)))
             objects['helperphase'] = {'isa': 'PBXShellScriptBuildPhase', 'inputPaths': ['$(SRCROOT)/aniCe/Features/NowPlaying/Adapter/NowPlayingAdapter.swift']}
             self.assertFalse(any('helper: missing build input' in error for error in structure.membership_errors(root, project)))
+            orphan = root / 'apps/macos/aniCeTests/NowPlaying/AdapterChecks.swift'
+            orphan.parent.mkdir(parents=True)
+            orphan.write_text('')
+            objects['tests'] = {'isa': 'PBXNativeTarget', 'name': 'aniCeTests', 'buildPhases': []}
+            self.assertTrue(any('missing membership' in error and 'AdapterChecks.swift' in error
+                                for error in structure.membership_errors(root, project)))
             helper.unlink()
             source.unlink()
             self.assertTrue(any('missing source' in error for error in structure.membership_errors(root, project)))

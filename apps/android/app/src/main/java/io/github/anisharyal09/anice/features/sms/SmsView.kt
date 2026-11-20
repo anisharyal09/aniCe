@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Presents SMS permission state, provider conversations, live relay and local compose.
 package io.github.anisharyal09.anice.features.sms
+import io.github.anisharyal09.anice.infrastructure.connections.displayName
 
 import android.Manifest
 import android.content.Context
@@ -108,7 +109,7 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
             if (showRelayInfo) {
                 Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.small) {
                     Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (relay != null) Text("Sharing with ${relay.peer.deviceName}", style = MaterialTheme.typography.bodySmall)
+                        if (relay != null) Text("Sharing with ${relay.peer.displayName}", style = MaterialTheme.typography.bodySmall)
                         if (owner.status.isNotEmpty() && owner.status !in setOf("Ready", "Message sent")) {
                             Text(owner.status, style = MaterialTheme.typography.bodySmall,
                                 color = if ("rejected" in owner.status.lowercase() || "not confirmed" in owner.status.lowercase()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)

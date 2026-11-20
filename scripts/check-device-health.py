@@ -8,6 +8,7 @@ to protect hardware and prevent battery-saver throttling from skewing latency re
 
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -56,6 +57,8 @@ def parse_battery_info(dumpsys_output):
 
     level = int(level_match.group(1))
     scale = int(scale_match.group(1)) if scale_match else 100
+    if scale <= 0 or level > scale:
+        raise ValueError("Invalid battery level or scale from dumpsys battery")
     battery_pct = round((level / scale) * 100, 1)
 
     # Android reports temperature in tenths of a degree Celsius (e.g., 272 = 27.2°C)
@@ -73,6 +76,10 @@ def check_health(serial=None, adb_path=None, output_path=None):
     guardrails = inventory.get("guardrails", {})
     min_battery = guardrails.get("min_battery_percent", 20)
     max_temp = guardrails.get("max_temperature_celsius", 42.0)
+    if (type(min_battery) not in (int, float) or not math.isfinite(min_battery)
+            or not 0 <= min_battery <= 100
+            or type(max_temp) not in (int, float) or not math.isfinite(max_temp)):
+        raise ValueError("Device-lab guardrails must contain finite, valid thresholds")
 
     adb = adb_path or find_adb()
 

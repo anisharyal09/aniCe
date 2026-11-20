@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Adversarial checks for the aggregate verification gate (no device required)."""
 import contextlib
+import ast
 import importlib.util
 import io
 import json
 import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -54,7 +54,7 @@ class JunitGateTests(unittest.TestCase):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 suite.validate_results(
-                    results, "fake", minimum=2,
+                    results, "fake", minimum=1,
                     extra=["Test#skips"],
                 )
             self.assertIn("documented skip: pkg.Test#skips", output.getvalue())
@@ -130,6 +130,51 @@ class JunitGateTests(unittest.TestCase):
                 suite.validate_results(results, "fake", minimum=1)
 
 
+    def test_declared_outcomes_cannot_hide_missing_failure_or_skip_details(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "outcomes.xml"
+            for attribute in ("failures", "errors", "skipped"):
+                for wrapper in (False, True):
+                    with self.subTest(attribute=attribute, wrapper=wrapper):
+                        body = '<testsuite tests="1"><testcase name="a"/></testsuite>'
+                        if wrapper:
+                            text = f'<testsuites {attribute}="1">{body}</testsuites>'
+                        else:
+                            text = body.replace('tests="1"', f'tests="1" {attribute}="1"')
+                        report.write_text(text)
+                        with self.assertRaisesRegex(suite.GateError, "report is incomplete"):
+                            suite.parse_junit_files([report])
+
+    def test_duplicate_results_and_skips_cannot_satisfy_the_pass_floor(self):
+        passed = suite.TestResult("Test", "runs", "passed")
+        skipped = suite.TestResult("Test", "manual", "skipped")
+        with self.assertRaisesRegex(suite.GateError, "duplicate"):
+            suite.validate_results([passed, passed], "duplicate", 2)
+        with self.assertRaisesRegex(suite.GateError, "skipped tests do not count"):
+            suite.validate_results([passed, skipped], "shrunk", 2, documented={"Test#manual"})
+        with self.assertRaisesRegex(suite.GateError, "unknown test outcome"):
+            suite.validate_results([suite.TestResult("Test", "unknown", "unknown")], "unknown", 1)
+
+    def test_documented_comparison_fixture_skip_is_visible_and_strict_mode_rejects_it(self):
+        executed = suite.TestResult("io.github.anisharyal09.anice.NativeTest", "runs", "passed")
+        fixture = suite.TestResult(
+            "io.github.anisharyal09.anice.features.pairing.ComparisonPresentationTest",
+            "globalAndAddDeviceSurfacesRenderTheSameLiveCodeAcrossPhaseChanges", "skipped",
+        )
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(suite.validate_results(
+                [executed, fixture], "physical", 1, documented=suite.DOCUMENTED_ANDROID_SKIPS
+            ), (1, 1))
+        self.assertIn("documented skip: " + fixture.identifier, output.getvalue())
+        with self.assertRaises(suite.GateError):
+            suite.validate_results([executed, fixture], "strict", 1, documented=())
+        self.assertNotIn(
+            "ComparisonPresentationTest#everyPairingMethodHandsOffItsNativeCandidateOnlyOnceAfterTrustIsSaved",
+            suite.DOCUMENTED_ANDROID_SKIPS,
+        )
+
+
 XCODE_LOG = """\
 Test Case '-[aniCeTests.ExampleTests testRuns]' passed (0.001 seconds).
 Test Case '-[aniCeTests.ExampleTests testManual]' skipped (0.001 seconds).
@@ -162,7 +207,7 @@ class XcodeGateTests(unittest.TestCase):
             with self.assertRaises(suite.GateError):
                 suite.validate_results(results, "macOS", minimum=2)
             suite.validate_results(
-                results, "macOS", minimum=2,
+                results, "macOS", minimum=1,
                 documented={"ExampleTests#testManual"},
             )
 
@@ -194,9 +239,10 @@ class RunnerGateTests(unittest.TestCase):
             return suite.cargo_results(log)
 
     def test_rust_all_executed_passes(self):
+        count = suite.MINIMUMS["rust"]
         self.assertEqual(
-            self.cargo("test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n"),
-            4,
+            self.cargo(f"test result: ok. {count} passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n"),
+            count,
         )
 
     def test_rust_ignored_filtered_failed_and_zero_are_rejected(self):
@@ -218,19 +264,24 @@ class RunnerGateTests(unittest.TestCase):
             return suite.unittest_results(log)
 
     def test_python_all_executed_passes(self):
+        count = suite.MINIMUMS["python"]
         self.assertEqual(
-            self.unittest_log("Ran 18 tests in 0.120s\n\nOK\n"),
-            18,
+            self.unittest_log(f"Ran {count} tests in 0.120s\n\nOK\n"),
+            count,
         )
 
     def test_python_skips_failures_and_zero_are_rejected(self):
+        count = suite.MINIMUMS["python"]
         cases = {
-            "skipped": "Ran 18 tests in 0.120s\n\nOK (skipped=1)\n",
-            "failed": "Ran 18 tests in 0.120s\n\nFAILED (failures=1)\n",
+            "skipped": f"Ran {count} tests in 0.120s\n\nOK (skipped=1)\n",
+            "failed": f"Ran {count} tests in 0.120s\n\nFAILED (failures=1)\n",
             "zero": "Ran 0 tests in 0.000s\n\nOK\n",
             "missing": "no summary\n",
-            "truncated": "Ran 18 tests in 0.120s\n",
-            "expected_failures": "Ran 18 tests in 0.120s\n\nOK (expected failures=1)\n",
+            "truncated": f"Ran {count} tests in 0.120s\n",
+            "expected_failures": f"Ran {count} tests in 0.120s\n\nOK (expected failures=1)\n",
+            "earlier_ok": f"OK\nRan {count} tests in 0.120s\n",
+            "multiple_runs": f"Ran {count} tests in 0.120s\nOK\nRan 1 test in 0.120s\nOK\n",
+            "below_floor": f"Ran {count - 1} tests in 0.120s\n\nOK\n",
         }
         for name, text in cases.items():
             with self.subTest(case=name), self.assertRaises(suite.GateError):
@@ -271,6 +322,49 @@ class ProcessDiagnosticsTests(unittest.TestCase):
                 with self.assertRaisesRegex(suite.GateError, 'exit 17;.*Cannot save command diagnostics'):
                     suite.run_step('Failure', [sys.executable, '-c', 'raise SystemExit(17)'], Path(directory))
 
+    def test_timeout_retires_descendants_not_just_the_launcher(self):
+        with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
+            artifacts = Path(directory)
+            code = (
+                "import subprocess, sys, time\n"
+                "child = subprocess.Popen([sys.executable, '-c', "
+                "'import pathlib,sys,time; time.sleep(1); pathlib.Path(sys.argv[1]).write_text(\"orphan\")', "
+                "sys.argv[1]])\n"
+                "time.sleep(30)\n"
+            )
+            marker = artifacts / "orphan.txt"
+            with self.assertRaisesRegex(suite.GateError, 'timed out'):
+                suite.run_step('Child tree', [sys.executable, '-c', code, marker], artifacts, timeout=0.3)
+            # A real child wait gives an escaped descendant time to write, without polling it.
+            suite.subprocess.run([sys.executable, '-c', 'import time; time.sleep(1.2)'], check=True, timeout=5)
+            self.assertFalse(marker.exists())
+            record = json.loads((artifacts / 'child-tree.command.json').read_text())
+            self.assertEqual(record['status'], 'failed')
+
+    def test_termination_records_failure_and_retires_the_active_runner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            code = (
+                "import importlib.util,os,signal,sys,threading\n"
+                "spec=importlib.util.spec_from_file_location('termination_gate',sys.argv[1])\n"
+                "gate=importlib.util.module_from_spec(spec);sys.modules[spec.name]=gate;spec.loader.exec_module(gate)\n"
+                "gate.run_structure=lambda output: gate.run_step('Terminated runner',"
+                "[sys.executable,'-c','import time; time.sleep(30)'],output)\n"
+                "timer=threading.Timer(0.3,lambda:os.kill(os.getpid(),signal.SIGTERM));timer.start()\n"
+                "sys.exit(gate.main(['--only','contracts','--output-dir',sys.argv[2]]))\n"
+            )
+            completed = suite.subprocess.run(
+                [sys.executable, '-c', code, suite.__file__, artifacts],
+                capture_output=True, text=True, timeout=10,
+            )
+            self.assertEqual(completed.returncode, 1, completed.stdout + completed.stderr)
+            reports = list(artifacts.glob('run-*/summary.json'))
+            self.assertEqual(len(reports), 1)
+            report = json.loads(reports[0].read_text())
+            self.assertEqual(report['status'], 'failed')
+            self.assertEqual(report['suites']['structure']['status'], 'failed')
+            self.assertIn('interrupted', report['errors'][0])
+
     def test_annotations_escape_messages_and_source_properties(self):
         output = io.StringIO()
         # The apparent notice must remain inside one escaped error annotation.
@@ -307,7 +401,8 @@ class AggregateGateTests(unittest.TestCase):
             'toolchain_env': {'PATH': '/mock/bin'},
             'run_ci_integrity': {'actionlint': 'passed', 'policy_tests': 12},
             'run_structure': None, 'vector_interpreter': sys.executable,
-            'run_vector_checks': 13, 'run_python_meta_tests': 30, 'run_rust': 4,
+            'run_vector_checks': {'checks': len(suite.VECTOR_CHECKS), 'oracle_tests': 5},
+            'run_python_meta_tests': 30, 'run_rust': 4,
             'run_android_jvm': (300, 0),
             'run_macos_with_skips': {'passed': 300, 'documented_skips': 3,
                                      'xcode': 'Xcode 26.3', 'arch': 'arm64'},
@@ -398,6 +493,12 @@ class AggregateGateTests(unittest.TestCase):
             self.assertEqual(report['suites'][name]['status'], 'not_selected')
         mocks['run_macos_with_skips'].assert_called_once()
         mocks['run_android_jvm'].assert_not_called()
+
+    def test_interchange_prepares_android_and_macos_toolchains_together(self):
+        with patch.object(suite.platform, 'system', return_value='Darwin'):
+            code, _, mocks = self.invoke(['--only', 'interchange'])
+        self.assertEqual(code, 0)
+        mocks['toolchain_env'].assert_called_once_with(android=True, macos=True, require_xcode=False)
 
     def test_macos_native_bridge_builds_before_the_xcode_test(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -532,7 +633,8 @@ class AggregateGateTests(unittest.TestCase):
         self.assertEqual(report['requested_lanes'], ['contracts'])
         for name in ('structure', 'vectors', 'python'):
             self.assertEqual(report['suites'][name]['status'], 'passed')
-        self.assertEqual(report['suites']['vectors']['checks'], 13)
+        self.assertEqual(report['suites']['vectors']['checks'], len(suite.VECTOR_CHECKS))
+        self.assertEqual(report['suites']['vectors']['oracle_tests'], 5)
         mocks['run_structure'].assert_called_once()
         mocks['run_vector_checks'].assert_called_once()
         mocks['run_python_meta_tests'].assert_called_once()
@@ -632,6 +734,7 @@ class AggregateGateTests(unittest.TestCase):
                 SimpleNamespace(serial='serial-1', allow_no_device=False), env, self.root, ())
         self.assertEqual(result, (10, 0))
         self.assertEqual(connected.call_args.args[0]['ANDROID_SERIAL'], 'serial-1')
+        self.assertEqual(connected.call_args.kwargs, {})
         self.assertNotIn('ANDROID_SERIAL', env)
 
     def test_emulator_diagnostics_are_collected_before_return_and_preserve_test_failures(self):
@@ -643,8 +746,9 @@ class AggregateGateTests(unittest.TestCase):
         ):
             with self.subTest(tests=test_failure, diagnostics=diagnostic_failure):
                 calls = []
-                def tests(*args):
+                def tests(*args, **kwargs):
                     calls.append('tests')
+                    self.assertEqual(kwargs, {'preview': True})
                     if test_failure:
                         raise test_failure
                     return (10, 0)
@@ -789,6 +893,15 @@ class AndroidReportFreshnessTests(unittest.TestCase):
                 self.assertIn('assembleDebugAndroidTest', command.call_args.args[1])
             self.assertFalse(reports.exists())
 
+    def test_emulator_lane_uses_preview_but_physical_lane_keeps_its_selected_package(self):
+        for preview in (False, True):
+            with self.subTest(preview=preview), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                with patch.object(suite, 'ANDROID', root), patch.object(suite, 'run_step') as command:
+                    with self.assertRaisesRegex(suite.GateError, 'no JUnit reports'):
+                        suite.run_connected_android({}, root, (), preview=preview)
+                self.assertEqual('-PanicePreview=true' in command.call_args.args[1], preview)
+
     def test_failed_report_cleanup_stops_before_running_gradle(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -834,6 +947,69 @@ class AndroidReportFreshnessTests(unittest.TestCase):
             devices = suite.connected_devices('/mock/adb', env=test_env)
             self.assertEqual(devices, ['emulator-5554'])
             self.assertEqual(mock_run.call_args.kwargs['env'], test_env)
+
+
+class VectorGateTests(unittest.TestCase):
+    def test_every_fixture_generator_is_selected_without_rewriting_and_oracle_tests_are_counted(self):
+        vectors = suite.ROOT / "protocol/test-vectors"
+        generators = {path.resolve() for path in vectors.rglob("generate*.py")}
+        selected = {vectors / path for _, path, _ in suite.VECTOR_CHECKS}
+        self.assertEqual(generators, {path.resolve() for path in selected})
+        self.assertEqual(len(suite.VECTOR_CHECKS), 19)
+        self.assertIn(("SAS pairing vectors", "generate_sas_vectors.py", ()), suite.VECTOR_CHECKS)
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            with patch.object(suite, 'run_step', return_value=artifacts / 'oracle.log') as command, \
+                 patch.object(suite, 'unittest_results', return_value=5) as parse, \
+                 contextlib.redirect_stdout(io.StringIO()):
+                result = suite.run_vector_checks('/oracle/python', artifacts)
+        calls = command.call_args_list
+        self.assertEqual(len(calls), len(suite.VECTOR_CHECKS) + 1)
+        for call in calls[:-1]:
+            self.assertEqual(call.args[1][0], '/oracle/python')
+            self.assertIn('--check', call.args[1])
+        self.assertIn('--lan-512', next(call.args[1] for call in calls if call.args[0] == 'LAN profile 4 vectors'))
+        self.assertEqual(calls[-1].args[1][0], '/oracle/python')
+        self.assertIn('test_*oracle.py', calls[-1].args[1])
+        self.assertIn('-u', calls[-1].args[1])
+        parse.assert_called_once_with(artifacts / 'oracle.log', minimum=5, label='Session crypto oracle')
+        self.assertEqual(result, {'checks': 19, 'oracle_tests': 5})
+
+    def test_fixture_checks_reject_drift_under_optimized_python_without_rewriting(self):
+        root = suite.ROOT / "protocol/test-vectors"
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            for relative, fixture in (
+                ("notifications/generate_notification_vectors.py", "notification-vectors.json"),
+                ("phone-input/generate.py", "phone-input-vectors.json"),
+                ("session/generate_control_vectors.py", "control-vectors.json"),
+                ("lan/generate_bulk_probe_vectors.py", "bulk-probe-vectors.json"),
+                ("lan/generate_lan_vectors.py", "lan-vectors.json"),
+                ("lan/generate_lan_control_vectors.py", "automatic-vectors.json"),
+                ("connection-pause/generate.py", "vectors.json"),
+                ("generate_sas_vectors.py", "sas-vectors.json"),
+            ):
+                with self.subTest(generator=relative):
+                    script = temporary / Path(relative).name
+                    script.write_bytes((root / relative).read_bytes())
+                    target = temporary / fixture
+                    target.write_text("{}\n")
+                    result = suite.subprocess.run(
+                        [sys.executable, "-O", str(script), "--check"],
+                        capture_output=True, text=True, timeout=15,
+                    )
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(target.read_text(), "{}\n")
+
+    def test_acceptance_scripts_do_not_use_optimization_removable_assertions(self):
+        paths = list((suite.ROOT / "protocol/test-vectors").rglob("generate*.py"))
+        paths.extend(suite.SCRIPTS / name for name in (
+            "verify-suite.py", "verify-identity-interchange.py", "verify-session-interchange.py",
+            "verify-lan-interchange.py", "publish_release.py"))
+        for path in paths:
+            with self.subTest(path=path):
+                tree = ast.parse(path.read_text())
+                self.assertFalse(any(isinstance(node, ast.Assert) for node in ast.walk(tree)))
 
 
 if __name__ == "__main__":

@@ -3,7 +3,6 @@
 package io.github.anisharyal09.anice.app
 
 import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
-import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.os.Build
@@ -25,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.MainActivity
+import io.github.anisharyal09.anice.ui.PresentationFixture
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.features.session.DeviceSessionCard
 import io.github.anisharyal09.anice.ui.theme.AniCeTheme
@@ -49,6 +49,7 @@ class HomeVisualReviewTest {
             Build.HARDWARE in setOf("ranchu", "goldfish"),
         )
         val runner = InstrumentationRegistry.getInstrumentation()
+        assumeTrue("Use an isolated preview", runner.targetContext.packageName == "io.github.anisharyal09.anice.preview")
         runner.uiAutomation
         val cases =
             listOf(
@@ -88,11 +89,10 @@ class HomeVisualReviewTest {
                 ),
             )
         assertTrue(cases.size >= 11)
-        for (case in cases) {
+        PresentationFixture().use { fixture -> for (case in cases) {
             val activity =
                 runner.startActivitySync(
-                    Intent(runner.targetContext, MainActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    fixture.intent()
                 ) as MainActivity
             try {
                 val drawn = CountDownLatch(1)
@@ -186,8 +186,9 @@ class HomeVisualReviewTest {
                 runner.uiAutomation.waitForIdle(250, 5000)
                 val root = runner.uiAutomation.rootInActiveWindow
                 assertNotNull("Missing native accessibility tree: ${case.id}", root)
-                val expected = if (case.state == null) "No devices paired yet" else case.name
+                val expected = if (case.state == null) "Connect your Mac" else case.name
                 assertTrue("Missing device context: ${case.id}", findText(root, expected) != null)
+                if (case.state == null) assertNotNull("Unpaired Home must retain manual pairing", findText(root, "Manual pair"))
                 assertEquals("Recent heading must match available activity", case.highActivity, findText(root, "Recent") != null)
                 capture(activity, case.id)
                 if (case.highActivity) {
@@ -213,28 +214,26 @@ class HomeVisualReviewTest {
                     val tools = if (case.compact) clickableAncestor(findText(root, case.name))
                         else findText(root, "Connection details") ?: findText(root, "More")
                     assertNotNull("Missing accessible More action", tools)
-                    val action = clickableAncestor(findText(root, "Disconnect"))
-                    assertNotNull("Missing independent Disconnect action", action)
-                    val bounds = Rect()
-                    action!!.getBoundsInScreen(bounds)
-                    assertTrue("Disconnect target must remain at least 48 dp",
-                        bounds.height() >= (48 * activity.resources.displayMetrics.density).toInt())
-                    assertTrue(action.performAction(AccessibilityNodeInfo.ACTION_CLICK))
-                    runner.waitForIdleSync()
-                    assertEquals(1, disconnects.get())
+                    assertNull("Connected summaries keep transport Disconnect in Devices",
+                        findText(root, "Disconnect"))
+                    assertEquals(0, disconnects.get())
                     assertEquals(0, details.get())
                     val device = clickableAncestor(findText(runner.uiAutomation.rootInActiveWindow, case.name))
                     assertNotNull("Device name row must be actionable", device)
-                    assertTrue(device!!.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+                    val bounds = Rect()
+                    device!!.getBoundsInScreen(bounds)
+                    assertTrue("Device details keeps a 48 dp touch target",
+                        bounds.height() >= (48 * activity.resources.displayMetrics.density).toInt())
+                    assertTrue(device.performAction(AccessibilityNodeInfo.ACTION_CLICK))
                     runner.waitForIdleSync()
                     assertEquals(1, details.get())
-                    assertEquals(1, disconnects.get())
+                    assertEquals(0, disconnects.get())
                 }
             } finally {
                 runner.runOnMainSync { activity.finish() }
                 runner.waitForIdleSync()
             }
-        }
+        } }
     }
 
     private fun clickableAncestor(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {

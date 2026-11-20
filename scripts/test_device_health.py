@@ -2,11 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Unit tests for scripts/check-device-health.py."""
 
-import io
 import json
 from pathlib import Path
-import subprocess
-import sys
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
@@ -57,6 +54,22 @@ class DeviceHealthTests(unittest.TestCase):
     def test_parse_battery_info_missing_fields(self):
         with self.assertRaises(ValueError):
             device_health.parse_battery_info("no data")
+
+    def test_invalid_battery_scale_and_nonfinite_guardrails_fail_closed(self):
+        for output in ("level: 1\nscale: 0\ntemperature: 290\n",
+                       "level: 101\nscale: 100\ntemperature: 290\n"):
+            with self.subTest(output=output), self.assertRaises(ValueError):
+                device_health.parse_battery_info(output)
+        for guardrails in ({"min_battery_percent": float("nan")},
+                           {"max_temperature_celsius": float("inf")},
+                           {"min_battery_percent": True},
+                           {"min_battery_percent": 101}):
+            with self.subTest(guardrails=guardrails), \
+                 patch.object(device_health, "load_inventory", return_value={"guardrails": guardrails}), \
+                 patch.object(device_health, "find_adb") as adb:
+                with self.assertRaises(ValueError):
+                    device_health.check_health(serial="TEST_SERIAL")
+                adb.assert_not_called()
 
     def test_load_inventory_fallback(self):
         non_existent = Path("/non/existent/inventory.json")

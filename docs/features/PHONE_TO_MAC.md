@@ -29,7 +29,7 @@ After the Mac accepts the session, the phone trackpad sends pointer movement, cl
 
 ## Session and interruption behavior
 
-Only one accepted BLE session is active at a time. The phone sends `release-all` before `stop`, and the Mac receiver also releases held input locally on channel loss, capture loss or shutdown. Leaving the Mac remote-control page or pausing aniCe stops input but does not directly disconnect the shared Bluetooth link. The sender uses a bounded ordered queue, reserves room for terminal release messages and stops with visible status if discrete input cannot be queued; it never retries text automatically.
+Only one accepted BLE session is active at a time. The phone sends `release-all` before `stop`, and the Mac receiver also releases held input locally on channel loss, capture loss or shutdown. Leaving Control Mac on Android stops input without directly disconnecting Bluetooth. Mac Settings → Permissions provides Stop receiving; leaving Settings is not a receiver toggle. Pausing connections retires the shared channel and releases input. The sender uses a bounded ordered queue, reserves room for terminal release messages and stops with visible status if discrete input cannot be queued; it never retries text automatically.
 
 See the [Phone-to-Mac v1 contract](../../protocol/phone-input/README.md) for message bounds and lifecycle details.
 

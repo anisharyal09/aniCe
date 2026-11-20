@@ -124,7 +124,7 @@ import Observation
       guard live(descriptor), alerts[key]?.identifier == identifier else {
         link.history.processing = nil; return
       }
-      let result = await notifier.post(identifier: identifier, peerName: descriptor.peer.deviceName)
+      let result = await notifier.post(identifier: identifier, peerName: descriptor.peer.displayName)
       link.history.processing = nil
       expire()
       guard live(descriptor), alerts[key]?.identifier == identifier else {

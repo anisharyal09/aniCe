@@ -35,6 +35,7 @@ struct AniCeApp: App {
   @State private var navigation: ConnectionNavigation
   @State private var hotkeyManager: GlobalHotkeyManager?
   @State private var servicesStarted = false
+  @State private var comparisonPresenter: MacComparisonPresenter?
 
   init() {
     precondition(MacAppStorage.isPreview == (Bundle.main.bundleIdentifier == MacAppStorage.previewBundleIdentifier),
@@ -146,10 +147,16 @@ struct AniCeApp: App {
     session.connectionClockChanged = { [weak connectionPause] in connectionPause?.reconcileTime() }
     lan.onNetworkReturn = { [weak session] in session?.reconcileConnectionPause() }
     let features=FeatureDispatch()
+    if !IdentityView.isTesting {
+      PeerNames.shared.configure(identity: identity.service, trust: { try await pairing.sessionStore() })
+    }
+    identity.onRename = { PeerNames.shared.refresh() }
+    features.register(PeerNames.shared)
     features.applicationActivity = { [weak lan] descriptor, bytes in
       if (try? MacConnectionPauseMessage.decode(bytes)) == nil { lan?.onApplicationActivity(descriptor, bytes) }
     }
     features.register(lan.rendezvous)
+    features.register(MacCompanionSetup(advertising: { radio.setCompanionSetupAdvertising($0) }))
     features.register(playback)
     features.register(transfer)
     features.register(findDevice)
@@ -185,6 +192,10 @@ struct AniCeApp: App {
     session.applicationDataReceived = { [weak session] bytes in await features.handle(bytes,transport:"ble",instance:session?.channelToken) != .unrecognized }
     lan.applicationDataReceived = { [weak lan] bytes in await features.handle(bytes,transport:"lan",instance:lan?.channelToken) != .unrecognized }
     Self.configureSessionLifecycle(session: session, pairing: pairing, discovery: discovery)
+    pairing.nearbyAvailabilityChanged = { [weak pairing, weak session] in
+      guard session?.allowing == false else { return }
+      pairing?.ensureNearbyAvailable()
+    }
     pairing.onNewPeerPaired = { peer in
       transfer.autoReceivePreferences.enableForNewPeer(peer)
     }
@@ -198,6 +209,7 @@ struct AniCeApp: App {
       if !navigation.automaticAfterPairing { session.allow() }
     }
     pairing.trustRemoved = {
+      PeerNames.shared.invalidate()
       connectionPause.clear()
       transfer.invalidate()
       session.retireTrust(); lan.cancel(); clipboard.invalidate(); sms.invalidate()
@@ -211,6 +223,7 @@ struct AniCeApp: App {
       }
     }
     identity.onIdentityReset = {
+      PeerNames.shared.invalidate()
       connectionPause.clear()
       dndSync.removeSelections()
       transfer.invalidate()
@@ -238,6 +251,11 @@ struct AniCeApp: App {
     guard !IdentityView.isTesting else { return }
     clipboard.installLifecycle()
     session.restoreAutomatic()
+    comparisonPresenter = MacComparisonPresenter(model: pairing) {
+      // Keep comparison in the normal window rather than introducing a second cancellable sheet.
+      navigation.show(.devices)
+      delegate.openMainFromCompanion()
+    }
     MacUpdateModel.shared.startAutomaticChecks()
     PasteTrayController.shared.setup(model: clipboard)
     edgeDrop.start()
@@ -246,6 +264,8 @@ struct AniCeApp: App {
     hotkey.onToggleKeyboard = { [weak floatingKeyboard] in floatingKeyboard?.toggleVisibility() }
     hotkeyManager = hotkey
     delegate.onTerminate = {
+      pairing.cancel()
+      comparisonPresenter?.hide()
       MacUpdateModel.shared.stopAutomaticChecks()
       findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); notificationMirrorNotifier.clearAll()
       floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); phonePower.shutdown(); edgeDrop.shutdown(); deskDeck.shutdown(); dndSync.shutdown()

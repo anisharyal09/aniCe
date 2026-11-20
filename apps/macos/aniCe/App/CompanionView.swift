@@ -187,7 +187,9 @@ struct CompanionView: View {
       if pairing.active {
         Text(pairing.status).fixedSize(horizontal: false, vertical: true)
         Button("Review pairing") { navigation.open(.devices, route: .pairing, present: openMain) }
-        Button("Stop pairing") { pairing.cancel() }
+        Button(pairing.nearbyEnabled ? "Pause nearby pairing" : "Stop pairing") {
+          if pairing.nearbyEnabled { pairing.pauseNearby() } else { pairing.cancel() }
+        }
       } else if session.allowing || lan.allowing || pairing.hasTrustedAndroid {
         MacSessionView(peers: pairing.peers, model: session, lan: lan, connectionPause: connectionPause, phonePower: phonePower,
           details: .constant(false), diagnostics: .constant(false), compact: true, keyboardTrackpad: keyboardTrackpad,

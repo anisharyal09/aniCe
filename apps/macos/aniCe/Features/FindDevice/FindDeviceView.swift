@@ -50,11 +50,11 @@ struct FindDeviceView: View {
         let feedbackForPeer = model.feedbackPeer == record.peer && model.feedbackKey != "find_idle"
         VStack(alignment: .leading, spacing: 4) {
           HStack {
-            Text(record.peer.deviceName).fixedSize(horizontal: false, vertical: true)
+            Text(record.peer.displayName).fixedSize(horizontal: false, vertical: true)
             Spacer()
             Button(MacFindDeviceNotifier.text("find_title")) { model.find(record.peer) }
               .disabled(!model.canFind(record.peer)).buttonStyle(.bordered).aniCeControlFeedback().fixedSize()
-              .accessibilityLabel(String(format: MacFindDeviceNotifier.text("find_peer_action"), record.peer.deviceName))
+              .accessibilityLabel(String(format: MacFindDeviceNotifier.text("find_peer_action"), record.peer.displayName))
           }
           if feedbackForPeer {
             Text(MacFindDeviceNotifier.text(model.feedbackKey)).font(.caption)
@@ -70,7 +70,7 @@ struct FindDeviceView: View {
         Divider()
       }
       if let peer = model.feedbackPeer, model.feedbackKey != "find_idle", !peers.contains(where: { $0.peer == peer }) {
-        Text(peer.deviceName).font(.caption)
+        Text(peer.displayName).font(.caption)
         Text(MacFindDeviceNotifier.text(model.feedbackKey)).font(.caption)
           .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       }
