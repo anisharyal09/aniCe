@@ -6,64 +6,30 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Added
 
-- Define capability-gated Foreground companion setup v1 over secured BLE DATA:
-  sixty-second generic advertising, current-credential/channel/locator scoping,
-  native single-device approval and cancellation fences; no new trust or
-  bonding.
-- Define Device Names v1 capability-gated revision/name reports over existing
-  secured DATA, with no identity credential changes, connection leases or
-  transmitted aliases.
-- Define provisional method-3 committed P-256 numeric comparison, uniform
-  six-digit derivation, salted identity openings after mutual confirmation and
-  existing trust receipts; add independent shared vectors and optional discovery
-  flag `0x0001`. Older journal readers cannot load method-3 evidence; QR/PIN
-  wire formats remain unchanged.
-- Document nearby discovery lifetime, foreground ownership, generic prompts,
-  RSSI policy and manual fallback for the provisional SAS profile.
-- Add ignorable rendezvous-v2 user-demand state 5 for bounded file-action
-  recovery after transport-only Disconnect; v1 peers keep ordinary state 4
-  behavior.
-- Define ignorable Connection Pause v1 DATA notices for bounded pre-teardown
-  peer presentation, with independent shared fixtures and no remote preference
-  mutation.
-- Define backward-compatible LAN rendezvous v2 direct IPv4 locators and LAN
-  renewal v1 authenticated drain barriers, retaining frame profiles,
-  fresh-session cryptography and legacy expiry.
+- Define capability-gated Foreground companion setup v1 over secured BLE DATA: sixty-second generic advertising, current-credential/channel/locator scoping, native single-device approval and cancellation fences; no new trust or bonding.
+- Define Device Names v1 capability-gated revision/name reports over existing secured DATA, with no identity credential changes, connection leases or transmitted aliases.
+- Define provisional method-3 committed P-256 numeric comparison, uniform six-digit derivation, salted identity openings after mutual confirmation and existing trust receipts; add independent shared vectors and optional discovery flag `0x0001`. Older journal readers cannot load method-3 evidence; QR/PIN wire formats remain unchanged.
+- Document nearby discovery lifetime, foreground ownership, generic prompts, RSSI policy and manual fallback for the provisional SAS profile.
+- Add ignorable rendezvous-v2 user-demand state 5 for bounded file-action recovery after transport-only Disconnect; v1 peers keep ordinary state 4 behavior.
+- Define ignorable Connection Pause v1 DATA notices for bounded pre-teardown peer presentation, with independent shared fixtures and no remote preference mutation.
+- Define backward-compatible LAN rendezvous v2 direct IPv4 locators and LAN renewal v1 authenticated drain barriers, retaining frame profiles, fresh-session cryptography and legacy expiry.
 
 ### Changed
 
-- Verify every fixture generator configuration, including SAS, notification,
-  Phone-to-Mac and LAN profile 4; run independent crypto-oracle regressions with
-  patched CBOR tooling. Correct schema-invalid SAS sample identities and their
-  derived vectors; all other fixture bytes and cryptographic parameters remain
-  unchanged.
-- Correct the contract index, optional caller-ID description and PAKE bridge's
-  64-byte SHA-512 session-key documentation; retain native 32-byte HKDF bootstrap.
-- Require the same authenticated single-Mac companion enrollment for all pairing
-  methods and explicit Auto connect; older peers keep manual connections.
-- Bound native post-SAS locator handoff and pre-authentication profile waits,
-  require current-subscription retirement and clarify first-launch permission
-  behavior.
-- Define LAN-specific ten-second PING/PONG budgets, generation-scoped peer-state
-  verification and elapsed background-idle deadlines; session control bytes and
-  BLE liveness remain unchanged.
-- Distinguish attempt cancellation from a Disconnect pause, require immediate
-  closure of unfinished pause admission and exclude pause metadata from
-  automatic LAN demand.
-- Distinguish aniCe's legacy multicast lock from native NSD multicast ownership;
-  wire bytes and discovery budgets are unchanged.
-- Clarify direct-first manual candidate selection, authenticated locator trust
-  boundaries, companion-media LAN ownership and retained-socket renewal in
-  protocol indexes and ADR references.
-- Exclude bounded negotiated LAN maintenance from transfer transport waits while
-  preserving fixed offer, recovery and security deadlines.
+- Verify every fixture generator configuration, including SAS, notification, Phone-to-Mac and LAN profile 4; run independent crypto-oracle regressions with patched CBOR tooling. Correct schema-invalid SAS sample identities and their derived vectors; all other fixture bytes and cryptographic parameters remain unchanged.
+- Correct the contract index, optional caller-ID description and PAKE bridge's 64-byte SHA-512 session-key documentation; retain native 32-byte HKDF bootstrap.
+- Require the same authenticated single-Mac companion enrollment for all pairing methods and explicit Auto connect; older peers keep manual connections.
+- Bound native post-SAS locator handoff and pre-authentication profile waits, require current-subscription retirement and clarify first-launch permission behavior.
+- Define LAN-specific ten-second PING/PONG budgets, generation-scoped peer-state verification and elapsed background-idle deadlines; session control bytes and BLE liveness remain unchanged.
+- Distinguish attempt cancellation from a Disconnect pause, require immediate closure of unfinished pause admission and exclude pause metadata from automatic LAN demand.
+- Distinguish aniCe's legacy multicast lock from native NSD multicast ownership; wire bytes and discovery budgets are unchanged.
+- Clarify direct-first manual candidate selection, authenticated locator trust boundaries, companion-media LAN ownership and retained-socket renewal in protocol indexes and ADR references.
+- Exclude bounded negotiated LAN maintenance from transfer transport waits while preserving fixed offer, recovery and security deadlines.
 
 ### Fixed
 
-- Clarify separate bounded companion capability/ack waits and capacity-driven
-  pre-seal retries without changing wire bytes or replaying submitted requests.
-- Clarify same-attempt comparison presentation and stop anonymous availability
-  during occupied pairing admission or cooldown without changing SAS wire bytes.
+- Clarify separate bounded companion capability/ack waits and capacity-driven pre-seal retries without changing wire bytes or replaying submitted requests.
+- Clarify same-attempt comparison presentation and stop anonymous availability during occupied pairing admission or cooldown without changing SAS wire bytes.
 
 ## [v0.9.0-beta.3]
 
@@ -71,73 +37,37 @@ Protocol updates accompanying v0.9.0-beta.3.
 
 ### Added
 
-- Add bounded kind 9 Android source-app PNG records, preserving the existing
-  notification record and unknown-kind compatibility behavior.
-- Define Notification Mirroring v1 inside authenticated DATA, with bounded
-  selected-app updates, optional incoming-call notifications, high-water
-  snapshots, revision-bound actions, dismissal sync and shared positive/negative
-  CBOR fixtures.
-- Define Desk Deck v5 output selection, with a bounded revisioned catalog and
-  opaque device IDs.
-- Define a Desk Deck v4 action for a locally selected Do Not Disturb Shortcut
-  while preserving v1–v3 message shapes.
-- Add Desk Deck v2 catalog revision announcements so an open phone panel reloads
-  approved apps after Mac-side edits.
-- Define Mac Desk Deck v2 with backward-compatible v1 support, richer memory and
-  Mac power samples, five-second subscription renewal and fifteen-second expiry,
-  bounded paged app catalogs and opaque approved-app launch IDs.
-- Define Device Power v1 for phone charging state and percentage on existing Mac
-  device surfaces over secured DATA, without opening or renewing a connection
-  lease.
+- Add bounded kind 9 Android source-app PNG records, preserving the existing notification record and unknown-kind compatibility behavior.
+- Define Notification Mirroring v1 inside authenticated DATA, with bounded selected-app updates, optional incoming-call notifications, high-water snapshots, revision-bound actions, dismissal sync and shared positive/negative CBOR fixtures.
+- Define Desk Deck v5 output selection, with a bounded revisioned catalog and opaque device IDs.
+- Define a Desk Deck v4 action for a locally selected Do Not Disturb Shortcut while preserving v1–v3 message shapes.
+- Add Desk Deck v2 catalog revision announcements so an open phone panel reloads approved apps after Mac-side edits.
+- Define Mac Desk Deck v2 with backward-compatible v1 support, richer memory and Mac power samples, five-second subscription renewal and fifteen-second expiry, bounded paged app catalogs and opaque approved-app launch IDs.
+- Define Device Power v1 for phone charging state and percentage on existing Mac device surfaces over secured DATA, without opening or renewing a connection lease.
 - Add shared positive and negative Desk Deck and Device Power wire fixtures.
-- Define Phone-to-Mac input v1 over authenticated BLE DATA, with phone-started
-  sessions gated by Mac Event Posting, Unicode text separate from key
-  transitions, bounded motion coalescing, fail-safe release and Mac-to-phone
-  session-ended notices.
-- Define Classic HID keyboard, restricted Back/Home consumer and mouse reports;
-  retain a neutral ninth keyboard byte for cached composite-descriptor
-  compatibility and eight-byte boot keyboard payloads.
-- Extend Clipboard v1 with an explicit open-link begin mode and a Mac capability
-  message; retain the existing bounded fragments, result cache and
-  cross-transport retry.
+- Define Phone-to-Mac input v1 over authenticated BLE DATA, with phone-started sessions gated by Mac Event Posting, Unicode text separate from key transitions, bounded motion coalescing, fail-safe release and Mac-to-phone session-ended notices.
+- Define Classic HID keyboard, restricted Back/Home consumer and mouse reports; retain a neutral ninth keyboard byte for cached composite-descriptor compatibility and eight-byte boot keyboard payloads.
+- Extend Clipboard v1 with an explicit open-link begin mode and a Mac capability message; retain the existing bounded fragments, result cache and cross-transport retry.
 
 ### Changed
 
-- Clarify transfer status channel/job binding, bounded notification revision
-  retention and current profile-4 benchmark selection; wire layouts and
-  cryptographic parameters are unchanged.
-- Align the protocol index with LAN revision 3, Desk Deck v5 and the native BLE
-  transfer window; wire formats and negotiated limits are unchanged.
-- Extend Device Power v1 publication to Mac while retaining the existing wire
-  shape and older-peer behavior.
-- Document the optional connection-check reply and compatibility with older
-  peers.
-- Document synthetic SIM call records and revision-bound Telecom actions; the v1
-  wire shape is unchanged.
-- Document the LAN-only delivery rule for additive source-icon records and
-  supported incoming call detection.
-- Enable incoming-call mirroring by default while preserving saved choices;
-  Notification Access remains required.
-- Limit DND state events to phone-to-Mac over existing secured DATA; keep the v1
-  envelope unchanged.
-- Specify that Desk Deck DND action success means the selected Shortcut command
-  finished, not that Focus state was read back.
-- Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with
-  an eight-chunk maximum window; retain legacy Android LAN profiles and
-  standard/BLE bounds.
+- Clarify transfer status channel/job binding, bounded notification revision retention and current profile-4 benchmark selection; wire layouts and cryptographic parameters are unchanged.
+- Align the protocol index with LAN revision 3, Desk Deck v5 and the native BLE transfer window; wire formats and negotiated limits are unchanged.
+- Extend Device Power v1 publication to Mac while retaining the existing wire shape and older-peer behavior.
+- Document the optional connection-check reply and compatibility with older peers.
+- Document synthetic SIM call records and revision-bound Telecom actions; the v1 wire shape is unchanged.
+- Document the LAN-only delivery rule for additive source-icon records and supported incoming call detection.
+- Enable incoming-call mirroring by default while preserving saved choices; Notification Access remains required.
+- Limit DND state events to phone-to-Mac over existing secured DATA; keep the v1 envelope unchanged.
+- Specify that Desk Deck DND action success means the selected Shortcut command finished, not that Focus state was read back.
+- Add LAN revision 3/profile 4 and transfer capability 4 for 512-KiB chunks with an eight-chunk maximum window; retain legacy Android LAN profiles and standard/BLE bounds.
 
 ### Fixed
 
-- Add negotiated Desk Deck v3 memory fields while preserving v1/v2 sample
-  formats.
-- Reject stale v2 app-catalog revisions and obsolete Desk Deck messages; allow
-  unknown battery percentages without manufacturing values.
-- Reconcile background LAN eligibility with companion media leases and
-  configured idle timeout; clarify uncertain SMS duplicate protection when one
-  transport retires.
-- Carry the existing snapshot artwork hash over BLE as well as LAN; keep decoded
-  artwork only for the current recording/subscription and keep image chunks
-  LAN-only.
+- Add negotiated Desk Deck v3 memory fields while preserving v1/v2 sample formats.
+- Reject stale v2 app-catalog revisions and obsolete Desk Deck messages; allow unknown battery percentages without manufacturing values.
+- Reconcile background LAN eligibility with companion media leases and configured idle timeout; clarify uncertain SMS duplicate protection when one transport retires.
+- Carry the existing snapshot artwork hash over BLE as well as LAN; keep decoded artwork only for the current recording/subscription and keep image chunks LAN-only.
 
 ## [v0.3.0] — development milestone
 

@@ -23,15 +23,9 @@ Reject any length other than 20 and versions other than 1. All flag bits are opt
 
 The Mac creates a fresh nonce per start, rotates every 30 seconds during its 120-second active window, and erases it on stop. The dynamic characteristic permits unencrypted reads only, no writes or notifications. Reads validate the active deadline and characteristic; offsets 0–20 are valid (20 returns empty), larger offsets fail. Serving a read takes one immutable payload snapshot.
 
-The separate [nearby pairing availability](PROXIMITY.md) owner can retain this
-anonymous payload without an invitation cutoff while awake/unlocked and eligible.
-Flag `0x0001` offers [pairing method 3](../pairing/SAS.md) only; it is unauthenticated
-capability information and cannot establish trust. Explicit compatibility
-discovery and QR/PIN retain their original bounds and zero flags.
+The separate [nearby pairing availability](PROXIMITY.md) owner can retain this anonymous payload without an invitation cutoff while awake/unlocked and eligible. Flag `0x0001` offers [pairing method 3](../pairing/SAS.md) only; it is unauthenticated capability information and cannot establish trust. Explicit compatibility discovery and QR/PIN retain their original bounds and zero flags.
 
-After fresh trusted BLE readiness, [foreground companion enrollment](COMPANION_SETUP.md)
-can briefly advertise this same generic service while its application slot stays
-occupied. The OS approval supplies a locator/background lease, not trust.
+After fresh trusted BLE readiness, [foreground companion enrollment](COMPANION_SETUP.md) can briefly advertise this same generic service while its application slot stays occupied. The OS approval supplies a locator/background lease, not trust.
 
 Android scans for 15 seconds using the service filter, selects a temporary candidate, stops scanning, connects, discovers the assigned readable characteristic, reads and validates, then disconnects/closes. The connection/read deadline is 15 seconds with up to 2 additional seconds for cleanup. Successful validation proves only that the connected endpoint returned this format.
 

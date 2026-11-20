@@ -581,6 +581,43 @@ final class PairingSasTests: XCTestCase, @unchecked Sendable {
     XCTFail("Expected nearby pairing state did not arrive")
   }
 
+  @MainActor func testNearbyBluetoothOffGuidanceSurvivesCleanupAndExplicitRetry() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "anice-nearby-radio-copy-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = try PeerTrustStore(url: directory.appendingPathComponent("trust.json"))
+    let identity = IdentityService(storage: PairingMemoryIdentity(), deviceName: "Test Mac", tagPrefix: "test.")
+    let radio = Radio()
+    let discovery = MacDiscoveryModel(adapter: radio)
+    var locked = false
+    let model = MacPairingModel(identity: identity, discovery: discovery, makeStore: { store },
+      isScreenLocked: { locked })
+    defer { model.cancel() }
+    model.start(.sas)
+    try await waitFor { model.phase == "nearby" }
+    let event = try XCTUnwrap(radio.event)
+    event(.off)
+    XCTAssertFalse(model.active)
+    XCTAssertEqual(model.phase, "failed")
+    XCTAssertEqual(model.nearbyRecovery, .bluetoothSettings)
+    XCTAssertTrue(model.nearbyNeedsSettings)
+    XCTAssertTrue(model.nearbySetupDetail.contains("Bluetooth is off on this Mac."))
+    XCTAssertTrue(model.nearbySetupDetail.contains("Find nearby again"))
+    XCTAssertFalse(discovery.session.active)
+    XCTAssertNil(radio.pairingWrite)
+    XCTAssertEqual(discovery.session.recovery, .none, "Cleanup retires the native discovery error")
+    locked = true
+    model.resumeNearby()
+    XCTAssertTrue(model.nearbySetupDetail.contains("Bluetooth is off on this Mac."),
+      "Explicit retry must not hide the cause before a new owner can start")
+    locked = false
+    model.resumeNearby()
+    try await waitFor { model.phase == "nearby" }
+    XCTAssertEqual(model.nearbyRecovery, .none)
+    XCTAssertFalse(model.nearbyNeedsSettings)
+    XCTAssertFalse(model.nearbySetupDetail.contains("Bluetooth is off"))
+  }
+
   @MainActor private func renderComparison(_ model: MacPairingModel) throws {
     XCTAssertNotNil(NSImage(systemSymbolName: "smartphone", accessibilityDescription: nil))
     let name = "aniCe.ComparisonRender.\(UUID())"

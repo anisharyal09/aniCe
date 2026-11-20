@@ -34,6 +34,8 @@ import kotlinx.coroutines.*
 internal enum class CompanionSetupPhase {
     READY, CONNECTING, PERMISSION, PREPARING, APPROVAL, SAVING, FAILED;
     val busy get() = this !in listOf(READY, FAILED)
+    // Android owns the visible scan/approval progress once its IntentSender is claimed.
+    val showsProgress get() = busy && this != APPROVAL
 }
 
 /** One UI launch per attempt, independent of recomposition, focus and activity recreation. */

@@ -28,6 +28,13 @@ class CompanionSettingsTests {
       assertEquals(phase !in idle, phase.busy)
     }
   }
+  @Test fun nativeApprovalOwnsProgressWithoutReleasingTheBusyGate() {
+    assertTrue(CompanionSetupPhase.APPROVAL.busy)
+    assertFalse(CompanionSetupPhase.APPROVAL.showsProgress)
+    for (phase in CompanionSetupPhase.entries) {
+      assertEquals(phase.busy && phase != CompanionSetupPhase.APPROVAL, phase.showsProgress)
+    }
+  }
   @Test fun settingsBelongToTheDisplayedRelationship() {
     val a = DeviceIdentity("00000000-0000-4000-8000-000000000001", "Mac A", "macos", "", "11".repeat(32))
     val b = a.copy(deviceId = "00000000-0000-4000-8000-000000000002", deviceName = "Mac B")

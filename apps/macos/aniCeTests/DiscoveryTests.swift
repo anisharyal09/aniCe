@@ -105,6 +105,19 @@ final class DiscoveryTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(r.session.recovery, .permissionSettings)
         r.session.start(); r.fake.event(.unsupported); XCTAssertEqual(r.session.recovery, .unsupported)
     }
+    @MainActor func testBluetoothOffCopyIdentifiesTheMacAndTheRetryAction() async {
+        for nearby in [false, true] {
+            let r = Rig()
+            r.session.start(nearbyAvailability: nearby)
+            r.fake.event(.off)
+            XCTAssertEqual(r.session.state, .bluetoothOff)
+            XCTAssertEqual(r.session.recovery, .bluetoothSettings)
+            XCTAssertTrue(r.session.message.contains("Bluetooth is off on this Mac."))
+            XCTAssertTrue(r.session.message.contains("System Settings → Bluetooth"))
+            XCTAssertEqual(r.session.message.contains("Find nearby again"), nearby)
+            XCTAssertFalse(r.session.active)
+        }
+    }
     @MainActor func testStaleCallbacksAndCancelCannotRestartAdvertising() async {
         let r = Rig(); r.session.start(); let oldEvent = r.fake.event; let oldRead = r.fake.reader
         r.session.start(); oldEvent(.available); oldEvent(.advertising)

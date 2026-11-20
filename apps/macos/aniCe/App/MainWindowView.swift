@@ -153,12 +153,14 @@ struct MainWindowView: View {
         HStack(spacing: 12) {
           VStack(alignment: .leading, spacing: 4) {
             Text("Nearby setup").font(.subheadline.weight(.medium))
-            Text(pairing.nearbyEnabled ? pairing.status :
-              "Let aniCe on your Android phone discover this Mac.")
+            Text(pairing.nearbySetupDetail)
               .font(.caption).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
           Spacer()
-          if discovery.session.recovery == .permissionSettings ||
+          if pairing.nearbyNeedsSettings {
+            Button("Open Settings", action: pairing.openNearbySettings)
+              .buttonStyle(AniCeButtonStyle())
+          } else if discovery.session.recovery == .permissionSettings ||
               discovery.session.recovery == .bluetoothSettings {
             Button("Open Settings", action: discovery.openSettings)
               .buttonStyle(AniCeButtonStyle())

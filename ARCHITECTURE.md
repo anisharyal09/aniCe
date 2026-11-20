@@ -19,21 +19,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 
 - **QR Pairing:** Ephemeral P-256 ECDH with a 256-bit PSK and SHA-256 identity fingerprint commitment. Android scans the Mac's invitation using CameraX/ZXing.
 - **Manual 6-Digit PIN Pairing:** Password-Authenticated Key Exchange (PAKE) powered by an isolated, in-memory [OPAQUE bridge](core/rust/pairing/README.md) (`opaque-ke 4.0.1`, Argon2id).
-- **Nearby Numeric Comparison:** Anonymous Mac availability and foreground Android
-  RSSI-filtered discovery hand one unambiguous or explicitly selected candidate
-  to the shared pairing owner; dismissed/verification-failed attempts require explicit retry.
-  Pre-authentication transport failure has bounded foreground discovery recovery.
-  [Method 3 SAS](protocol/pairing/SAS.md) commits P-256 ephemerals, random nonces and
-  salted identities before reveal; both screens compare six digits and confirm.
-  Identity disclosure/proofs follow mutual comparison, then existing signed trust
-  receipts activate local trust. The native Mac floating/in-app card shares one
-  attempt. First foreground connection uses fresh EDHOC; Android companion setup
-  is offered afterward. A capability-gated, sixty-second
-  [companion setup window](protocol/bluetooth/COMPANION_SETUP.md) filters native
-  approval to the currently authenticated Mac without reopening its occupied BLE
-  slot or creating trust. Nearby, QR/PIN and explicit Auto connect share this
-  authenticated enrollment path; no broad native device chooser precedes it.
-  The application profile is provisional and not audited.
+- **Nearby Numeric Comparison:** Anonymous Mac availability and foreground Android RSSI-filtered discovery hand one unambiguous or explicitly selected candidate to the shared pairing owner; dismissed/verification-failed attempts require explicit retry. Pre-authentication transport failure has bounded foreground discovery recovery. [Method 3 SAS](protocol/pairing/SAS.md) commits P-256 ephemerals, random nonces and salted identities before reveal; both screens compare six digits and confirm. Identity disclosure/proofs follow mutual comparison, then existing signed trust receipts activate local trust. The native Mac floating/in-app card shares one attempt. First foreground connection uses fresh EDHOC; Android companion setup is offered afterward. A capability-gated, sixty-second [companion setup window](protocol/bluetooth/COMPANION_SETUP.md) filters native approval to the currently authenticated Mac without reopening its occupied BLE slot or creating trust. Nearby, QR/PIN and explicit Auto connect share this authenticated enrollment path; no broad native device chooser precedes it. The application profile is provisional and not audited.
 - **Mutual Approval:** Both devices require explicit on-screen approval before local trust activation. Each device persists its own journal atomically; completion across devices is not a distributed atomic transaction.
 - **Specifications & Decisions:** Full protocol flow, wire framing, and state machines are documented in the [Pairing Protocol Contract](protocol/pairing/README.md), recorded in [ADR 0003 (Pairing & Trust)](docs/decisions/0003-provisional-pairing-and-trust.md), and verified by [`pairing-vectors.json`](protocol/test-vectors/pairing-vectors.json).
 
@@ -50,10 +36,7 @@ Pairing and transport owners share identity and trust services. BLE and LAN reus
 
 ## Independent BLE & LAN Transports
 
-- **BLE Transport:** Unauthenticated 20-byte compatibility discovery and bounded GATT v2 session framing. Mac is peripheral; Android is central. Opt-in Android companion ownership supplies background BLE lifetime on supported API 31+ platforms in Debug and Release.
-  Already-secured manual Android BLE retains a fifteen-second monotonic activity
-  handoff grace; return does not reconnect or enable automation. Lock and explicit
-  Disconnect still retire unowned access immediately.
+- **BLE Transport:** Unauthenticated 20-byte compatibility discovery and bounded GATT v2 session framing. Mac is peripheral; Android is central. Opt-in Android companion ownership supplies background BLE lifetime on supported API 31+ platforms in Debug and Release. Already-secured manual Android BLE retains a fifteen-second monotonic activity handoff grace; return does not reconnect or enable automation. Lock and explicit Disconnect still retire unowned access immediately.
   - Contract: [BLE Discovery Wire Format](protocol/bluetooth/README.md)
   - Lifecycle: [Background BLE Connections](docs/BACKGROUND_CONNECTIONS.md)
   - Decisions: [ADR 0002 (BLE Discovery)](docs/decisions/0002-provisional-ble-discovery.md) · [ADR 0004 (GATT Layout)](docs/decisions/0004-stable-ble-attribute-layout.md)
@@ -105,12 +88,7 @@ Profile 4 reserves a 524,416-byte authenticated plaintext budget for each transf
 
 ## Application DATA and source organization
 
-Device-owned name metadata uses [Device Names v1](protocol/device-names/README.md)
-over existing secured DATA. One platform-native PeerNames owner persists local
-publication revisions, peer name floors and credential-scoped private nicknames
-separately from immutable trust evidence. Ordinary current-peer surfaces resolve
-the latest device name unless Use nickname is enabled. Rename never starts a
-connection or changes EDHOC credentials; offline edits publish on reconnection.
+Device-owned name metadata uses [Device Names v1](protocol/device-names/README.md) over existing secured DATA. One platform-native PeerNames owner persists local publication revisions, peer name floors and credential-scoped private nicknames separately from immutable trust evidence. Ordinary current-peer surfaces resolve the latest device name unless Use nickname is enabled. Rename never starts a connection or changes EDHOC credentials; offline edits publish on reconnection.
 
 Application-scoped BLE/LAN owners and nearby presence policy live under Connections. Native Bluetooth/LAN adapters and Session cryptography remain separate. Android companion service keeps its installed identity; setup uses one retained feature model in the normal app shell, with no separate setup activity. Existing identity, association and appearance persistence keys remain unchanged.
 
@@ -159,7 +137,7 @@ Official artifacts are `aniCe-android.apk` and `aniCe-mac.zip` for Apple Silicon
 
 GitHub update discovery is separate from peer networking. It uses bounded HTTPS metadata/downloads, conditional requests, retry spacing and an Atom fallback on rate limiting. Stable releases are the default; beta discovery is opt-in even when running a beta. Downloads are restricted to GitHub hosts and expected asset paths. Metadata does not authorize installation: Android checks package/version/signing lineage and uses the system confirmation flow; Mac checks archive paths, bundle identity/version, arm64 code and pinned leaf certificates.
 
-Automatic checks use a 19:30 Nepal-time deadline (UTC+05:45), persisted successful-check timestamps and event-driven catch-up. Android uses a persisted, network-constrained native job; Mac uses one deadline timer plus network, wake and activation events while its process runs. Failed and cancelled attempts never advance the successful-check timestamp; failures retain existing backoff. Silent background notifications reuse granted permissions, retain separate stable/prerelease version floors across restarts and preference changes, and open review rather than installation.
+Automatic checks are enabled by default with a saved device-local opt-out under Settings → Updates → More options; disabling cancels automatic metadata work and native scheduling/observation without cancelling manual checks, downloads or installation. Beta preference changes do not fetch metadata while automatic checks are off. Enabled checks use a 19:30 Nepal-time deadline (UTC+05:45), persisted successful-check timestamps and event-driven catch-up. Android uses a persisted, network-constrained native job; Mac uses one deadline timer plus network, wake and activation events while its process runs. Failed and cancelled attempts never advance the successful-check timestamp; failures retain existing backoff. Silent background notifications reuse granted permissions, retain separate stable/prerelease version floors across restarts and preference changes, and open review rather than installation.
 
 Mac installation stages beside the destination and uses a separately signed helper with a nonce-bound record. Atomic bundle exchange retains the previous app until the new main window confirms startup. Failed launch or startup timeout attempts rollback and relaunch; failed exchange retains staging for recovery. Current Mac releases use self-signed certificates without Apple notarization. A certificate rotation requires planning for users who skip the intermediate release that introduces the new pin; discovery does not install a chain of intermediate updates.
 

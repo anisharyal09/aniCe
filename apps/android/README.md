@@ -117,13 +117,7 @@ python3 scripts/verify-suite.py device --serial DEVICE_SERIAL
 
 The suite parses JUnit reports and rejects failures, missing/truncated results and unexpected skips. Native tests can require device setup or explicit instrumentation arguments.
 
-Comparison/approval presentation fixtures are deliberately UI-preview emulator
-tests; their mutations cannot approve a real pairing or native association. Typed
-injected presentation replaces compiler-field reflection, while post-trust
-one-shot candidate handoff has hardware-free JVM coverage. On physical runs,
-documented fixture skips are printed and do not satisfy the passing-test floor;
-`--strict-skips` rejects them. Use the [physical pairing checklist](../../docs/PROXIMITY_PAIRING_TESTING.md)
-for real discovery, consent, routing to one Mac and lifecycle acceptance.
+Comparison/approval presentation fixtures are deliberately UI-preview emulator tests; their mutations cannot approve a real pairing or native association. Typed injected presentation replaces compiler-field reflection, while post-trust one-shot candidate handoff has hardware-free JVM coverage. On physical runs, documented fixture skips are printed and do not satisfy the passing-test floor; `--strict-skips` rejects them. Use the [physical pairing checklist](../../docs/PROXIMITY_PAIRING_TESTING.md) for real discovery, consent, routing to one Mac and lifecycle acceptance.
 
 Minimum API 29; compile/target API 36. Gradle uses JDK 21; Kotlin/Java target JVM 17. Key protection is reported from the actual device.
 

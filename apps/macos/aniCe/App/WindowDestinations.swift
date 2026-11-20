@@ -435,6 +435,7 @@ extension MainWindowView {
                       Button("Open \(release.version.tag) on GitHub") { NSWorkspace.shared.open(release.pageURL) }
                     }
                     if !updates.status.isEmpty { Text(updates.status).font(.system(size: 12 * fontScale)) }
+                    AutomaticUpdateCheckOptions(checked: $updates.automaticChecks)
                   }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }
                 preferenceSection("Connection", id: "connection") {

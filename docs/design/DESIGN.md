@@ -4,10 +4,7 @@ Version 0.3. This guide defines visual direction, interaction behavior, standard
 
 ## Design principles
 
-- **Clarity over ornament**: Warm neutrals with charcoal-green action ink. No blue glows, decorative gradients, artificial glassmorphism, or skeuomorphic shadows.
-  The Mac floating comparison overlay may use the OS's native Liquid Glass on
-  macOS 26+, native material on older systems, and a solid Reduce Transparency
-  fallback. This exception does not change in-app content surfaces.
+- **Clarity over ornament**: Warm neutrals with charcoal-green action ink. No blue glows, decorative gradients, artificial glassmorphism, or skeuomorphic shadows. The Mac floating comparison overlay may use the OS's native Liquid Glass on macOS 26+, native material on older systems, and a solid Reduce Transparency fallback. This exception does not change in-app content surfaces.
 - **Native behavior**: Use platform-native controls, typography, and navigation patterns (macOS AppKit/SwiftUI with SF Symbols; Android Material 3/Compose with Material Symbols).
 - **State truth**: Truthfully distinguish between trusted, connecting, secured, offline, permission-gated, and unsupported states. Never fake live state or display an invented zero.
 - **Direct feedback**: Interactive controls respond immediately with visible hover, pressed, and focus feedback. Transitions are brief (120–220 ms) and respect system reduced-motion settings.
@@ -114,65 +111,14 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 
 ### Devices and pairing
 - Flat peer list with readiness indicators and individual Bluetooth and Local Network connection controls.
-- Pairing requires mutual approval on both devices via nearby six-digit comparison,
-  QR code or entered 6-digit PIN.
+- Pairing requires mutual approval on both devices via nearby six-digit comparison, QR code or entered 6-digit PIN.
 - Device identity sheet displays name, fingerprint, and confirmed reset action.
-- Private nicknames are separate from device-owned names. Default Use nickname
-  to off; show the real device name in security details. Device-name edits sync
-  live over existing authenticated channels and on reconnect while offline.
-  Nicknames stay local, persist across restarts and take precedence only when enabled.
-  Home, Devices, companion, feature peer pickers and file/clipboard destination
-  labels use the same resolver. Immutable historic activity retains its event-time
-  label; security and pairing identity remain separate from presentation.
-- Nearby discovery uses generic anonymous candidates, never a claimed real device name.
-  On first unpaired foreground launch, Android requests native Nearby Devices
-  access once after Home is drawn. Granted access starts discovery without a
-  Find nearby tap. Denial leaves a clear Allow nearby devices/Open app settings
-  action within the Home connection entry, not another dialog on every launch.
-  Find nearby remains explicit retry. One qualified candidate
-  automatically opens the bounded comparison sheet after a short ambiguity check;
-  multiple candidates retain a native selection sheet with Compare code,
-  Dismiss and Manual pair. Selection freezes one candidate and stops scanning.
-  Searching shows progress immediately. Preparing/comparison is observable UI
-  state; Add device renders the same code and controls rather than hiding a
-  global prompt. Surface removal alone must never approve or reject pairing.
-  Dismissal and verification failure never silently retry an exchange. Pre-auth
-  transport failures may retry twice with a ten-second cooldown; discovery starts
-  with a bounded low-latency foreground burst. Trusted reconnects may try three
-  times on foreground return without requesting companion setup repeatedly.
-  Compare all six digits, including leading zeros, with Confirm on both devices and accessible
-  Dismiss. No device names are disclosed until both comparison confirmations.
-- With known-empty trust, Mac nearby availability starts while its process is awake/unlocked,
-  retaining explicit Pause/Find nearby. Manual pair opens the existing QR/PIN flow. An incoming
-  comparison uses a centered content card in the active app; otherwise use an AppKit floating
-  panel near the top-center of the pointer's display, respecting visible-frame bounds.
-  Showing the panel must not steal typing focus. Clicking its heading/code opens aniCe without
-  approval; Confirm approves the same attempt and opens aniCe. Dismiss rejects without opening.
-  Never regenerate or silently retarget the code during a surface handoff.
-  Floating-card Confirm opens the regular Devices window, not a second pairing
-  sheet with competing Cancel actions. Enter confirms only the displayed attempt;
-  Escape/Dismiss reject. Mac stops generic nearby advertising while the pairing
-  slot is occupied and while admission is cooling down; availability resumes
-  automatically at the existing bounded admission deadline.
-- Comparison confirmation is not Connected. Verify identity openings/proofs, store trust through
-  the shared receipt flow, then establish fresh authenticated readiness. Default-on background
-  auto-connect is visible as Reconnect automatically in Android's comparison sheet.
-  Every pairing method and Devices Auto connect uses the same single-Mac native
-  approval after a secured connection; no extra connection-settings page or
-  broad device-management chooser is shown.
-  Cancellation leaves trust intact. Lock, background loss, cancellation and expiry
-  cannot approve an old attempt.
-  Post-pair Android setup stays inline on Home with one retained owner and launches
-  only Android's native approval, not a second aniCe activity/popup.
-  Keep the note to **Reconnect when nearby, even in the background.** and state
-  that allowing this phone and Mac connection does not grant feature permissions.
-  Android owns the native dialog wording, which aniCe must not spoof or bypass.
-  Feature permissions remain separate; rotation must not repeat approval,
-  and cancellation keeps trust.
-- Long-press a Devices name to open its editor directly; Mac also offers a native
-  right-click Edit name action. This device edits the shared device-owned name;
-  a paired device edits a private nickname. Normal taps/clicks retain details,
-  and explicit edit controls in details remain available without gestures.
+- Private nicknames are separate from device-owned names. Default Use nickname to off; show the real device name in security details. Device-name edits sync live over existing authenticated channels and on reconnect while offline. Nicknames stay local, persist across restarts and take precedence only when enabled. Home, Devices, companion, feature peer pickers and file/clipboard destination labels use the same resolver. Immutable historic activity retains its event-time label; security and pairing identity remain separate from presentation.
+- Nearby discovery uses generic anonymous candidates, never a claimed real device name. On first unpaired foreground launch, Android requests native Nearby Devices access once after Home is drawn. Granted access starts discovery without a Find nearby tap. Denial leaves a clear Allow nearby devices/Open app settings action within the Home connection entry, not another dialog on every launch. Find nearby remains explicit retry. One qualified candidate automatically opens the bounded comparison sheet after a short ambiguity check; multiple candidates retain a native selection sheet with Compare code, Dismiss and Manual pair. Selection freezes one candidate and stops scanning. Searching shows progress immediately. Preparing/comparison is observable UI state; Add device renders the same code and controls rather than hiding a global prompt. Surface removal alone must never approve or reject pairing. Dismissal and verification failure never silently retry an exchange. Pre-auth transport failures may retry twice with a ten-second cooldown; discovery starts with a bounded low-latency foreground burst. Trusted reconnects may try three times on foreground return without requesting companion setup repeatedly. Compare all six digits, including leading zeros, with Confirm on both devices and accessible Dismiss. No device names are disclosed until both comparison confirmations.
+- With known-empty trust, Mac nearby availability starts while its process is awake/unlocked, retaining explicit Pause/Find nearby. Manual pair opens the existing QR/PIN flow. An incoming comparison uses a centered content card in the active app; otherwise use an AppKit floating panel near the top-center of the pointer's display, respecting visible-frame bounds. Showing the panel must not steal typing focus. Clicking its heading/code opens aniCe without approval; Confirm approves the same attempt and opens aniCe. Dismiss rejects without opening. Never regenerate or silently retarget the code during a surface handoff. Floating-card Confirm opens the regular Devices window, not a second pairing sheet with competing Cancel actions. Enter confirms only the displayed attempt; Escape/Dismiss reject. Mac stops generic nearby advertising while the pairing slot is occupied and while admission is cooling down; availability resumes automatically at the existing bounded admission deadline.
+- Comparison confirmation is not Connected. Verify identity openings/proofs, store trust through the shared receipt flow, then establish fresh authenticated readiness. Default-on background auto-connect is visible as Reconnect automatically in Android's comparison sheet. Every pairing method and Devices Auto connect uses the same single-Mac native approval after a secured connection; no extra connection-settings page or broad device-management chooser is shown. Cancellation leaves trust intact. Lock, background loss, cancellation and expiry cannot approve an old attempt. Post-pair Android setup stays inline on Home with one retained owner and launches only Android's native approval, not a second aniCe activity/popup. Keep the note to **Reconnect when nearby, even in the background.** and state that allowing this phone and Mac connection does not grant feature permissions. Android owns the native dialog wording, which aniCe must not spoof or bypass. Its native device-scanning screen may precede approval. Keep the app's setup row stable, without a duplicate animated progress indicator while that native UI owns the request; do not deliberately insert an extra preparation frame. Feature permissions remain separate; rotation must not repeat approval, and cancellation keeps trust.
+- Mac nearby setup retains explicit Bluetooth-off recovery even after the attempted discovery stops: name this Mac, direct to Bluetooth settings and require Find nearby retry. Do not show generic available/setup copy for a known failed radio state.
+- Long-press a Devices name to open its editor directly; Mac also offers a native right-click Edit name action. This device edits the shared device-owned name; a paired device edits a private nickname. Normal taps/clicks retain details, and explicit edit controls in details remain available without gestures.
 
 ### Desk Deck and Control Android
 - **Mac Desk Deck (Android)**: Real-time Mac telemetry display. Stale readings show their last-received timestamp.
@@ -204,7 +150,9 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 - Keep setting labels and helper text in one column with the shared 6 dp gap (4 dp for compact rows); apply padding around the row, not between a separately padded control and its description.
 - Keep helper copy brief; avoid redundant permission paragraphs or extra helper-text padding above permission/update actions.
 - Android Connection labels its timeout **Idle LAN in background**, explains Home/lock and active-work exceptions, and identifies the work retaining LAN. The setting does not imply that Bluetooth or the app itself stops.
-- Android Updates uses a compact labeled checkbox row for beta inclusion, with update status and the text **Check for updates** action sharing one trailing row. At narrow widths or large text, put status above the trailing action rather than squeezing it into a thin column. Do not add a divider or a full-width bordered button between them. Mac retains its native update actions. Enabling beta updates on either platform requires a native confirmation; cancellation leaves the setting unchanged, and disabling does not require another dialog.
+- Android Updates uses a compact labeled checkbox row for beta inclusion, followed by full-width status when present and one action row: **More options** at the leading edge with its chevron beside the label, **Check for updates** trailing. Keep both actions on one row when their measured text fits; reflow at narrow widths or large text without squeezing labels, retaining the trailing check action. Do not add a divider, a full-width bordered button or a separate empty disclosure row. Mac retains its native update actions. Enabling beta updates on either platform requires a native confirmation; cancellation leaves the setting unchanged, and disabling does not require another dialog.
+- Both Updates sections keep **Check for updates automatically** inside a default-collapsed **More options** disclosure, using the shared Android checkbox row and a native Mac checkbox. Automatic checks default on; show **Automatic checks are off.** when the disclosure is closed and the saved preference is off. Keep manual checking outside the disclosure and available independently.
+- Android's automatic-check helper uses the compact **7:30 PM NPT** label; the schedule remains UTC+05:45.
 - Android update review uses a native bottom sheet with a version badge and accessible Close action. Only the notes body scrolls; progress, byte counts and the current installation or cancellation action remain in the footer. More holds Skip version and View on GitHub. Close, Back and swipe dismiss review without cancelling active work. Mac keeps its notes in a bounded, bordered scroll area so the action row stays visible. Both platforms use the shared rectangular button shapes and render release-note headings, bold text, indented lists and horizontal rules in scalable native themed typography, hiding source metadata only in presentation and suppressing a leading version heading duplicated by the review title. Automatic checks retain the version in an open review; manual checks may refresh it.
 - Mac Settings uses 13 pt body/section text and 12 pt supporting text at 100%, scaled through the existing text-size preference; other destinations keep their established scale.
 - Dynamic text scaling slider (80%–120%) in macOS Appearance and Android settings.

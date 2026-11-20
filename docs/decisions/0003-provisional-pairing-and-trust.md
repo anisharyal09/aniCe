@@ -2,10 +2,7 @@
 
 Status: accepted.
 
-Mac is the BLE peripheral and invitation owner. Android is the central. QR and
-manual six-digit entry remain supported alternatives to first-time nearby
-numeric comparison. Every method requires authenticated public-identity proof
-and explicit approval on both devices. Discovery is not trust.
+Mac is the BLE peripheral and invitation owner. Android is the central. QR and manual six-digit entry remain supported alternatives to first-time nearby numeric comparison. Every method requires authenticated public-identity proof and explicit approval on both devices. Discovery is not trust.
 
 QR contains an ephemeral rendezvous ID, 256-bit secret, and full SHA-256 identity commitment instead of the entire public identity record. This deliberate compacting preserves identity pinning; the record is exchanged privately after authentication. QR contains no Bluetooth address or peer UUID. Native P-256 ECDH, HKDF, role-separated HMAC confirmation and AES-GCM form the provisional QR bootstrap.
 
@@ -21,11 +18,4 @@ The peripheral publication lifecycle is refined by [ADR 0004](0004-stable-ble-at
 
 ### Nearby comparison extension
 
-Method 3 is defined separately in [SAS.md](../../protocol/pairing/SAS.md). Its
-committed ephemeral exchange generates a six-digit comparison rather than
-authenticating an entered short password. Both comparison approvals precede
-long-term identity disclosure, whose salted commitments are bound to the exchange.
-It reuses existing native identity proofs, pending records and signed receipts;
-there is no second trust/security stack or new Bluetooth bonding requirement.
-No additional confirmation is needed after identity proof in this method.
-Independent review is required; automated vectors are not a cryptographic audit.
+Method 3 is defined separately in [SAS.md](../../protocol/pairing/SAS.md). Its committed ephemeral exchange generates a six-digit comparison rather than authenticating an entered short password. Both comparison approvals precede long-term identity disclosure, whose salted commitments are bound to the exchange. It reuses existing native identity proofs, pending records and signed receipts; there is no second trust/security stack or new Bluetooth bonding requirement. No additional confirmation is needed after identity proof in this method. Independent review is required; automated vectors are not a cryptographic audit.

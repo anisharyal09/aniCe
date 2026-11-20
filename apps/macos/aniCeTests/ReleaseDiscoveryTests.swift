@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Verifies conditional release checks, saved notices and the Atom fallback.
 import Foundation
+import AppKit
 import XCTest
 @testable import aniCe
 
@@ -28,7 +29,9 @@ private actor SuspendedReleaseTransport: MacReleaseTransport {
   private var ready: CheckedContinuation<Bool, Never>?
   private var deadline: Task<Void, Never>?
   private var held = false
+  private var calls = 0
   func request(_ url: URL, method: String, etag: String?) async throws -> MacReleaseResponse {
+    calls += 1
     guard !held else { throw URLError(.badServerResponse) }
     held = true
     return await withCheckedContinuation {
@@ -51,12 +54,213 @@ private actor SuspendedReleaseTransport: MacReleaseTransport {
     pending?.resume(returning: response)
     pending = nil
   }
+  func recordedCount() -> Int { calls }
 }
 
 final class ReleaseDiscoveryTests: XCTestCase {
   private func response(_ status: Int, _ body: String = "", etag: String? = nil) -> MacReleaseResponse {
     MacReleaseResponse(status: status, data: Data(body.utf8), etag: etag)
   }
+  @MainActor func testAutomaticChecksDefaultOnAndSavedOptOutBlocksRequestsButNotManualChecks() async throws {
+    let name = "aniCe.UpdateTests.\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let transport = FakeReleaseTransport([releaseResponse("v0.4.0"), response(304)])
+    let discovery = MacReleaseDiscovery(defaults: defaults, transport: transport)
+    XCTAssertTrue(discovery.automaticChecks)
+    discovery.automaticChecks = false
+    let restored = MacReleaseDiscovery(defaults: defaults, transport: transport)
+    XCTAssertFalse(restored.automaticChecks)
+    let current = try XCTUnwrap(UpdateVersion.parse("v0.3.0"))
+    let now = Date(timeIntervalSince1970: 100)
+    let disabled = await restored.check(current: current, now: now)
+    XCTAssertEqual(disabled, .deferred)
+    let before = await transport.recorded()
+    XCTAssertTrue(before.isEmpty)
+    XCTAssertNil(defaults.object(forKey: "updates.lastAttempt"))
+    XCTAssertNil(defaults.object(forKey: "updates.lastSuccess"))
+    guard case .available = await restored.check(current: current, force: true, now: now) else { return XCTFail("Manual check was blocked") }
+    restored.automaticChecks = true
+    XCTAssertTrue(MacReleaseDiscovery(defaults: defaults).automaticChecks)
+    guard case .available = await restored.check(current: current, now: now.addingTimeInterval(UpdateSchedule.day)) else {
+      return XCTFail("Automatic checks did not resume")
+    }
+    let calls = await transport.recorded()
+    XCTAssertEqual(calls.count, 2)
+  }
+
+  @MainActor func testAutomaticOptOutKeepsCachedReviewSkipAndNotificationFloors() async throws {
+    let name = "aniCe.UpdateTests.\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let discovery = MacReleaseDiscovery(defaults: defaults, transport: FakeReleaseTransport([releaseResponse("v0.4.0")]))
+    let current = try XCTUnwrap(UpdateVersion.parse("v0.3.0")), now = Date(timeIntervalSince1970: 100)
+    guard case .available(let release) = await discovery.check(current: current, force: true, now: now) else { return XCTFail("Missing release") }
+    discovery.markNotified(release)
+    discovery.skip("v0.5.0")
+    discovery.includeBeta = true
+    discovery.automaticChecks = false
+    XCTAssertEqual(try discovery.cachedNotice(current: current), release)
+    let version = try XCTUnwrap(UpdateVersion.parse("v0.4.1"))
+    let newer = AvailableMacRelease(version: version, notes: "Notes", assetURL: MacReleaseCatalog.assetURL(version), assetBytes: 50)
+    XCTAssertFalse(discovery.shouldNotify(newer))
+    discovery.automaticChecks = true
+    let restored = MacReleaseDiscovery(defaults: defaults)
+    XCTAssertTrue(restored.includeBeta)
+    XCTAssertFalse(restored.shouldNotify(release))
+    XCTAssertTrue(restored.shouldNotify(newer))
+    XCTAssertEqual(defaults.string(forKey: "updates.skippedTag"), "v0.5.0")
+    XCTAssertEqual(defaults.double(forKey: "updates.lastSuccess"), now.timeIntervalSince1970)
+  }
+
+  @MainActor func testModelOptOutPersistsAndBetaChangesDoNotStartChecksWhileDisabled() async throws {
+    let name = "aniCe.UpdateTests.\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let transport = FakeReleaseTransport([response(200, "[]")])
+    let model = MacUpdateModel(discovery: MacReleaseDiscovery(defaults: defaults, transport: transport))
+    XCTAssertTrue(model.automaticChecks)
+    model.automaticChecks = false
+    model.includeBeta = true
+    await model.check()
+    model.startAutomaticChecks()
+    model.stopAutomaticChecks()
+    let before = await transport.recorded()
+    XCTAssertTrue(before.isEmpty)
+    XCTAssertFalse(MacUpdateModel(discovery: MacReleaseDiscovery(defaults: defaults)).automaticChecks)
+    await model.check(force: true)
+    XCTAssertEqual(model.status, "You’re up to date.")
+    XCTAssertFalse(model.automaticChecks)
+    let calls = await transport.recorded()
+    XCTAssertEqual(calls.count, 1)
+    model.automaticChecks = true
+    XCTAssertTrue(MacUpdateModel(discovery: MacReleaseDiscovery(defaults: defaults)).automaticChecks)
+  }
+
+  @MainActor func testDisablingAutomaticChecksCancelsMetadataWithoutCompletingTheEvening() async throws {
+    let name = "aniCe.UpdateTests.\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let transport = SuspendedReleaseTransport()
+    let model = MacUpdateModel(discovery: MacReleaseDiscovery(defaults: defaults, transport: transport))
+    let check = Task { await model.check() }
+    let started = await transport.waitForRequest()
+    XCTAssertTrue(started)
+    guard started else { check.cancel(); return }
+    model.automaticChecks = false
+    await transport.finish(releaseResponse("v99.0.0"))
+    await check.value
+    XCTAssertFalse(model.checking)
+    XCTAssertNil(model.release)
+    XCTAssertNil(defaults.object(forKey: "updates.cachedReleases"))
+    XCTAssertNil(defaults.object(forKey: "updates.lastSuccess"))
+    XCTAssertNil(defaults.object(forKey: "updates.failures"))
+  }
+
+  @MainActor func testDisablingAutomaticChecksDoesNotCancelAManualCheck() async throws {
+    let name = "aniCe.UpdateTests.\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let transport = SuspendedReleaseTransport()
+    let model = MacUpdateModel(discovery: MacReleaseDiscovery(defaults: defaults, transport: transport))
+    let check = Task { await model.check(force: true) }
+    let started = await transport.waitForRequest()
+    XCTAssertTrue(started)
+    guard started else { check.cancel(); return }
+    model.automaticChecks = false
+    await transport.finish(response(200, "[]"))
+    await check.value
+    XCTAssertFalse(model.checking)
+    XCTAssertEqual(model.status, "You’re up to date.")
+    XCTAssertNotNil(defaults.object(forKey: "updates.lastSuccess"))
+    XCTAssertFalse(model.automaticChecks)
+  }
+
+  @MainActor func testOptOutDoesNotRunAQueuedBetaRefresh() async throws {
+    let name = "aniCe.UpdateTests.\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let transport = SuspendedReleaseTransport()
+    let model = MacUpdateModel(discovery: MacReleaseDiscovery(defaults: defaults, transport: transport))
+    let check = Task { await model.check() }
+    let started = await transport.waitForRequest()
+    XCTAssertTrue(started)
+    guard started else { check.cancel(); return }
+    model.includeBeta = true
+    await Task.yield()
+    model.automaticChecks = false
+    await transport.finish(response(200, "[]"))
+    await check.value
+    await Task.yield()
+    XCTAssertFalse(model.automaticChecks)
+    XCTAssertNil(defaults.object(forKey: "updates.lastSuccess"))
+    let calls = await transport.recordedCount()
+    XCTAssertEqual(calls, 1)
+  }
+
+  @MainActor func testNativeMonitoringAndDeadlineStopAndRestartWithSavedPreference() async throws {
+    let name = "aniCe.UpdateTests.\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let transport = FakeReleaseTransport([])
+    let model = MacUpdateModel(discovery: MacReleaseDiscovery(defaults: defaults, transport: transport),
+      automaticLifecycleEnabled: true)
+    defer { model.stopAutomaticChecks() }
+    defaults.set(Date().timeIntervalSince1970, forKey: "updates.lastSuccess")
+    model.automaticChecks = false
+    model.startAutomaticChecks()
+    XCTAssertFalse(model.automaticMonitoringActive)
+    XCTAssertNil(model.scheduledAutomaticCheck)
+    model.automaticChecks = true
+    model.startAutomaticChecks()
+    XCTAssertTrue(model.automaticMonitoringActive)
+    let deadline = try XCTUnwrap(model.scheduledAutomaticCheck)
+    XCTAssertGreaterThan(deadline, Date())
+    model.automaticChecks = false
+    XCTAssertFalse(model.automaticMonitoringActive)
+    XCTAssertNil(model.scheduledAutomaticCheck)
+    NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+    NotificationCenter.default.post(name: NSNotification.Name.NSSystemClockDidChange, object: nil)
+    NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+    await Task.yield()
+    let calls = await transport.recorded()
+    XCTAssertTrue(calls.isEmpty, "Disabled native catch-up events must not contact GitHub")
+    let restarted = MacUpdateModel(discovery: MacReleaseDiscovery(defaults: defaults, transport: transport),
+      automaticLifecycleEnabled: true)
+    restarted.startAutomaticChecks()
+    XCTAssertFalse(restarted.automaticMonitoringActive)
+    XCTAssertNil(restarted.scheduledAutomaticCheck)
+    restarted.stopAutomaticChecks()
+    model.automaticChecks = true
+    XCTAssertTrue(model.automaticMonitoringActive)
+    XCTAssertEqual(model.scheduledAutomaticCheck, deadline)
+    model.stopAutomaticChecks()
+    XCTAssertFalse(model.automaticMonitoringActive)
+    XCTAssertNil(model.scheduledAutomaticCheck)
+  }
+
+  @MainActor func testQueuedManualCheckStillRunsAfterAutomaticOptOut() async throws {
+    let name = "aniCe.UpdateTests.\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let transport = FakeReleaseTransport([response(200, "[]"), response(200, "[]")])
+    let model = MacUpdateModel(discovery: MacReleaseDiscovery(defaults: defaults, transport: transport))
+    await transport.beforeNextResponse {
+      model.automaticChecks = false
+    }
+    let automatic = Task { await model.check() }
+    // check() publishes ownership synchronously before it awaits the metadata task.
+    while !model.checking { await Task.yield() }
+    await model.check(force: true)
+    await automatic.value
+    let completed = expectation(description: "Queued manual refresh completes after opt-out")
+    let waiter = Task { @MainActor in
+      while model.status != "You’re up to date." {
+        guard !Task.isCancelled else { return }
+        await Task.yield()
+      }
+      completed.fulfill()
+    }
+    defer { waiter.cancel() }
+    await fulfillment(of: [completed], timeout: 5)
+    XCTAssertEqual(model.status, "You’re up to date.")
+    XCTAssertFalse(model.automaticChecks)
+    let calls = await transport.recorded()
+    XCTAssertEqual(calls.count, 2)
+  }
+
   @MainActor func testETagAndThrottledCachedNotice() async throws {
     let tag = "v0.4.0", url = "\(MacReleaseCatalog.root)/download/v0.4.0/aniCe-mac.zip"
     let body = """

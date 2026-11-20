@@ -41,7 +41,15 @@ import OSLog
       session[kCGSessionLoginDoneKey] as? Bool != true
   }
   private(set) var nearbyPaused = false
+  private(set) var nearbyRecovery: DiscoveryRecovery = .none
   var nearbyEnabled: Bool { active && method == .sas }
+  var nearbySetupDetail: String {
+    nearbyEnabled || phase == "failed" ? status : "Let aniCe on your Android phone discover this Mac."
+  }
+  var nearbyNeedsSettings: Bool {
+    nearbyRecovery == .bluetoothSettings || nearbyRecovery == .permissionSettings
+  }
+  func openNearbySettings() { discovery.openSettings(recovery: nearbyRecovery) }
   var peer: DeviceIdentity?
   var peers: [PeerTrustRecord] = []
   var nicknameFailure = false
@@ -427,7 +435,6 @@ import OSLog
     cancel()
   }
   func resumeNearby() {
-    if phase == "failed" { phase = "idle" }
     nearbyPaused = false
     ensureNearbyAvailable()
   }
@@ -534,6 +541,7 @@ import OSLog
     generation += 1
     let operation = generation
     active = false
+    nearbyRecovery = .none
     timer?.invalidate()
     timer = nil
     nearbyDeadline?.cancel()
@@ -581,8 +589,12 @@ import OSLog
     _ message: String =
       "Pairing could not finish. Check Bluetooth and identity access, then start a fresh invitation."
   ) {
+    // Cancellation retires discovery and clears its native error. Keep only the
+    // recovery hint for presentation so the inactive setup row still explains why.
+    let recovery = discovery.session.recovery
     cancel(message: message)
     phase = "failed"
+    nearbyRecovery = recovery
   }
   private static func renderQR(_ text: String) -> NSImage? {
     let filter = CIFilter.qrCodeGenerator()

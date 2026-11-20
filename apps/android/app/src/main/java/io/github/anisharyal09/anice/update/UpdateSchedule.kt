@@ -32,7 +32,7 @@ internal object UpdateSchedule {
 }
 
 internal fun scheduleUpdateCheck(context: Context, at: Long) {
-    if (context.packageName != "io.github.anisharyal09.anice") return
+    // The manager owns the saved preference and production/isolated lifecycle gate.
     val job = JobInfo.Builder(UPDATE_JOB_ID, ComponentName(context, UpdateCheckService::class.java))
         .setMinimumLatency((at - System.currentTimeMillis()).coerceAtLeast(0L))
         .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
@@ -42,7 +42,11 @@ internal fun scheduleUpdateCheck(context: Context, at: Long) {
     context.getSystemService(JobScheduler::class.java).schedule(job)
 }
 
-private const val UPDATE_JOB_ID = 730
+internal fun cancelScheduledUpdateCheck(context: Context) {
+    context.getSystemService(JobScheduler::class.java).cancel(UPDATE_JOB_ID)
+}
+
+internal const val UPDATE_JOB_ID = 730
 
 class UpdateCheckService : JobService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -51,9 +55,13 @@ class UpdateCheckService : JobService() {
     private var check: Job? = null
 
     override fun onStartJob(params: JobParameters): Boolean {
+        val updates = (application as AniCeApplication).updates
+        if (!updates.automaticSchedulingEnabled) {
+            updates.scheduleNextCheck()
+            return false
+        }
         active = params
         work = scope.launch {
-            val updates = (application as AniCeApplication).updates
             check = updates.check()
             check?.join()
             ensureActive()
@@ -69,11 +77,12 @@ class UpdateCheckService : JobService() {
     override fun onStopJob(params: JobParameters): Boolean {
         if (active?.jobId != params.jobId) return false
         work?.cancel()
-        (application as AniCeApplication).updates.stopBackgroundCheck(check)
+        val updates = (application as AniCeApplication).updates
+        updates.stopBackgroundCheck(check)
         work = null
         active = null
         check = null
-        return true
+        return updates.automaticSchedulingEnabled
     }
 
     override fun onDestroy() {

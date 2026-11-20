@@ -88,7 +88,8 @@ internal fun CompanionSetupEffects(model: CompanionSetupViewModel) {
     LaunchedEffect(model.pendingApproval, lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             val pending = model.pendingApproval ?: return@repeatOnLifecycle
-            withFrameNanos { }
+            // Readiness/target validation is already owned by claimApproval. Do not
+            // deliberately draw an extra preparation frame before Android's native UI.
             model.claimApproval(pending)?.let { sender ->
                 try { approval.launch(IntentSenderRequest.Builder(sender).build()) }
                 catch (_: Exception) { model.approvalLaunchFailed(pending.generation) }
@@ -120,7 +121,7 @@ internal fun CompanionSetupStatus(model: CompanionSetupViewModel) {
                     modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("Try again") }
             }
             Box(Modifier.fillMaxWidth().height(4.dp)) {
-                if (model.phase.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (model.phase.showsProgress) LinearProgressIndicator(Modifier.fillMaxWidth())
             }
         }
     }

@@ -242,6 +242,7 @@ class CompanionSetupPresentationTest {
                 }
                 drawn(scenario)
                 val preparedTree = awaitLabels(CompanionSetupCopy.title, "Not now")
+                assertEquals("Preparing owns one app progress indicator", 1, progressIndicators(preparedTree))
                 val before = bounds(clickable(find(preparedTree, "Not now")))
                 assertTrue("Not now bounds=$before, expected height >= $minimumTouchHeight at $widthDp / $fontScale",
                     before.height() >= minimumTouchHeight)
@@ -251,6 +252,8 @@ class CompanionSetupPresentationTest {
                     val tree = awaitLabels(CompanionSetupCopy.title, CompanionSetupCopy.explanation, "Not now")
                     assertEquals("Pending approval resized", before, bounds(clickable(find(tree, "Not now"))))
                     assertNull(find(tree, "Try again"))
+                    assertEquals("Android owns approval progress without duplicate app animation",
+                        if (phase == CompanionSetupPhase.APPROVAL) 0 else 1, progressIndicators(tree))
                 }
                 if (widthDp == 280 && fontScale == 1.2f) runner.uiAutomation.takeScreenshot()?.let { image ->
                     File(runner.targetContext.cacheDir, "auto-connect-${if (night) "dark" else "light"}.png")
@@ -294,6 +297,12 @@ class CompanionSetupPresentationTest {
         if (node.text?.toString() == label || node.contentDescription?.toString() == label) return node
         for (index in 0 until node.childCount) find(node.getChild(index), label)?.let { return it }
         return null
+    }
+    private fun progressIndicators(node: AccessibilityNodeInfo?): Int {
+        if (node == null) return 0
+        var count = if (node.className?.toString() == "android.widget.ProgressBar") 1 else 0
+        for (index in 0 until node.childCount) count += progressIndicators(node.getChild(index))
+        return count
     }
     private fun clickable(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
         var current = node

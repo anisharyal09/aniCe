@@ -89,8 +89,11 @@ final class MacDiscoveryModel {
     }
   }
   func openSettings() {
+    openSettings(recovery: session.recovery)
+  }
+  func openSettings(recovery: DiscoveryRecovery) {
     let target =
-      session.state == .bluetoothOff
+      recovery == .bluetoothSettings
       ? "com.apple.Bluetooth" : "com.apple.preference.security?Privacy_Bluetooth"
     if let url = URL(string: "x-apple.systempreferences:" + target) { NSWorkspace.shared.open(url) }
   }

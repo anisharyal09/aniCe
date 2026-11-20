@@ -112,7 +112,11 @@ final class PeripheralDiscoverySession {
             state = .discovering
             message = nearbyAvailability ? "Nearby setup is available. Discovery does not establish trust."
                 : "This Mac is discoverable as aniCe."
-        case .off: fail(.bluetoothOff, "Turn on Bluetooth in System Settings, then try again.", recovery: .bluetoothSettings)
+        case .off:
+            fail(.bluetoothOff, nearbyAvailability
+                ? "Bluetooth is off on this Mac. Turn it on in System Settings → Bluetooth, then choose Find nearby again."
+                : "Bluetooth is off on this Mac. Turn it on in System Settings → Bluetooth, then try again.",
+                recovery: .bluetoothSettings)
         case .denied: fail(.permissionNeeded, "Allow aniCe in System Settings → Privacy & Security → Bluetooth, then try again.", recovery: .permissionSettings)
         case .unsupported: fail(.failed, "Bluetooth discovery is unavailable on this Mac.", recovery: .unsupported)
         case .resetting: fail(.failed, "Bluetooth was interrupted. Try again when it is available.")

@@ -489,3 +489,113 @@ final class BetaUpdatePreferenceTests: XCTestCase {
     XCTAssertFalse(consent.confirming)
   }
 }
+
+@MainActor final class AutomaticUpdateCheckOptionsTests: XCTestCase {
+  func testNativeClicksExpandToggleAndCollapseWithoutBlockingManualChecks() async throws {
+    let name = "aniCe.UpdateOptionsTests.\(UUID())", preferences = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { preferences.removePersistentDomain(forName: name) }
+    let model = MacUpdateModel(discovery: MacReleaseDiscovery(defaults: preferences))
+    var manualChecks = 0
+    let content = VStack(alignment: .leading, spacing: 16) {
+      AutomaticUpdateCheckOptions(checked: Binding(get: { model.automaticChecks }, set: { model.automaticChecks = $0 }))
+      Button("Check for updates") { manualChecks += 1 }.buttonStyle(AniCeButtonStyle())
+    }
+    .font(.system(size: 13)).padding(14)
+    .frame(width: 340, height: 280, alignment: .topLeading)
+    .defaultAppStorage(preferences).disclosureGroupStyle(ClickableDisclosureStyle())
+    let host = NSHostingView(rootView: content)
+    let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 340, height: 280),
+      styleMask: [.titled], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    window.orderFront(nil)
+    defer { window.close() }
+    try await settle(host)
+    XCTAssertTrue(model.automaticChecks)
+    try click(host, in: window, at: NSPoint(x: 70, y: 22))
+    try await settle(host)
+    // Toggle is the first disclosed row, beneath the 16 pt disclosure and its shared 10 pt gap.
+    try click(host, in: window, at: NSPoint(x: 21, y: 49))
+    try await settle(host)
+    XCTAssertFalse(model.automaticChecks)
+    try click(host, in: window, at: NSPoint(x: 70, y: 22))
+    try await settle(host)
+    // The off-state caption remains between the collapsed disclosure and manual action.
+    try click(host, in: window, at: NSPoint(x: 80, y: 77))
+    try await settle(host)
+    XCTAssertEqual(manualChecks, 1)
+    XCTAssertFalse(model.automaticChecks)
+    try click(host, in: window, at: NSPoint(x: 70, y: 22))
+    try await settle(host)
+    try click(host, in: window, at: NSPoint(x: 21, y: 49))
+    try await settle(host)
+    XCTAssertTrue(model.automaticChecks)
+  }
+
+  private func settle(_ host: NSView) async throws {
+    try await Task.sleep(for: .milliseconds(80))
+    host.layoutSubtreeIfNeeded()
+    host.displayIfNeeded()
+  }
+
+  private func click(_ host: NSView, in window: NSWindow, at point: NSPoint) throws {
+    let location = host.convert(point, to: nil)
+    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+      let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
+        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+        context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+      window.sendEvent(event)
+    }
+  }
+
+  func testOptionsRenderCollapsedAndExpandedInBothThemesAtSupportedSizes() throws {
+    let name = "aniCe.UpdateOptionsTests.\(UUID())", preferences = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { preferences.removePersistentDomain(forName: name) }
+    var renders = 0
+    for scheme in [ColorScheme.light, .dark] {
+      for scale in [0.8, 1.0, 1.2] {
+        for width in [300.0, 600.0] {
+          preferences.set(scale, forKey: "ui.fontScale")
+          for checked in [true, false] {
+            var collapsedHeight = 0.0
+            for expanded in [false, true] {
+              let content = VStack(alignment: .leading, spacing: 8) {
+                Text("Updates").font(.system(size: 13 * scale, weight: .medium))
+                BetaUpdatePreference(checked: .constant(false))
+                Button("Check for updates") {}.buttonStyle(AniCeButtonStyle())
+                AutomaticUpdateCheckOptions(checked: .constant(checked), expanded: expanded)
+              }
+              .font(.system(size: 13 * scale)).padding(14).frame(width: width, alignment: .leading)
+              .background(AniCePalette.surface(scheme)).environment(\.colorScheme, scheme)
+              .tint(AniCePalette.primaryText(scheme)).defaultAppStorage(preferences)
+              .disclosureGroupStyle(ClickableDisclosureStyle())
+              let host = NSHostingView(rootView: content)
+              host.frame.size = host.fittingSize
+              host.layoutSubtreeIfNeeded()
+              XCTAssertEqual(host.bounds.width, width, accuracy: 1)
+              XCTAssertGreaterThan(host.bounds.height, 90)
+              XCTAssertLessThan(host.bounds.height, 360)
+              if expanded { XCTAssertGreaterThan(host.bounds.height, collapsedHeight + 20) }
+              else { collapsedHeight = host.bounds.height }
+              try capture(host, name: "automatic-updates-\(checked ? "on" : "off")-\(expanded ? "expanded" : "collapsed")-\(scheme)-\(Int(width))-\(Int(scale * 100))")
+              renders += 1
+            }
+          }
+        }
+      }
+    }
+    XCTAssertEqual(renders, 48)
+  }
+
+  private func capture(_ host: NSView, name: String) throws {
+    let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+    host.cacheDisplay(in: host.bounds, to: bitmap)
+    let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+    XCTAssertGreaterThan(data.count, 1000)
+    if let path = ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"] {
+      let directory = URL(fileURLWithPath: path, isDirectory: true)
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      try data.write(to: directory.appendingPathComponent(name + ".png"))
+    }
+  }
+}

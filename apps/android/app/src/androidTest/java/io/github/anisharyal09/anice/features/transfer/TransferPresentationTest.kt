@@ -180,7 +180,7 @@ class TransferPresentationTest {
                                 Text("Updates")
                                 Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainer) {
                                     Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
-                                        UpdateSettingsContent(false, UpdateStatus.Idle, null, {}, {})
+                                        UpdateSettingsContent(false, true, UpdateStatus.Idle, null, {}, {}, {})
                                     }
                                 }
                                 Text("Clipboard")

@@ -6,11 +6,41 @@ import android.content.SharedPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.job
+import java.io.ByteArrayInputStream
+import java.io.InputStream
+import java.net.URL
+import java.security.Principal
+import java.security.cert.Certificate
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.*
 import org.junit.Test
+import javax.net.ssl.HttpsURLConnection
+
+private class MetadataConnection(
+    url: URL,
+    private val response: Int,
+    private val stream: InputStream = ByteArrayInputStream("[]".toByteArray()),
+    private val beforeResponse: () -> Unit = {},
+) : HttpsURLConnection(url) {
+    var disconnected = false
+    override fun connect() = Unit
+    override fun disconnect() { disconnected = true }
+    override fun usingProxy() = false
+    override fun getResponseCode(): Int { beforeResponse(); return response }
+    override fun getInputStream() = stream
+    override fun getContentLengthLong() = -1L
+    override fun getHeaderField(name: String?) =
+        if (name == "Location") "https://api.github.com/redirected" else null
+    override fun getCipherSuite() = "TLS_TEST"
+    override fun getLocalCertificates(): Array<Certificate>? = null
+    override fun getServerCertificates(): Array<Certificate> = emptyArray()
+    override fun getPeerPrincipal(): Principal = Principal { "test" }
+    override fun getLocalPrincipal(): Principal? = null
+}
 
 private class MemoryPreferences : SharedPreferences {
     val data = mutableMapOf<String, Any>()
@@ -41,6 +71,47 @@ private class MemoryPreferences : SharedPreferences {
 class ReleaseDiscoveryTest {
     private val body = """[{"tag_name":"v0.4.0","draft":false,"prerelease":false,"body":"Notes","assets":[{"name":"aniCe-android.apk","state":"uploaded","size":50,"browser_download_url":"$RELEASE_ROOT/download/v0.4.0/aniCe-android.apk"}]}]"""
     private val current = requireNotNull(UpdateVersion.parse("v0.3.0"))
+
+    @Test fun automaticChecksDefaultOnAndSavedOptOutBlocksRequestsButNotManualChecks() = runBlocking {
+        val preferences = MemoryPreferences()
+        var calls = 0
+        val transport = ReleaseTransport { _, _, _ -> calls++; ReleaseResponse(200, body, "manual") }
+        val discovery = ReleaseDiscovery(preferences, transport)
+        assertTrue(discovery.automaticChecks)
+        discovery.automaticChecks = false
+        val restored = ReleaseDiscovery(preferences, transport)
+        assertFalse(restored.automaticChecks)
+        assertEquals(DiscoveryResult.Deferred, restored.check(current, now = 100))
+        assertEquals(0, calls)
+        assertFalse(preferences.contains("last_attempt"))
+        assertFalse(preferences.contains("last_success"))
+        assertTrue(restored.check(current, force = true, now = 101) is DiscoveryResult.Available)
+        assertEquals(1, calls)
+        restored.automaticChecks = true
+        assertTrue(ReleaseDiscovery(preferences).automaticChecks)
+        assertTrue(restored.check(current, now = 101 + UpdateSchedule.DAY) is DiscoveryResult.Available)
+        assertEquals(2, calls)
+    }
+
+    @Test fun automaticOptOutKeepsCachedReviewSkipAndNotificationFloors() = runBlocking {
+        val preferences = MemoryPreferences()
+        val discovery = ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ -> ReleaseResponse(200, body, "cached") })
+        val release = (discovery.check(current, force = true, now = 100) as DiscoveryResult.Available).release
+        discovery.markNotified(release)
+        discovery.skip("v0.5.0")
+        discovery.includeBeta = true
+        discovery.automaticChecks = false
+        assertEquals(release, discovery.cachedNotice(current))
+        val newer = release.copy(version = requireNotNull(UpdateVersion.parse("v0.4.1")))
+        assertFalse(discovery.shouldNotify(newer))
+        discovery.automaticChecks = true
+        val restored = ReleaseDiscovery(preferences)
+        assertTrue(restored.includeBeta)
+        assertFalse(restored.shouldNotify(release))
+        assertTrue(restored.shouldNotify(newer))
+        assertEquals("v0.5.0", preferences.getString("skipped_tag", null))
+        assertEquals(100L, preferences.getLong("last_success", 0))
+    }
 
     @Test fun cachesAndReusesETagAndNotice() = runBlocking {
         val preferences = MemoryPreferences()
@@ -206,5 +277,66 @@ class ReleaseDiscoveryTest {
         val later = evening + 60_000
         assertEquals(later, discovery.nextAutomaticCheck(later))
         assertEquals(later, ReleaseDiscovery(preferences).nextAutomaticCheck(later))
+    }
+
+    @Test fun cancelledRedirectCannotOpenAnotherMetadataConnection() = runBlocking {
+        val url = URL("https://api.github.com/repos/anisharyal09/aniCe/releases")
+        lateinit var connection: MetadataConnection
+        var opens = 0
+        val request = launch {
+            val owner = currentCoroutineContext().job
+            connection = MetadataConnection(url, 302, beforeResponse = { owner.cancel() })
+            GithubReleaseTransport { opens++; connection }.request(url.toString(), "GET", null)
+        }
+        request.join()
+        assertTrue(request.isCancelled)
+        assertEquals(1, opens)
+        assertTrue(connection.disconnected)
+    }
+
+    @Test fun cancelledBodyStopsReadingAndDisconnectsWithoutSavingMetadata() = runBlocking {
+        val url = URL("https://api.github.com/repos/anisharyal09/aniCe/releases")
+        val preferences = MemoryPreferences()
+        lateinit var connection: MetadataConnection
+        var reads = 0
+        var closed = false
+        val request = launch {
+            val owner = currentCoroutineContext().job
+            val stream = object : InputStream() {
+                override fun read() = error("Use bounded buffer reads")
+                override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                    reads++
+                    owner.cancel()
+                    buffer[offset] = '['.code.toByte()
+                    return 1
+                }
+                override fun close() { closed = true }
+            }
+            connection = MetadataConnection(url, 200, stream)
+            ReleaseDiscovery(preferences, GithubReleaseTransport { connection }).check(current)
+        }
+        request.join()
+        assertTrue(request.isCancelled)
+        assertEquals(1, reads)
+        assertTrue(closed)
+        assertTrue(connection.disconnected)
+        assertFalse(preferences.contains("cached_releases"))
+        assertFalse(preferences.contains("last_success"))
+        assertFalse(preferences.contains("failures"))
+    }
+
+    @Test fun cancelledNetworkFailureDoesNotIncrementBackoff() = runBlocking {
+        val preferences = MemoryPreferences()
+        val request = launch {
+            val owner = currentCoroutineContext().job
+            ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ ->
+                owner.cancel()
+                throw java.io.IOException("Cancelled socket closed")
+            }).check(current)
+        }
+        request.join()
+        assertTrue(request.isCancelled)
+        assertFalse(preferences.contains("failures"))
+        assertFalse(preferences.contains("last_success"))
     }
 }

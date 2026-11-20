@@ -10,6 +10,7 @@ import UserNotifications
 @MainActor @Observable final class MacUpdateModel {
   static let shared = MacUpdateModel()
   private let discovery: MacReleaseDiscovery
+  private let automaticLifecycleEnabled: Bool
   private(set) var release: AvailableMacRelease?
   private(set) var status = ""
   private(set) var recoveryMessage: String?
@@ -28,13 +29,27 @@ import UserNotifications
     }
   }
   private var checkAgain = false
+  private var checkAgainUserInitiated = false
+  private var checkTask: Task<MacDiscoveryResult, Never>?
+  private var checkingAutomatically = false
   private var automaticStarted = false
+  private var automaticGeneration = 0
   private var timer: Timer?
-  private let network = NWPathMonitor()
+  private var network: NWPathMonitor?
   private var observations: [NSObjectProtocol] = []
   private var wakeObservation: NSObjectProtocol?
+  var automaticMonitoringActive: Bool { network != nil }
+  var scheduledAutomaticCheck: Date? { timer?.fireDate }
   static let notificationCategory = "ANICE_UPDATE"
   private static let notificationIdentifier = "anice.update"
+  var automaticChecks: Bool {
+    didSet {
+      guard automaticChecks != oldValue else { return }
+      discovery.automaticChecks = automaticChecks
+      if automaticChecks { startAutomaticMonitoring() }
+      else { stopAutomaticMonitoring(); clearNotification() }
+    }
+  }
   var includeBeta: Bool {
     didSet {
       discovery.includeBeta = includeBeta
@@ -42,80 +57,129 @@ import UserNotifications
       if !includeBeta, release?.version.prerelease == true {
         release = nil; reviewing = false; clearNotification()
       }
-      Task { await check(force: true) }
+      if automaticChecks {
+        Task { [weak self] in
+          guard let self, self.automaticChecks else { return }
+          await self.check(force: true, userInitiated: false)
+        }
+      }
     }
   }
-  init(discovery: MacReleaseDiscovery = MacReleaseDiscovery()) {
+  init(discovery: MacReleaseDiscovery = MacReleaseDiscovery(),
+    automaticLifecycleEnabled: Bool = !IdentityView.isTesting) {
     self.discovery = discovery
+    self.automaticLifecycleEnabled = automaticLifecycleEnabled
     self.includeBeta = discovery.includeBeta
+    self.automaticChecks = discovery.automaticChecks
   }
 
   func startAutomaticChecks() {
-    guard !automaticStarted, !IdentityView.isTesting else { return }
+    guard !automaticStarted, automaticLifecycleEnabled else { return }
     automaticStarted = true
     restoreCachedRelease()
+    startAutomaticMonitoring()
+  }
+
+  private func startAutomaticMonitoring() {
+    guard automaticStarted, automaticChecks, network == nil else { return }
+    let network = NWPathMonitor()
+    self.network = network
+    let generation = automaticGeneration
     network.pathUpdateHandler = { [weak self] path in
       guard path.status == .satisfied else { return }
-      Task { @MainActor in await self?.refreshAutomatic() }
+      Task { @MainActor in await self?.refreshAutomatic(generation: generation) }
     }
     network.start(queue: DispatchQueue(label: "aniCe.updates.network"))
     for name in [NSApplication.didBecomeActiveNotification, NSNotification.Name.NSSystemClockDidChange] {
       observations.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-        Task { @MainActor in await self?.refreshAutomatic() }
+        Task { @MainActor in await self?.refreshAutomatic(generation: generation) }
       })
     }
     wakeObservation = NSWorkspace.shared.notificationCenter.addObserver(
       forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-        Task { @MainActor in await self?.refreshAutomatic() }
+        Task { @MainActor in await self?.refreshAutomatic(generation: generation) }
       }
     scheduleNextCheck()
   }
 
   func stopAutomaticChecks() {
     automaticStarted = false
+    stopAutomaticMonitoring()
+  }
+
+  private func stopAutomaticMonitoring() {
+    automaticGeneration += 1
     timer?.invalidate(); timer = nil
-    network.cancel()
+    network?.cancel(); network = nil
     observations.forEach { NotificationCenter.default.removeObserver($0) }
     observations.removeAll()
     if let wakeObservation { NSWorkspace.shared.notificationCenter.removeObserver(wakeObservation) }
     wakeObservation = nil
+    if checkingAutomatically { checkTask?.cancel() }
   }
 
-  private func refreshAutomatic() async {
-    guard automaticStarted else { return }
-    if network.currentPath.status == .satisfied { await check() }
+  private func refreshAutomatic(generation: Int? = nil) async {
+    guard automaticStarted, automaticChecks,
+      generation == nil || generation == automaticGeneration else { return }
+    if network?.currentPath.status == .satisfied { await check() }
     else { scheduleNextCheck() }
   }
 
   private func scheduleNextCheck() {
-    guard automaticStarted, !checking, (!reviewing || release == nil) else { return }
     timer?.invalidate(); timer = nil
+    guard automaticStarted, automaticChecks, !checking, (!reviewing || release == nil) else { return }
     let now = Date()
     let next = installing ? UpdateSchedule.latestEvening(now).addingTimeInterval(UpdateSchedule.day)
       : discovery.nextAutomaticCheck(now: now)
     // An offline overdue check waits for a path event instead of repeatedly waking the app.
-    if next <= now, network.currentPath.status != .satisfied { return }
+    if next <= now, network?.currentPath.status != .satisfied { return }
+    let generation = automaticGeneration
     let timer = Timer(fire: next, interval: 0, repeats: false) { [weak self] _ in
-      Task { @MainActor in await self?.refreshAutomatic() }
+      Task { @MainActor in await self?.refreshAutomatic(generation: generation) }
     }
     timer.tolerance = 30
     self.timer = timer
     RunLoop.main.add(timer, forMode: .common)
   }
 
-  func check(force: Bool = false) async {
-    guard !checking else { if force { checkAgain = true }; return }
+  func check(force: Bool = false, userInitiated: Bool? = nil) async {
+    let userInitiated = userInitiated ?? force
+    guard userInitiated || automaticChecks else { return }
+    guard !checking else {
+      if force {
+        checkAgain = true
+        checkAgainUserInitiated = checkAgainUserInitiated || userInitiated
+      }
+      return
+    }
     guard !installing else { return }
     guard force || !reviewing || release == nil else { return }
     guard let name = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
       let current = UpdateVersion.parse("v\(name)") else { status = "Installed version is not supported for update checks."; return }
     checking = true; status = "Checking for updates…"
+    checkingAutomatically = !userInitiated
+    let task = Task { await discovery.check(current: current, force: force) }
+    checkTask = task
     defer {
       checking = false
+      checkingAutomatically = false
+      checkTask = nil
       scheduleNextCheck()
-      if checkAgain { checkAgain = false; Task { await check(force: true) } }
+      if checkAgain {
+        let requestedByUser = checkAgainUserInitiated
+        checkAgain = false; checkAgainUserInitiated = false
+        Task { await check(force: true, userInitiated: requestedByUser) }
+      }
     }
-    let result = await discovery.check(current: current, force: force)
+    let result = await withTaskCancellationHandler {
+      await task.value
+    } onCancel: {
+      task.cancel()
+    }
+    guard !task.isCancelled else {
+      status = release.map { "Update \($0.version.tag) is available." } ?? ""
+      return
+    }
     if !force, reviewing, let release {
       status = "Update \(release.version.tag) is available."
       if case .failed(let message) = result { status = message }
@@ -167,7 +231,7 @@ import UserNotifications
     do {
       try await center.add(UNNotificationRequest(identifier: Self.notificationIdentifier, content: content, trigger: nil))
       discovery.markNotified(found)
-      if release != found || (!includeBeta && found.version.prerelease) { clearNotification() }
+      if !automaticChecks || release != found || (!includeBeta && found.version.prerelease) { clearNotification() }
     } catch {
       // The persistent in-app notice remains available when system notification delivery fails.
     }
@@ -206,6 +270,36 @@ import UserNotifications
   }
 
   func cancelInstall() { installTask?.cancel() }
+}
+
+struct AutomaticUpdateCheckOptions: View {
+  @Binding var checked: Bool
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
+  @State private var expanded: Bool
+  @Environment(\.colorScheme) private var scheme
+
+  init(checked: Binding<Bool>, expanded: Bool = false) {
+    _checked = checked
+    _expanded = State(initialValue: expanded)
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      DisclosureGroup("More options", isExpanded: $expanded) {
+        VStack(alignment: .leading, spacing: 6) {
+          Toggle("Check for updates automatically", isOn: $checked)
+            .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3)
+          Text(checked ? "Checks on launch when due and daily at 7:30 PM Nepal time." : "Manual checks remain available.")
+            .font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(scheme))
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+      if !checked && !expanded {
+        Text("Automatic checks are off.")
+          .font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(scheme))
+      }
+    }
+  }
 }
 
 struct BetaUpdateConsent {
