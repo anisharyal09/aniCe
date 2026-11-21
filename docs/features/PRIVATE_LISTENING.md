@@ -14,6 +14,10 @@ Private Listening sends Mac system audio to headphones connected to Android thro
 
 Start requires an already-secured LAN connection; it does not override Disconnect or connection Pause. An existing transfer may need to reduce outstanding bytes before Start. Android startup without a visible activity requires eligible native companion ownership; a rejected background start reports that aniCe must be opened on the phone.
 
+Transfer-drain admission counts only a currently owned outgoing file. Historical
+sent/acknowledged counters from a completed, cancelled or dismissed transfer do
+not block a new listening operation; live outgoing files retain the same bound.
+
 The Mac minimum is macOS 14.2. Android retains API 29 and later. Native low-latency playback is requested but normal AudioTrack playback remains usable. System-audio capture is governed by macOS permission and source behavior; silent buffers alone do not distinguish a paused source, mute, protected audio or denied capture.
 
 ## Volume and privacy
@@ -35,7 +39,7 @@ Choose a buffering mode on Android before starting:
 - **Balanced** is the default: initially 120 ms of app-managed audio, adapting within 60–240 ms.
 - **Lower delay** is opt-in: initially 40 ms, adapting within 20–160 ms. A busy connection or scheduler can cause more interruptions.
 
-Late packet arrival and new native underruns raise the local target; sustained healthy playback lowers it slowly. A stream remembers its underrun floor instead of repeatedly retrying an unsustainable lower target. The target includes software audio and pending AudioTrack writes once. The worker requests a smaller effective native buffer and startup threshold where Android permits, without assuming that the platform accepted those requests. Older Android versions and some outputs retain a larger native startup floor. Audio memory remains bounded to 800 ms in either mode; this is a ceiling, not a latency goal.
+Late packet arrival and new native underruns raise the local target; sustained healthy playback lowers it slowly. A stream remembers its underrun floor instead of repeatedly retrying an unsustainable lower target, but may cautiously probe one packet lower after two uninterrupted healthy minutes so a transient transfer/radio burst does not permanently add delay. Buffering or a new underrun resets that probe interval. A reduced target promptly trims obsolete software audio while already-written native audio drains normally. The target includes software audio and pending AudioTrack writes once. The worker requests a smaller effective native buffer and startup threshold where Android permits, without assuming that the platform accepted those requests. Older Android versions and some outputs retain a larger native startup floor. Audio memory remains bounded to 800 ms in either mode; this is a ceiling, not a latency goal.
 
 The panel shows current app backlog, target, pending AudioTrack audio (included in the backlog), skipped packets and native underruns. These are local diagnostics, **not measured end-to-end latency**. Bluetooth encoding, OS mixing and headphone buffering can add substantial delay beyond them; wired/USB headphones usually reduce that contribution. Neither mode guarantees video lip-sync. aniCe cannot remove downstream Bluetooth delay or delay video in an arbitrary Mac browser.
 
@@ -46,6 +50,8 @@ With Bluetooth headphones, especially on Android 34+, leaving the app or switchi
 ## Interruptions and renewal
 
 Transient focus loss pauses/flushes phone playback for at most 90 seconds; Mac capture continues reading/discarding with the chosen mute behavior. Focus return silently re-primes and verifies routing before current audio resumes. Permanent focus loss and headphone route loss end listening.
+
+Silent priming accounts for delayed native playback-head resets and route-driven startup-threshold changes. A raised threshold tops up only its missing pending silent reservation, including when earlier silence has already drained. It retains the original preparation deadline and never opens audible writes before route verification.
 
 Underflow produces local silence and bounded rebuffering on the same stream. Software queues retain a bounded newest-received window instead of replaying missed seconds. An isolated source gap resets interpolation and ramps the next current packet over 5 ms, without reopening route authorization or repeating silent preparation. Authenticated Audio admission and playback scheduling do not wait for UI rendering. Focus/maintenance recovery still requires silent route verification.
 
@@ -59,4 +65,4 @@ Channel retirement, Disconnect, trust/identity changes, service destruction, Mac
 
 Application-scoped feature owners handle DATA, service/capture lifecycle and bounded logical audio queues. Connections owns LAN admission, encrypted records and renewal. The Mac C callback copies Float32 into a lock-free SPSC ring; conversion and sealing stay off that callback. Android's worker performs bounded cubic clock correction without native pitch-preserving timestretching.
 
-See [wire contract](../../protocol/private-listening/README.md), [LAN maintenance](../../protocol/lan/RENEWAL.md), [Now Playing](NOW_PLAYING.md) and [performance budgets](../PERFORMANCE.md).
+See [wire contract](../../protocol/private-listening/README.md), [LAN maintenance](../../protocol/lan/RENEWAL.md), [Now Playing](NOW_PLAYING.md), [performance budgets](../PERFORMANCE.md) and the [physical-test guide](../PRIVATE_LISTENING_TESTING.md). Optional read-only diagnostics require an explicit isolated preview target and do not activate listening.

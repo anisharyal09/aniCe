@@ -52,6 +52,8 @@ final class TransferModelTests: XCTestCase {
     model.activeChannel = MockSecuredChannel()
     model.peerMaxChunkBytes = 524288
     model.peerMaxWindow = 8
+    model.sendingFile = TransferFile(id: UUID(), name: "fixture.bin", size: 1048576,
+      sha256: Data(repeating: 0, count: 32), localURL: nil)
     model.sentBytes = 1048576
     model.acknowledgedBytes = 0
     model.setLowLatencyMediaActive(true)
@@ -67,6 +69,26 @@ final class TransferModelTests: XCTestCase {
     XCTAssertEqual(model.senderChunkBytes, 524288)
     XCTAssertEqual(model.sendCreditBytes, 4194304)
     model.invalidate()
+  }
+
+  func testTerminalTransferCountersCannotBlockNewListeningWithoutAnOwnedSender() {
+    let model = MacTransferModel()
+    model.activeChannel = MockSecuredChannel()
+    model.sentBytes = 1048576
+    model.acknowledgedBytes = 0
+    model.sendingFile = TransferFile(id: UUID(), name: "fixture.bin", size: 1048576,
+      sha256: Data(repeating: 0, count: 32), localURL: nil)
+    XCTAssertFalse(model.lowLatencyBacklogReady)
+    model.dismiss()
+    model.activeChannel = MockSecuredChannel()
+    XCTAssertNil(model.sendingFile)
+    XCTAssertEqual(model.sentBytes, 1048576, "Do not falsify retained counter diagnostics")
+    XCTAssertEqual(model.acknowledgedBytes, 0)
+    XCTAssertTrue(model.lowLatencyBacklogReady, "Terminal counters do not own a live sender")
+    model.sendingFile = TransferFile(id: UUID(), name: "next.bin", size: 1048576,
+      sha256: Data(repeating: 0, count: 32), localURL: nil)
+    XCTAssertFalse(model.lowLatencyBacklogReady, "A live sender still enforces the drain limit")
+    model.dismiss()
   }
 
   func testSendConfirmationCentersAfterNativeLayout() throws {

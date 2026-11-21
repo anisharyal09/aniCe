@@ -176,31 +176,69 @@ internal class PrivateListeningPlayer(
         }
         val deadline = now() + 2000
         try {
-            var primed = 0
-            var target = primingFrames()
-            while (primed < target && now() < deadline) {
+            var accountedThreshold = primingFrames()
+            var topUpRemaining = accountedThreshold
+            while (topUpRemaining > 0 && now() < deadline) {
                 coroutineContext.ensureActive()
-                primingReservation = target
-                queue.trimToMaximum(target + 1000)
+                updateNativeFrames()
                 val count = synchronized(nativeLock) {
                     if (closed || paused || !queue.currentPreparation(token)) throw CancellationException()
-                    val count = native.write(silence, 0, minOf(silence.size, (target - primed) * 4))
+                    primingReservation = maxOf(primingReservation, accountedThreshold)
+                    queue.trimToMaximum(primingReservation + 1000)
+                    val room = (accountedThreshold - nativeFrames).coerceAtLeast(0)
+                    val count = native.write(silence, 0, minOf(silence.size, topUpRemaining * 4, room * 4))
                     if (count > 0) writtenFrames += count / 4
                     if (count > 0 && !native.playing) native.play()
                     count
                 }
                 if (count < 0 || count % 4 != 0) throw PrivateListeningPlaybackError(8, "Silent priming failed ($count)")
-                primed += count / 4
-                target = primingFrames()
+                topUpRemaining -= count / 4
+                updateNativeFrames()
+                val required = primingFrames()
+                if (required > accountedThreshold) {
+                    topUpRemaining = (required - nativeFrames).coerceAtLeast(0)
+                } else if (required < accountedThreshold) {
+                    topUpRemaining = minOf(topUpRemaining, (required - nativeFrames).coerceAtLeast(0))
+                }
+                accountedThreshold = required
                 if (count == 0) delay(5)
             }
-            if (primed < target) throw PrivateListeningPlaybackError(8, "Silent priming timed out")
+            if (topUpRemaining > 0) throw PrivateListeningPlaybackError(8, "Silent priming timed out")
             while (now() < deadline) {
                 coroutineContext.ensureActive()
                 if (closed || paused || !queue.currentPreparation(token)) throw CancellationException()
                 if (safeRoute()) {
                     configureNativeBuffer()
                     updateNativeFrames()
+                    // A route can change Android's effective startup threshold
+                    // after the first play(). Fill only the still-missing silent
+                    // startup reservation, with the same deadline and closed gate.
+                    val required = primingFrames()
+                    if (required > accountedThreshold) {
+                        // Earlier silence may already have drained before a new
+                        // native startup epoch. Total writes are not its pending
+                        // reservation; refill only the deficit observed now.
+                        topUpRemaining = (required - nativeFrames).coerceAtLeast(0)
+                    } else if (required < accountedThreshold) {
+                        topUpRemaining = 0
+                    }
+                    accountedThreshold = required
+                    if (topUpRemaining > 0) {
+                        val count = synchronized(nativeLock) {
+                            if (closed || paused || !queue.currentPreparation(token)) throw CancellationException()
+                            primingReservation = maxOf(primingReservation, required)
+                            queue.trimToMaximum(primingReservation + 1000)
+                            val room = (required - nativeFrames).coerceAtLeast(0)
+                            native.write(silence, 0, minOf(silence.size, topUpRemaining * 4, room * 4))
+                                .also { if (it > 0) writtenFrames += it / 4 }
+                        }
+                        if (count < 0 || count % 4 != 0) {
+                            throw PrivateListeningPlaybackError(8, "Silent priming failed ($count)")
+                        }
+                        topUpRemaining -= count / 4
+                        if (count == 0) delay(5)
+                        continue
+                    }
                     // Do not leave a second silent native buffer ahead of the first real PCM.
                     if (nativeFrames != 0) { delay(5); continue }
                     resampler.reset(combinedTarget())
@@ -260,9 +298,16 @@ internal class PrivateListeningPlayer(
             val time = now()
             val underruns = synchronized(nativeLock) { track?.underrunCount?.toLong()?.coerceAtLeast(0) ?: 0 }
             policy.underruns(underruns, time, playing = hasSubmittedAudio && !rebuffering)
+            val previousTarget = configuredTarget
             configureNativeBuffer()
             val target = combinedTarget()
             queue.setTargetFrames(target)
+            if (configuredTarget < previousTarget) {
+                // A recovered lower target should remove obsolete software
+                // backlog promptly, not wait minutes for clock drift to erase it.
+                // Already-written native audio remains owned and is never replayed.
+                queue.trimToTarget(nativeFrames + stagingFrames + resampler.bufferedFrames)
+            }
             if (!safeRoute()) { interruptRoute(); throw PrivateListeningPlaybackError(6, "Headphone route lost") }
             val head = synchronized(nativeLock) { playbackClock.playedFrames }
             if (nativeFrames > 0 && queue.queuedFrames > 0) {
@@ -402,7 +447,7 @@ internal class PrivateListeningPlayer(
 
     private fun updateNativeFrames() {
         synchronized(nativeLock) {
-            val played = playbackClock.head(track?.playbackHeadPosition ?: 0)
+            val played = playbackClock.head(track?.playbackHeadPosition ?: 0, writtenFrames)
             nativeFrames = (writtenFrames - played).coerceIn(0, 38400).toInt()
         }
     }

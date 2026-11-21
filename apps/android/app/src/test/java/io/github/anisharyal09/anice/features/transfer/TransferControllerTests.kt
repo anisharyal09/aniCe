@@ -135,6 +135,7 @@ class TransferControllerTests {
         owner.activeChannel = MockAndroidSecuredChannel()
         owner.peerMaxChunkBytes = 524288
         owner.peerMaxWindow = 8
+        owner.sendingFile = TransferFile(UUID.randomUUID().toString(), "fixture.bin", 1048576, ByteArray(32))
         owner.sentBytes = 1048576
         owner.acknowledgedBytes = 0
         owner.setLowLatencyMediaActive(true)
@@ -149,6 +150,24 @@ class TransferControllerTests {
         owner.setLowLatencyMediaActive(false)
         assertEquals(524288L, owner.senderChunkBytes)
         assertEquals(4194304L, owner.sendCreditBytes)
+        owner.dismiss()
+    }
+
+    @Test fun terminalTransferCountersCannotBlockANewListeningStartWithoutAnOwnedSender() {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        owner.activeChannel = MockAndroidSecuredChannel()
+        owner.sentBytes = 1048576
+        owner.acknowledgedBytes = 0
+        owner.sendingFile = TransferFile(UUID.randomUUID().toString(), "fixture.bin", 1048576, ByteArray(32))
+        assertFalse(owner.lowLatencyBacklogReady)
+        owner.dismiss()
+        owner.activeChannel = MockAndroidSecuredChannel()
+        assertNull(owner.sendingFile)
+        assertEquals("Do not falsify retained counter diagnostics", 1048576L, owner.sentBytes)
+        assertEquals(0L, owner.acknowledgedBytes)
+        assertTrue("Terminal counters do not own a live sending backlog", owner.lowLatencyBacklogReady)
+        owner.sendingFile = TransferFile(UUID.randomUUID().toString(), "next.bin", 1048576, ByteArray(32))
+        assertFalse("A currently owned sender still enforces the live drain limit", owner.lowLatencyBacklogReady)
         owner.dismiss()
     }
 

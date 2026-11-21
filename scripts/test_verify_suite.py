@@ -67,6 +67,31 @@ class JunitGateTests(unittest.TestCase):
             with self.assertRaises(suite.GateError):
                 suite.validate_results(results, "fake", minimum=1)
 
+    def test_private_listening_device_checks_have_only_explicit_visible_skips(self):
+        names = {
+            "installedListeningServiceIsPrivateAndMediaPlaybackScoped",
+            "audioWorkerUsesOneNativeAudioPriorityThreadAndReleasesIt",
+            "platformPcmBufferQueryFitsTheBudgetWithoutOpeningAnAudioTrack",
+            "credentialConsentAndStopFenceWorkerAdmissionWithoutNativePlayback",
+        }
+        prefix = "PrivateListeningDeviceRegressionTests#"
+        declared = {item for item in suite.DOCUMENTED_ANDROID_SKIPS if item.startswith(prefix)}
+        self.assertEqual(declared, {prefix + name for name in names})
+        results = [suite.TestResult("pkg.OrdinaryTest", "runs", "passed", "")]
+        results += [suite.TestResult("pkg.PrivateListeningDeviceRegressionTests", name, "skipped",
+                                    "Requires the isolated Transfer Preview") for name in sorted(names)]
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            report = suite.validate_results(results, "fixture", minimum=1,
+                                            documented=suite.DOCUMENTED_ANDROID_SKIPS)
+        self.assertEqual(report, (1, 4))
+        for name in names:
+            self.assertIn("documented skip: pkg." + prefix + name, output.getvalue())
+        with self.assertRaises(suite.GateError):
+            suite.validate_results(results + [
+                suite.TestResult("pkg.PrivateListeningDeviceRegressionTests", "unexpected", "skipped", "")
+            ], "fixture", minimum=1, documented=suite.DOCUMENTED_ANDROID_SKIPS)
+
     def test_crash_error_and_ignored_test_are_rejected(self):
         cases = {
             "error": '<testcase classname="pkg.Test" name="crash"><error message="Process crashed"/></testcase>',

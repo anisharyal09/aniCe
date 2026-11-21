@@ -49,13 +49,21 @@ class PrivateListeningPlayerTests {
         var released = false
             private set
         var maxWriteFrames = 1000
+        var restartOnThresholdIncrease = false
         var changed: () -> Unit = {}
         override fun setBufferSizeInFrames(frames: Int): Int {
             if (adjustable) bufferSizeInFrames = frames.coerceIn(1, 11724)
             return bufferSizeInFrames
         }
         override fun setStartThresholdInFrames(frames: Int) {
-            if (modern) threshold = frames.coerceIn(1, bufferSizeInFrames)
+            if (modern) {
+                val requested = frames.coerceIn(1, bufferSizeInFrames)
+                if (restartOnThresholdIncrease && requested > threshold) {
+                    drain()
+                    started = false
+                }
+                threshold = requested
+            }
         }
         override fun setRoutingListener(changed: () -> Unit) { this.changed = changed }
         override fun setVolume(volume: Float): Boolean { this.volume = volume; return true }
@@ -287,5 +295,106 @@ class PrivateListeningPlayerTests {
             assertEquals("A gap must not reopen silent preparation", preparedFlushes, track.flushes)
             assertFalse(track.released)
         } finally { player.close(); pumping.cancelAndJoin() }
+    }
+
+    @Test fun asynchronousFlushHeadCannotSkipSilentPreparationOrFakeAWrap() {
+        val clock = PrivateListeningPlaybackClock()
+        assertEquals(0, clock.head(50_000, maximumPlayedFrames = 0))
+        assertEquals(0, clock.head(50_010, maximumPlayedFrames = 960))
+        assertEquals(960, clock.head(960, maximumPlayedFrames = 960))
+        assertEquals(960, clock.playedFrames)
+        clock.reset()
+        assertEquals(0, clock.head(960, maximumPlayedFrames = 0))
+        assertEquals(0, clock.head(0, maximumPlayedFrames = 960))
+        assertEquals(480, clock.head(480, maximumPlayedFrames = 960))
+        assertEquals(0, clock.sourcePosition)
+        clock.submitted(960, 960, 0)
+        assertEquals(480, clock.sourcePosition)
+    }
+
+    @Test fun startupThresholdRaisedAfterRoutingGetsOnlyBoundedSilentTopUp() = runBlocking {
+        val now = clock()
+        val native = Track(now, adjustable = false)
+        var routed = false
+        val track = object : ListeningNativeTrack by native {
+            override val routes get(): List<ListeningRoute> {
+                if (native.playing && !routed) {
+                    routed = true
+                    native.setStartThresholdInFrames(1920)
+                }
+                return native.routes
+            }
+            override fun setStartThresholdInFrames(frames: Int) {
+                native.setStartThresholdInFrames(if (routed) maxOf(1920, frames) else frames)
+            }
+        }
+        val player = PrivateListeningPlayer({ track }, emptySet(), ListeningBufferProfile.LOWER_DELAY, now = now) {}
+        try {
+            withTimeout(3000) { player.prepare() }
+            assertEquals(0, native.nonzeroFrames)
+            assertTrue(native.maximumPending <= 1920)
+            assertTrue(native.playbackHeadPosition >= 1920)
+        } finally { player.close() }
+        assertTrue(native.released)
+    }
+
+    @Test fun aRaisedStartupThresholdAfterSilentDrainReceivesItsMissingPendingReservation() = runBlocking {
+        var time = 1000L
+        val now = { time += 5; time }
+        val native = Track(now, adjustable = false)
+        var routed = false
+        val track = object : ListeningNativeTrack by native {
+            override val routes get(): List<ListeningRoute> {
+                if (native.playing && !routed) {
+                    routed = true
+                    time += 100
+                    assertEquals(960, native.playbackHeadPosition)
+                    native.restartOnThresholdIncrease = true
+                    native.setStartThresholdInFrames(1920)
+                }
+                return native.routes
+            }
+            override fun setStartThresholdInFrames(frames: Int) {
+                native.setStartThresholdInFrames(if (routed) maxOf(1920, frames) else frames)
+            }
+        }
+        val player = PrivateListeningPlayer({ track }, emptySet(), ListeningBufferProfile.LOWER_DELAY, now = now) {}
+        try {
+            withTimeout(5000) { player.prepare() }
+            assertEquals(0, native.nonzeroFrames)
+            assertTrue(native.maximumPending <= 1920)
+            assertEquals(2880, native.playbackHeadPosition)
+        } finally { player.close() }
+        assertTrue(native.released)
+    }
+
+    @Test fun aRaisedThresholdDuringTheFirstPlayRefillsPendingRatherThanLifetimeSilence() = runBlocking {
+        var time = 1000L
+        val now = { time += 5; time }
+        val native = Track(now, adjustable = false)
+        var routed = false
+        val track = object : ListeningNativeTrack by native {
+            override fun play() {
+                native.play()
+                if (!routed) {
+                    routed = true
+                    time += 100
+                    assertEquals(960, native.playbackHeadPosition)
+                    native.restartOnThresholdIncrease = true
+                    native.setStartThresholdInFrames(1920)
+                }
+            }
+            override fun setStartThresholdInFrames(frames: Int) {
+                native.setStartThresholdInFrames(if (routed) maxOf(1920, frames) else frames)
+            }
+        }
+        val player = PrivateListeningPlayer({ track }, emptySet(), ListeningBufferProfile.LOWER_DELAY, now = now) {}
+        try {
+            withTimeout(5000) { player.prepare() }
+            assertEquals(0, native.nonzeroFrames)
+            assertTrue(native.maximumPending <= 1920)
+            assertEquals(2880, native.playbackHeadPosition)
+        } finally { player.close() }
+        assertTrue(native.released)
     }
 }

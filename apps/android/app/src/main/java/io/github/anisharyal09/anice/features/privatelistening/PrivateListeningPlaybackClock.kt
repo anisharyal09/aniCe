@@ -28,9 +28,15 @@ internal class PrivateListeningPlaybackClock {
         updateSource()
     }
 
-    fun head(unsignedBits: Int): Long {
+    fun head(unsignedBits: Int, maximumPlayedFrames: Long = Long.MAX_VALUE): Long {
+        require(maximumPlayedFrames >= 0)
         val head = unsignedBits.toLong() and 0xffffffffL
-        if (head < previousHead) headWrap += 1L shl 32
+        val wrap = if (head < previousHead) headWrap + (1L shl 32) else headWrap
+        // Pause/flush can publish its reset asynchronously. A retained head from
+        // the previous native epoch cannot have consumed this epoch's new writes;
+        // ignore it rather than falsely draining priming or treating reset as wrap.
+        if (wrap > maximumPlayedFrames || head > maximumPlayedFrames - wrap) return playedFrames
+        headWrap = wrap
         previousHead = head
         playedFrames = headWrap + head
         updateSource()

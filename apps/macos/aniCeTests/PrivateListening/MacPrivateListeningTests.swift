@@ -69,6 +69,26 @@ private actor ListeningCaptureFake: PrivateListeningCapturing {
     try await settle { !model.busy }
   }
 
+  func testHealthyBalancedUpperBufferCanRecoverTransferCreditWithoutRelaxingBadHealth() async throws {
+    let (model, _, _, channel) = try await preparedModel()
+    var health = [Bool]()
+    model.transferHealth = { healthy, _, _ in health.append(healthy) }
+    model.start()
+    try await settle { channel.sent.contains { $0.kind == 1 } }
+    let id = try XCTUnwrap(channel.sent.first { $0.kind == 1 }).text(0)
+    _ = await model.handle(try PrivateListeningMessage(kind: 2,
+      fields: [.text(id), .integer(0)]).encode(), on: channel.descriptor)
+    try await settle { model.state == 2 }
+    for (state, queued) in [(2, 11520), (2, 12480), (2, 13440), (2, 13441), (5, 11520), (3, 11520)] {
+      _ = await model.handle(try PrivateListeningMessage(kind: 5, fields: [
+        .text(id), .integer(1), .integer(Int64(state)), .integer(10), .integer(9600),
+        .integer(Int64(queued)), .integer(0)]).encode(), on: channel.descriptor)
+    }
+    XCTAssertEqual(health, [true, true, true, false, false, false])
+    model.stop()
+    try await settle { !model.busy }
+  }
+
   private func peer() throws -> DeviceIdentity {
     let helper = SessionFixtures()
     let row = try XCTUnwrap((helper.root()["valid"] as? [[String: Any]])?.first)

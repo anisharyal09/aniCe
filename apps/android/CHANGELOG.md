@@ -6,6 +6,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Add isolated, non-playback device regressions for accepted audio-worker priority,
+  native PCM support, private service declaration and credential/Stop admission.
 - Add credential-scoped Private Listening consent, headphone confirmation and foreground playback with focus, notification Stop and native work leases.
 - Add bounded headphone-route playback, silent priming and worker-side stereo clock-drift resampling for Private Listening.
 - Add the Private Listening v1 CBOR codec with strict UUIDv4, PCM packet and source-timeline validation.
@@ -37,6 +39,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Probe elevated listening buffer floors down only after sustained healthy audio
+  and promptly trim obsolete software backlog when the target decreases.
 - Use a dedicated audio worker and authenticated worker-side PCM admission; lower adaptive buffering floors and avoid repeated silent priming on ordinary audio gaps.
 - Recover listening-mode file credit cautiously from fresh playback health while retaining negotiated chunk-count and delayed-path bounds.
 - Add Balanced/Lower delay adaptive listening profiles, combined-backlog trimming and platform-aware AudioTrack write/startup limits.
@@ -101,6 +105,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Ignore terminal transfer counters in listening startup when no outgoing file
+  remains owned; preserve live-file backlog admission.
+- Reject impossible post-flush playback-head progress and bound silent top-ups
+  when headphone routing changes Android's startup threshold.
 - Fence LAN deadline checks to the current cryptographic session during retained-socket renewal.
 - Route automatic setup through the compiled activity class in normal and isolated preview packages.
 - Preserve paused setup and release synthetic work leases in native tests.

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E90600000000000000000001 /* PrivateListeningPhysicalRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90600000000000000000002; };
 		E90300000000000000000007 /* PrivateListening.strings in Resources */ = {isa = PBXBuildFile; fileRef = E90300000000000000000008; };
 		E90300000000000000000005 /* MacPrivateListeningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90300000000000000000006; };
 		E90300000000000000000001 /* MacPrivateListeningModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90300000000000000000002; };
@@ -203,6 +204,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		E90600000000000000000002 /* PrivateListeningPhysicalRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/PrivateListening/PrivateListeningPhysicalRunner.swift"; sourceTree = SOURCE_ROOT; };
 		E90300000000000000000008 /* PrivateListening.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; path = "aniCe/Features/PrivateListening/en.lproj/PrivateListening.strings"; sourceTree = SOURCE_ROOT; };
 		E90300000000000000000006 /* MacPrivateListeningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/PrivateListening/MacPrivateListeningTests.swift"; sourceTree = SOURCE_ROOT; };
 		E90300000000000000000002 /* MacPrivateListeningModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/PrivateListening/MacPrivateListeningModel.swift"; sourceTree = SOURCE_ROOT; };
@@ -416,7 +418,7 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		E90100000000000000000007 /* PrivateListening */ = {isa = PBXGroup; children = (E90100000000000000000002, E90200000000000000000002, E90200000000000000000004, E90200000000000000000006, E90200000000000000000008, E90300000000000000000002, E90300000000000000000004, E90300000000000000000008,); path = PrivateListening; sourceTree = "<group>"; };
+		E90100000000000000000007 /* PrivateListening */ = {isa = PBXGroup; children = (E90100000000000000000002, E90200000000000000000002, E90200000000000000000004, E90200000000000000000006, E90200000000000000000008, E90300000000000000000002, E90300000000000000000004, E90300000000000000000008, E90600000000000000000002,); path = PrivateListening; sourceTree = "<group>"; };
 		E90100000000000000000008 /* PrivateListeningTests */ = {isa = PBXGroup; children = (E90100000000000000000004, E90100000000000000000006, E9020000000000000000000A, E90300000000000000000006,); path = PrivateListening; sourceTree = "<group>"; };
         D70000000000000000000007 /* DndSync */ = {isa = PBXGroup; children = (D70000000000000000000002,); path = DndSync; sourceTree = "<group>"; };
 		D30000000000000000000007 /* PhoneInput */ = {isa = PBXGroup; children = (D30000000000000000000002, D40000000000000000000004, D40000000000000000000005, D40000000000000000000008,); path = PhoneInput; sourceTree = "<group>"; };
@@ -966,6 +968,7 @@
 				E90200000000000000000003 /* PrivateListeningRing.c in Sources */,
 				E90200000000000000000005 /* PrivateListeningPacketizer.swift in Sources */,
 				E90300000000000000000001 /* MacPrivateListeningModel.swift in Sources */,
+				E90600000000000000000001 /* PrivateListeningPhysicalRunner.swift in Sources */,
 				E90300000000000000000003 /* PrivateListeningView.swift in Sources */,
 				D40000000000000000000001 /* MacPhoneInputEventAdapter.swift in Sources */,
 				D40000000000000000000002 /* MacPhoneInputModel.swift in Sources */,

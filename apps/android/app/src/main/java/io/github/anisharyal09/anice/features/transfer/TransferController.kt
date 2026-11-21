@@ -327,7 +327,8 @@ class TransferController(
             if (pacedLan) minOf(it, listeningCreditBytes, senderChunkBytes * peerMaxWindow) else it
         }
     internal val lowLatencyBacklogReady get() =
-        activeChannel?.descriptor?.transport != "lan" || receiving || sentBytes - acknowledgedBytes <= 131072
+        activeChannel?.descriptor?.transport != "lan" || receiving || sendingFile == null ||
+            sentBytes - acknowledgedBytes <= 131072
     internal fun setLowLatencyMediaActive(active: Boolean) {
         if (lowLatencyMedia == active) return
         lowLatencyMedia = active

@@ -67,6 +67,14 @@ SUITE_ORDER = (
 # interchange harnesses run their selected tests with arguments and accept no
 # skips at all; this list only covers the broad connected/hosted runs.
 DOCUMENTED_ANDROID_SKIPS = {
+    "PhysicalPrivateListeningTest#repeatedNativeHeadphonePreparationReportsActualThresholdAndProgress",
+    "PhysicalPrivateListeningTest#authenticatedListeningRoundUsesRealServiceAndExistingConsent",
+    # These selected non-playback checks require the isolated Transfer Preview;
+    # ordinary connected lanes intentionally use another installed app identity.
+    "PrivateListeningDeviceRegressionTests#installedListeningServiceIsPrivateAndMediaPlaybackScoped",
+    "PrivateListeningDeviceRegressionTests#audioWorkerUsesOneNativeAudioPriorityThreadAndReleasesIt",
+    "PrivateListeningDeviceRegressionTests#platformPcmBufferQueryFitsTheBudgetWithoutOpeningAnAudioTrack",
+    "PrivateListeningDeviceRegressionTests#credentialConsentAndStopFenceWorkerAdmissionWithoutNativePlayback",
     "HomeVisualReviewTest#nativePresentationStates",
     "TransferPresentationTest#transferStatesKeepOneOverviewHeadingAndAccessibleActions",
     "TransferPresentationTest#sharedActionMatchesHomeSizeAndFiresOnlyOnce",

@@ -113,6 +113,11 @@ On large-chunk LAN links, smaller-than-negotiated chunks return credit immediate
 
 ## Validation, cancellation and renewal
 
+Listening startup's transfer-drain preflight counts only a currently owned
+outgoing file. Terminal/dismissed jobs retain diagnostic counters but no live
+file backlog; those counters cannot prolong a later Start. An active sending
+file still must drain to the existing 128-KiB bound.
+
 Native identity, key protection and active trust remain live for authenticated operations. Sending validates before sealing and after submission; receiving validates after tag authentication and before delivery. Deadline-only waits perform no storage or KeyStore/Keychain reads.
 
 Producer cancellation remains effective before nonce reservation. Once sealed, the session owns submission and post-write validation; failure burns the sequence and retires the channel. No sealed record is replayed.
@@ -138,6 +143,21 @@ File chunks can enter the existing ingress FIFO on that same worker hook while c
 AudioTrack capacity/start-threshold rounding, partial writes, silent route verification, bounded native stalls and pause/resume are exercised through a native-track adapter fake; these worker tests do not open an audio device. Native UI render fixtures likewise require an isolated emulator. Actual output latency and route behavior still require physical checks.
 
 The stability regression simulates ten minutes of ±0.1% output-clock drift and recurring packet bursts through the bounded queue/resampler. It checks advancing source sequence, learned buffer floors and no growing backlog; it is not a screen-off, Wi-Fi or Bluetooth hardware measurement.
+
+An elevated learned audio floor may decrease by one 960-frame packet after two
+continuous healthy minutes; interruption, rebuffering or a new underrun resets
+the interval. Lower targets immediately trim only obsolete software PCM. Native
+head observations are bounded by this track epoch's submitted frames so a delayed
+post-flush head cannot falsely drain silent priming or become a spurious wrap.
+Route-driven startup-threshold increases receive only the missing pending silent
+reservation, not a deficit calculated from already-drained lifetime writes.
+The top-up retains the original deadline and route/write gate.
+
+Mac transfer-health admission accepts streaming backlog through the valid
+Balanced upper target plus two packet-sized accounting reserves (13,440 frames),
+rather than treating every healthy buffer above an arbitrary 200 ms as unhealthy.
+Fresh advancing health, underrun/staleness contraction, negotiated file limits
+and existing delayed-path qualification remain authoritative.
 
 ## Observed costs
 
@@ -170,6 +190,8 @@ python3 scripts/verify-lan-interchange.py --serial PHONE_SERIAL \
 ```
 
 The [benchmark contract](../protocol/lan/BENCHMARK.md) defines payloads and metrics. Native interchange scripts target the normal Android test package; do not run them against an unrelated installed production app. Raw TCP excludes records, transfer credit and file storage and must not be presented as file-transfer throughput.
+
+For user-operated Private Listening comparisons, follow the [physical-test guide](PRIVATE_LISTENING_TESTING.md). `scripts/check-listening-health.py` queries an explicitly selected Transfer Preview without activating playback; optional layout-checked native track counters complement app screenshots. Filtered snapshots, Wi-Fi PHY rates and CPU ticks are diagnostics, not source-to-ear latency or file-throughput benchmarks.
 
 ## Optimization constraints
 

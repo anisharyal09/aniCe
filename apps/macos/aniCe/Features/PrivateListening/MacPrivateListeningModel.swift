@@ -267,7 +267,10 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
       guard message.number(1) == 1 else { return .discarded }
       let wasFocusPaused = current.receiverState == 3
       current.receiverState = message.number(2)
-      transferHealth(current.receiverState == 2 && message.number(5) <= 9600,
+      // The negotiated local profiles can legitimately reach 240 ms. Native
+      // frames count once and one current/resampled packet may sit at the edge;
+      // do not label healthy Balanced playback unhealthy above an arbitrary 200 ms.
+      transferHealth(current.receiverState == 2 && message.number(5) <= 13440,
         message.number(3), message.number(6))
       if wasFocusPaused && current.receiverState != 3 && current.lastSequence == 0 {
         current.readyAt = now()

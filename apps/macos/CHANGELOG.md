@@ -103,6 +103,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Do not wait on terminal/dismissed transfer counters before Private Listening;
+  an owned outgoing file still enforces the same drain bound.
+- Keep healthy Balanced listening buffers eligible for transfer-credit recovery
+  instead of rejecting every backlog above 200 ms.
 - Fence LAN deadline checks and renewal triggers to the current cryptographic session.
 - Cancel queued automatic clipboard work when paused without cancelling explicit manual sends or replaying paused copies on resume.
 - Reject oversized SMS sends and preserve full notification replies in the Messages draft instead of truncating them.

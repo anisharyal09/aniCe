@@ -31,6 +31,7 @@ internal class PrivateListeningBufferPolicy(
     private var previousUnderruns: Long? = null
     private var learnedFloor = profile.minimumFrames
     private var recoveryUntil = 0L
+    private var floorHealthySince: Long? = null
 
     @Synchronized fun arrived(sequence: Long, now: Long) {
         require(sequence > 0 && now >= 0)
@@ -58,6 +59,10 @@ internal class PrivateListeningBufferPolicy(
 
     @Synchronized fun starved(now: Long) {
         require(now >= 0)
+        // The growth cooldown limits target inflation, not healthy time.
+        // Every starvation breaks a continuous recovery probe.
+        floorHealthySince = null
+        stableSince = null
         // One continuous starvation episode must not inflate the target every worker turn.
         if (lastIncrease?.let { now - it < 1000 } == true) return
         learnedFloor = maxOf(learnedFloor, targetFrames + 960).coerceAtMost(profile.maximumFrames)
@@ -67,6 +72,14 @@ internal class PrivateListeningBufferPolicy(
 
     @Synchronized fun healthy(now: Long) {
         require(now >= 0)
+        if (floorHealthySince == null) floorHealthySince = now
+        // Remember short-term underruns, but do not retain one transfer/radio burst
+        // as a permanent latency floor. Reprobe only one packet after a long
+        // uninterrupted healthy interval; a real underrun immediately relearns it.
+        if (learnedFloor > profile.minimumFrames && now - requireNotNull(floorHealthySince) >= 120000) {
+            learnedFloor = maxOf(profile.minimumFrames, learnedFloor - 960)
+            floorHealthySince = now
+        }
         val stable = stableSince
         if (stable == null) { stableSince = now; return }
         if (now - stable < 15000) return
@@ -81,15 +94,17 @@ internal class PrivateListeningBufferPolicy(
         previousArrival = null
         previousUnderruns = null
         stableSince = null
+        floorHealthySince = null
         lateMillis = 0.0
     }
 
-    @Synchronized fun buffering() { stableSince = null }
+    @Synchronized fun buffering() { stableSince = null; floorHealthySince = null }
 
     private fun increase(frames: Int, now: Long) {
         targetFrames = roundPacket(frames).coerceIn(profile.minimumFrames, profile.maximumFrames)
         lastIncrease = now
         stableSince = null
+        floorHealthySince = null
     }
 
     private fun roundPacket(frames: Int) = (frames + 959) / 960 * 960

@@ -10,6 +10,7 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
+- Add bounded, read-only Private Listening preview diagnostics and a physical comparison guide without recording audio or changing device settings; recognize native track prefixes and separate current Wi-Fi rates from capability limits.
 - Connect native Private Listening engines through secured LAN with explicit setup, bounded lifecycle, local headphone volume and transfer pacing.
 - Add native Private Listening capture/playback primitives with bounded buffers, route verification and off-callback audio conversion.
 - Add the shared Private Listening audio contract and native Mac/Android wire codecs without changing existing session cryptography.
@@ -40,6 +41,9 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Let Private Listening cautiously recover from a transient high-buffer floor,
+  trim stale software PCM on target reductions and keep valid Balanced health
+  eligible for bounded transfer-credit recovery.
 - Isolate Private Listening playback/Audio admission from UI work, reduce local buffer floors and recover transfer credit only with healthy audio.
 - Add opt-in lower-delay Private Listening buffering and local backlog diagnostics while preserving headphone safety and encrypted LAN ownership.
 - Clarify shared LAN demand gates, file-only Disconnect recovery and single-owner Transfer Preview usage across architecture and setup documentation.
@@ -97,6 +101,10 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Fixed
 
+- Stop retired file-transfer counters from blocking a new Private Listening Start;
+  keep the existing drain limit for a currently owned outgoing file.
+- Fence delayed native playback-head resets and top up route-adjusted silent
+  startup thresholds without weakening headphone checks or preparation deadlines.
 - Preserve transfer publication recovery and correlate resume replies with their issuing channel and job epoch on both platforms.
 - Correct device-lab temperature conversion, replace the public hardware serial with a placeholder, and remove unused resources and legacy notification builders.
 - Create tagged release drafts through the Releases API, capture their IDs for verification, and fill marker-only drafts with generated notes while preserving maintainer descriptions.

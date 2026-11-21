@@ -177,4 +177,44 @@ class PrivateListeningBufferPolicyTests {
         stable.healthy(50000)
         assertEquals("Do not retry the one-packet floor after it underruns", 1920, stable.targetFrames)
     }
+
+    @Test fun aTransientBurstDoesNotPinTheLearnedFloorForTheRestOfTheStream() {
+        val policy = PrivateListeningBufferPolicy(ListeningBufferProfile.LOWER_DELAY)
+        policy.starved(0)
+        assertEquals(3840, policy.targetFrames)
+        policy.healthy(1000)
+        for (time in 16000L..106000L step 15000) policy.healthy(time)
+        assertEquals(2880, policy.targetFrames)
+        // Each two-minute healthy probe lowers one packet, not the whole reserve.
+        policy.healthy(121000)
+        assertEquals(1920, policy.targetFrames)
+        policy.healthy(136000)
+        assertEquals(1920, policy.targetFrames)
+        policy.healthy(241000)
+        assertEquals(960, policy.targetFrames)
+        policy.starved(242000)
+        assertEquals(2880, policy.targetFrames)
+        policy.healthy(243000)
+        policy.healthy(258000)
+        assertEquals(1920, policy.targetFrames)
+        policy.buffering()
+        policy.healthy(400000)
+        policy.healthy(415000)
+        assertEquals("Buffering resets the stable-floor probe interval", 1920, policy.targetFrames)
+    }
+
+    @Test fun starvationInsideTheGrowthCooldownStillRestartsTheHealthyProbe() {
+        val policy = PrivateListeningBufferPolicy(ListeningBufferProfile.LOWER_DELAY)
+        policy.starved(0)
+        policy.healthy(100)
+        policy.starved(500)
+        assertEquals("Do not increase twice in the growth cooldown", 3840, policy.targetFrames)
+        policy.healthy(1000)
+        for (time in 16000L..106000L step 15000) policy.healthy(time)
+        assertEquals(2880, policy.targetFrames)
+        policy.healthy(120100)
+        assertEquals("The interrupted interval must not satisfy the probe", 2880, policy.targetFrames)
+        policy.healthy(135100)
+        assertEquals(1920, policy.targetFrames)
+    }
 }

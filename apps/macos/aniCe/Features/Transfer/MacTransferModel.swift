@@ -227,7 +227,8 @@ enum TransferEvent: Equatable {
     return pacedLan ? min(credit, min(listeningPacing.creditBytes, senderChunkBytes * peerMaxWindow)) : credit
   }
   var lowLatencyBacklogReady: Bool {
-    activeChannel?.descriptor.transport != "lan" || receiving || sentBytes - acknowledgedBytes <= 131072
+    activeChannel?.descriptor.transport != "lan" || receiving || sendingFile == nil ||
+      sentBytes - acknowledgedBytes <= 131072
   }
   func setLowLatencyMediaActive(_ active: Bool) {
     guard lowLatencyMedia != active else { return }

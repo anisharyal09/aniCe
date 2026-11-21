@@ -36,6 +36,9 @@ struct AniCeApp: App {
   @State private var navigation: ConnectionNavigation
   @State private var hotkeyManager: GlobalHotkeyManager?
   @State private var servicesStarted = false
+  #if DEBUG && ANICE_TRANSFER_PREVIEW
+  @State private var physicalListening: PrivateListeningPhysicalRunner?
+  #endif
 
   init() {
     precondition(MacAppStorage.isPreview == (Bundle.main.bundleIdentifier == MacAppStorage.previewBundleIdentifier),
@@ -98,6 +101,17 @@ struct AniCeApp: App {
     _lan = State(initialValue: lan)
     let privateListening = MacPrivateListeningModel(preferences: IdentityView.isTesting ? nil : .standard)
     _privateListening = State(initialValue: privateListening)
+    #if DEBUG && ANICE_TRANSFER_PREVIEW
+    _physicalListening = State(initialValue: PrivateListeningPhysicalRunner(
+      listening: privateListening, transfer: transfer,
+      connectionState: { [weak lan] in lan?.state ?? "Unavailable" },
+      connect: { [weak pairing, weak lan] in
+        guard let lan, let phones = pairing?.peers.filter({ $0.active && $0.peer.platform == "android" }),
+          phones.count == 1 else { return false }
+        lan.connectAlongside(phones[0].peer)
+        return true
+      }))
+    #endif
     privateListening.pacingChanged = { [weak transfer] active in transfer?.setLowLatencyMediaActive(active) }
     privateListening.transferReady = { [weak transfer] in transfer?.lowLatencyBacklogReady ?? true }
     privateListening.transferHealth = { [weak transfer] healthy, sequence, underruns in
@@ -304,7 +318,12 @@ struct AniCeApp: App {
         session: session, lan: lan, privateListening: privateListening, connectionPause: connectionPause, playback: playback, transfer: transfer, edgeDrop: edgeDrop,
         clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, sms: sms,
         keyboardTrackpad: keyboardTrackpad, phoneInput: phoneInput, smsPreferences: smsPreferences,
-        onInitialRender: { startDeferredServices() }, dndSync: dndSync, deskDeck: deskDeck, phonePower: phonePower, navigation: navigation)
+        onInitialRender: {
+          startDeferredServices()
+          #if DEBUG && ANICE_TRANSFER_PREVIEW
+          physicalListening?.start()
+          #endif
+        }, dndSync: dndSync, deskDeck: deskDeck, phonePower: phonePower, navigation: navigation)
     }
     .defaultSize(width: MainWindowSizing.defaultSize.width, height: MainWindowSizing.defaultSize.height)
     .windowResizability(.contentMinSize)
