@@ -260,7 +260,12 @@ import UserNotifications
           guard let total, total > 0 else { return }
           await MainActor.run { self.progress = min(1, Double(received) / Double(total)) }
         }
-        NSApplication.shared.terminate(nil)
+        await MainActor.run {
+          self.reviewing = false
+          NSApplication.shared.terminate(nil)
+        }
+        try? await Task.sleep(for: .milliseconds(200))
+        exit(0)
       } catch is CancellationError {
         installError = "Update download cancelled."
       } catch {
