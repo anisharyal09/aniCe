@@ -108,6 +108,7 @@ enum WindowAppearance: String, CaseIterable {
     var destination: AppDestination = .home
     var deviceRoute: DeviceRoute = .overview
     var settingsRoute: SettingsRoute = .overview
+    var settingsSection: String?
     var focusedPeer: String?
     var featurePanel: AppFeature?
     var featureOrigin: AppDestination = .features
@@ -129,6 +130,15 @@ enum WindowAppearance: String, CaseIterable {
   var settingsRoute: SettingsRoute {
     get { route.settingsRoute }
     set { navigate { $0.settingsRoute = newValue } }
+  }
+  var settingsSection: String? { route.settingsSection }
+
+  func openSettings(section: String) {
+    navigate {
+      $0.destination = .settings
+      $0.settingsRoute = .overview
+      $0.settingsSection = section
+    }
   }
   var focusedPeer: String? {
     get { route.focusedPeer }

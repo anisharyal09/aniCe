@@ -4,6 +4,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+### Changed
+
+- Group Settings under All, General, Permissions, Features and Shortcuts with wrapped category controls and a direct Messages setup link.
+
 ### Fixed
 
 - Show native app-bar Back on About and apply safe drawing/keyboard insets to full-screen Mac control.

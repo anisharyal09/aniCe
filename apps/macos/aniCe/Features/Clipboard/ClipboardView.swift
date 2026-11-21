@@ -116,6 +116,7 @@ private struct HistoryPreference: View {
 struct ClipboardView: View {
   let model: MacClipboardModel
   let peers: [PeerTrustRecord]
+  var openSettings: (() -> Void)? = nil
   @Environment(\.colorScheme) private var scheme
   @State private var historyTab = false
   @State private var preferencesOpen = false
@@ -141,7 +142,9 @@ struct ClipboardView: View {
           }
         }
           .buttonStyle(AniCeButtonStyle(quiet: true)).help("Open clipboard tray (⌥⌘V)")
-        Button { preferencesOpen.toggle() } label: { Image(systemName: "gearshape").frame(width: 24, height: 24) }
+        Button {
+          if let openSettings { openSettings() } else { preferencesOpen.toggle() }
+        } label: { Image(systemName: "gearshape").frame(width: 24, height: 24) }
           .buttonStyle(AniCeHoverButtonStyle()).controlSize(.small)
           .help("Clipboard preferences").accessibilityLabel("Clipboard preferences")
       }

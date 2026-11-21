@@ -10,6 +10,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Add default-on Native Glass with Standard/Vibrant styles across navigation and floating surfaces, native-material compatibility and a solid Reduce Transparency override.
 - Add Settings categories with Appearance under General, preserving access to existing preferences.
 
+### Changed
+
+- Organize Settings into ordered category sections, remove the duplicate jump strip and route Clipboard/Messages gears to their settings.
+
 ### Fixed
 
 - Keep clipboard-tray history consent inside its non-activating panel, avoiding detached alerts and main-window focus handoffs.

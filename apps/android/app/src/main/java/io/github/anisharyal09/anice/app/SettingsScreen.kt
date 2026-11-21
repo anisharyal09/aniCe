@@ -9,7 +9,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.*
@@ -26,8 +25,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -47,9 +44,11 @@ import io.github.anisharyal09.anice.ui.theme.saveAppearance
 import io.github.anisharyal09.anice.ui.theme.AniCeWordmark
 import io.github.anisharyal09.anice.ui.theme.fontScalePreference
 import io.github.anisharyal09.anice.ui.theme.saveFontScale
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collect
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+
+private val LocalSettingsCategory = staticCompositionLocalOf { SettingsCategory.All }
+private val LocalSettingsTarget = staticCompositionLocalOf<String?> { null }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,50 +69,12 @@ fun SettingsScreen(
         io.github.anisharyal09.anice.features.notifications.NotificationAppSelection(app.notificationMirror)
     } else {
         val lan = app.lanSessionController
-        val sections = buildList {
-            add("Appearance")
-            add("Updates")
-            add("Connection")
-            add("Do Not Disturb")
-            add("Clipboard")
-            if (!app.sms.granted) add("Messages")
-            add("Notification sync")
-            add("File transfer")
-            add("This device")
-        }
-        var selectedSection by rememberSaveable { mutableStateOf("Appearance") }
-        val activeSection = selectedSection.takeIf { it in sections } ?: sections.first()
-        LaunchedEffect(sections) {
-            if (selectedSection !in sections) selectedSection = sections.first()
-        }
-        val scope = rememberCoroutineScope()
+        var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.All) }
         val scrollState = rememberScrollState()
-        val sectionOffsets = remember(sections) { mutableStateMapOf<String, Float>() }
-        val sectionRequesters = remember(sections) { sections.associateWith { BringIntoViewRequester() } }
-        var viewportTop by remember { mutableFloatStateOf(0f) }
-        var movingToSection by remember { mutableStateOf(false) }
-        var highlightedSection by remember { mutableStateOf<String?>(null) }
-        var sectionJumpGeneration by remember { mutableIntStateOf(0) }
-        val density = LocalDensity.current
-        val selectedThreshold = with(density) { 32.dp.toPx() }
-        val endThreshold = selectedThreshold.toInt()
-        fun sectionAt(scrollPosition: Int, offsets: Map<String, Float>): String =
-            if (scrollState.maxValue > endThreshold && scrollPosition >= scrollState.maxValue - endThreshold) sections.last()
-            else sections.lastOrNull { (offsets[it] ?: Float.MAX_VALUE) <= scrollPosition + selectedThreshold }
-                ?: sections.first()
-
-        LaunchedEffect(scrollState, sections) {
-            snapshotFlow { sectionAt(scrollState.value, sectionOffsets.toMap()) }
-                .collect { current ->
-                    if (!movingToSection) selectedSection = current
-                }
+        LaunchedEffect(selectedCategory) { scrollState.scrollTo(0) }
+        LaunchedEffect(navigation.settingsSection) {
+            navigation.settingsSection?.let { selectedCategory = SettingsCategory.forSection(it) }
         }
-
-        fun sectionModifier(section: String): Modifier = Modifier
-            .bringIntoViewRequester(sectionRequesters.getValue(section))
-            .onGloballyPositioned { coordinates ->
-                sectionOffsets[section] = coordinates.positionInRoot().y - viewportTop + scrollState.value
-            }
         val lanPrefs = remember { context.getSharedPreferences("lan_preferences", Context.MODE_PRIVATE) }
         var timeoutMinutes by remember { mutableIntStateOf(lanPrefs.getInt("lan_background_timeout_minutes", 0)) }
         var timeoutExpanded by remember { mutableStateOf(false) }
@@ -127,65 +88,30 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text("Settings", style = MaterialTheme.typography.titleMedium)
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                FlowRow(
+                    Modifier.fillMaxWidth().selectableGroup(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    sections.forEach { section ->
-                        val selected = activeSection == section
-                        val tabRequester = remember(section) { BringIntoViewRequester() }
-                        val tabShape = RoundedCornerShape(8.dp)
-                        LaunchedEffect(selected) {
-                            if (selected) tabRequester.bringIntoView()
+                    SettingsCategory.entries.forEach { category ->
+                        FilterChip(
+                            selected = selectedCategory == category,
+                            onClick = { selectedCategory = category },
+                            label = { Text(category.label) },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        )
                         }
-                        Box(
-                            Modifier.bringIntoViewRequester(tabRequester)
-                                .clip(tabShape)
-                                .background(if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f) else Color.Transparent, tabShape)
-                                .then(if (selected) Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f), tabShape) else Modifier)
-                                .selectable(selected = selected, role = Role.Tab) {
-                                    val generation = ++sectionJumpGeneration
-                                    selectedSection = section
-                                    movingToSection = true
-                                    highlightedSection = null
-                                    scope.launch {
-                                        try {
-                                            sectionRequesters.getValue(section).bringIntoView()
-                                            if (sectionJumpGeneration == generation) {
-                                                selectedSection = section
-                                                highlightedSection = section
-                                            }
-                                        } finally {
-                                            if (sectionJumpGeneration == generation) {
-                                                movingToSection = false
-                                            }
-                                        }
-                                        if (sectionJumpGeneration == generation) {
-                                            delay(700)
-                                            if (sectionJumpGeneration == generation && highlightedSection == section)
-                                                highlightedSection = null
-                                        }
-                                    }
-                                }
-                                .heightIn(min = 40.dp)
-                                .padding(horizontal = 12.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(section,
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-                                color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
                 }
 
+                CompositionLocalProvider(LocalSettingsCategory provides selectedCategory,
+                    LocalSettingsTarget provides navigation.settingsSection) {
                 Column(
                     Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState)
-                        .onGloballyPositioned { viewportTop = it.positionInRoot().y }
                         .padding(top = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp)
                 ) {
-                    PreferenceSection("Appearance", sectionModifier("Appearance"), highlightedSection == "Appearance") {
+                    SettingsCategoryHeading(SettingsCategory.General)
+                    PreferenceSection("Appearance") {
                         Box {
                             Row(
                                 Modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -247,11 +173,11 @@ fun SettingsScreen(
                         }
                     }
 
-                    PreferenceSection("Updates", sectionModifier("Updates"), highlightedSection == "Updates") {
+                    PreferenceSection("Updates") {
                         io.github.anisharyal09.anice.update.UpdateSettings(app.updates)
                     }
 
-                    PreferenceSection("Connection", sectionModifier("Connection"), highlightedSection == "Connection") {
+                    PreferenceSection("Connection") {
                         AutomaticConnectionToggle(
                             checked = lan.automatic,
                             enabled = true,
@@ -304,21 +230,47 @@ fun SettingsScreen(
                         }
                     }
 
-                    PreferenceSection("Do Not Disturb", sectionModifier("Do Not Disturb"), highlightedSection == "Do Not Disturb") {
+                    PreferenceSection("This device") {
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                                .clickable(role = Role.Button, onClickLabel = "Open identity and security") {
+                                    showingIdentity = true
+                                }.padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(identity.state.snapshot?.identity?.deviceName ?: "This device",
+                                    style = MaterialTheme.typography.bodyMedium)
+                                Text("Identity and security", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
+                                modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    SettingsCategoryHeading(SettingsCategory.Permissions)
+                    PreferenceSection("Permissions") {
+                        Text(if (app.sms.granted) "SMS access allowed" else "SMS access needed",
+                            style = MaterialTheme.typography.bodyMedium)
+                        TextButton(onClick = { navigation.openFeature(AppFeature.Sms) },
+                            modifier = Modifier.heightIn(min = 48.dp)) { Text("Open Messages setup") }
+                    }
+                    SettingsCategoryHeading(SettingsCategory.Features)
+                    PreferenceSection("Do Not Disturb") {
                         io.github.anisharyal09.anice.features.dndsync.DndSyncSettings(app.dndSync)
                     }
 
-                    PreferenceSection("Clipboard", sectionModifier("Clipboard"), highlightedSection == "Clipboard") {
+                    PreferenceSection("Clipboard") {
                         io.github.anisharyal09.anice.features.clipboard.ClipboardSettings(app.clipboard, peers, grouped = true)
                     }
 
                     if (!app.sms.granted) {
-                        PreferenceSection("Messages", sectionModifier("Messages"), highlightedSection == "Messages") {
+                        PreferenceSection("Messages") {
                             io.github.anisharyal09.anice.features.sms.SmsSettings(app.sms)
                         }
                     }
 
-                    PreferenceSection("Notification sync", sectionModifier("Notification sync"), highlightedSection == "Notification sync") {
+                    PreferenceSection("Notification sync") {
                         io.github.anisharyal09.anice.features.notifications.NotificationSettings(app.notificationMirror)
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         val selectedCount = app.notificationMirror.preferences.selectedPackages().size
@@ -335,7 +287,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    PreferenceSection("File transfer", sectionModifier("File transfer"), highlightedSection == "File transfer") {
+                    PreferenceSection("File transfer") {
                         io.github.anisharyal09.anice.features.transfer.TransferAutoReceiveSettings(
                             preferences = app.transfer.autoReceivePreferences,
                             peers = peers,
@@ -344,24 +296,14 @@ fun SettingsScreen(
                         )
                     }
 
-                    PreferenceSection("This device", sectionModifier("This device"), highlightedSection == "This device") {
-                        Row(
-                            Modifier.fillMaxWidth().heightIn(min = 52.dp)
-                                .clickable(role = Role.Button, onClickLabel = "Open identity and security") {
-                                    showingIdentity = true
-                                }
-                                .padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(identity.state.snapshot?.identity?.deviceName ?: "This device", style = MaterialTheme.typography.bodyMedium)
-                                Text("Identity and security", style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
-                                modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                    SettingsCategoryHeading(SettingsCategory.Shortcuts)
+                    PreferenceSection("Shortcuts") {
+                        Text("Star features for Home quick access. Long-press to reorder.",
+                            style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = { navigation.select(AppDestination.Favourites, peers.isEmpty()) },
+                            modifier = Modifier.heightIn(min = 48.dp)) { Text("Manage favourites") }
                     }
+                }
                 }
             }
         }
@@ -375,8 +317,18 @@ private fun PreferenceSection(
     highlighted: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val category = LocalSettingsCategory.current
+    if (category != SettingsCategory.All && category != SettingsCategory.forSection(title)) return
+    val requester = remember { BringIntoViewRequester() }
+    val target = LocalSettingsTarget.current
+    LaunchedEffect(target, category) {
+        if (target == title) {
+            withFrameNanos { }
+            requester.bringIntoView()
+        }
+    }
     val shape = RoundedCornerShape(8.dp)
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    Column(modifier.bringIntoViewRequester(requester), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Text(title, Modifier.padding(horizontal = 2.dp), style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Surface(
@@ -388,6 +340,15 @@ private fun PreferenceSection(
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), content = content)
         }
+    }
+}
+
+@Composable
+private fun SettingsCategoryHeading(category: SettingsCategory) {
+    val selected = LocalSettingsCategory.current
+    if (selected == SettingsCategory.All || selected == category) {
+        Text(category.label, Modifier.semantics { heading() },
+            style = MaterialTheme.typography.titleSmall)
     }
 }
 

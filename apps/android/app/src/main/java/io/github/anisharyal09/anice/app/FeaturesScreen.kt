@@ -41,7 +41,8 @@ fun FeaturesScreen(
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(panel.label, style = MaterialTheme.typography.titleMedium)
             if (panel == AppFeature.Playback) io.github.anisharyal09.anice.features.nowplaying.MediaView(session.media)
-            else if (panel == AppFeature.Clipboard) io.github.anisharyal09.anice.features.clipboard.ClipboardView(session.clipboard, peers)
+            else if (panel == AppFeature.Clipboard) io.github.anisharyal09.anice.features.clipboard.ClipboardView(
+                session.clipboard, peers, openSettings = { navigation.openSettings("Clipboard") })
             else if (panel == AppFeature.Sms) io.github.anisharyal09.anice.features.sms.SmsView(session.sms, peers)
             else io.github.anisharyal09.anice.features.transfer.TransferView(session.transfer, peers = peers)
         }

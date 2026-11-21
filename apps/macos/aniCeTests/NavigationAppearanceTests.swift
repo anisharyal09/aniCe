@@ -10,6 +10,18 @@ import Observation
 @testable import aniCe
 
 extension SessionTests {
+  @MainActor func testFeatureSettingsTargetSurvivesBackAndForward() {
+    let navigation = ConnectionNavigation()
+    navigation.openFeature(.clipboard)
+    navigation.openSettings(section: "clipboard")
+    XCTAssertEqual(navigation.destination, .settings)
+    XCTAssertEqual(navigation.settingsSection, "clipboard")
+    navigation.goBack()
+    XCTAssertEqual(navigation.featurePanel, .clipboard)
+    navigation.goForward()
+    XCTAssertEqual(navigation.settingsSection, "clipboard")
+  }
+
   func testNativeGlassAccessibilityOverridesEveryStyleWithoutChangingPreference() {
     XCTAssertEqual(NativeGlassStyle.stored("invalid"), .standard)
     XCTAssertEqual(NativeGlassStyle.allCases.count, 2)
@@ -451,6 +463,25 @@ final class PauseMenuTests: XCTestCase {
 
 
 @MainActor final class SettingsScrollTests: XCTestCase {
+  func testDeferredSettingsTargetWaitsForAttachmentAndReplacementWins() {
+    let coordinator = SettingsScrollCoordinator()
+    var completed: [String] = []
+    coordinator.request("old") { completed.append("old") }
+    coordinator.request("new") { completed.append("new") }
+    coordinator.resolvePending()
+    XCTAssertTrue(completed.isEmpty)
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 300))
+    let document = FlippedSettingsDocument(frame: NSRect(x: 0, y: 0, width: 500, height: 1200))
+    scroll.documentView = document
+    let target = NSView(frame: NSRect(x: 0, y: 900, width: 450, height: 80))
+    document.addSubview(target)
+    coordinator.anchors["new"] = target
+    coordinator.resolvePending()
+    coordinator.resolvePending()
+    XCTAssertEqual(completed, ["new"])
+    XCTAssertTrue(scroll.documentVisibleRect.contains(target.frame))
+  }
+
   func testTargetsClampAndRepeatWithoutLosingCompletion() {
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 300))
     let document = FlippedSettingsDocument(frame: NSRect(x: 0, y: 0, width: 500, height: 1200))

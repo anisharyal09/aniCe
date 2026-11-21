@@ -7,6 +7,27 @@ import org.junit.Test
 import io.github.anisharyal09.anice.ui.theme.Appearance
 
 class AppNavigationTest {
+    @Test fun clipboardSettingsRouteKeepsPeerContextAndDoesNotStartTransport() {
+        val navigation = AppNavigation(AppDestination.Features, focusedPeer = "mac-a")
+        navigation.openSettings("Clipboard")
+        assertEquals(AppDestination.Settings, navigation.destination)
+        assertEquals("Clipboard", navigation.settingsSection)
+        assertEquals("mac-a", navigation.focusedPeer)
+        assertEquals(SettingsRoute.Overview, navigation.settingsRoute)
+    }
+
+    @Test fun settingsCategoriesKeepGeneralAndPermissionsSeparateFromFeatureControls() {
+        assertEquals(5, SettingsCategory.entries.size)
+        for (section in listOf("Appearance", "Updates", "Connection", "This device")) {
+            assertEquals(SettingsCategory.General, SettingsCategory.forSection(section))
+        }
+        assertEquals(SettingsCategory.Permissions, SettingsCategory.forSection("Permissions"))
+        assertEquals(SettingsCategory.Shortcuts, SettingsCategory.forSection("Shortcuts"))
+        for (section in listOf("Clipboard", "Messages", "Notification sync", "Do Not Disturb", "File transfer")) {
+            assertEquals(SettingsCategory.Features, SettingsCategory.forSection(section))
+        }
+    }
+
     @Test fun appBarBackMatchesNestedDestinationsWithoutLeakingInactiveRoutes() {
         for (destination in AppDestination.entries) {
             for (route in DeviceRoute.entries) {

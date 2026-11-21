@@ -65,7 +65,7 @@ fun ClipboardSettings(
 }
 
 @Composable
-fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
+fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>, openSettings: (() -> Unit)? = null) {
     var historyTab by remember { mutableStateOf(false) }
     var preferencesOpen by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
@@ -95,7 +95,7 @@ fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
                     historyTab = true; pasted = ""; reveal = false; owner.clearPreview()
                 }
             }
-            IconButton(onClick = { preferencesOpen = !preferencesOpen }, modifier = Modifier.size(48.dp)) {
+            IconButton(onClick = { if (openSettings != null) openSettings() else preferencesOpen = !preferencesOpen }, modifier = Modifier.size(48.dp)) {
                 Icon(painterResource(R.drawable.ic_settings), contentDescription = "Clipboard preferences",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
             }

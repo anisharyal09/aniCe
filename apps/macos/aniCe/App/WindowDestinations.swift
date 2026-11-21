@@ -436,15 +436,8 @@ extension MainWindowView {
     } else {
       Group {
         GeometryReader { geometry in
-          let expanded = geometry.size.width >= 880
           ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-              let jumps = [
-                ("appearance", "Appearance"), ("updates", "Updates"), ("connection", "Connection"), ("permissions", "Permissions"), ("desk-deck", "Desk Deck"),
-                ("dnd-sync", "Do Not Disturb"), ("clipboard", "Clipboard"),
-                ("messages", "Messages"), ("file-transfer", "File transfer"),
-                ("now-playing", "Now Playing"), ("this-device", "This device"), ("shortcuts", "Shortcuts")
-              ]
               ViewThatFits(in: .horizontal) {
                 HStack(spacing: 6) {
                   ForEach(MacSettingsCategory.allCases, id: \.self) { category in settingsCategoryButton(category) }
@@ -453,21 +446,8 @@ extension MainWindowView {
                   ForEach(MacSettingsCategory.allCases, id: \.self) { category in settingsCategoryButton(category) }
                 }
               }.padding(.bottom, 12)
-              ViewThatFits(in: .horizontal) {
-                HStack(spacing: 6) {
-                  ForEach(jumps.filter { settingsCategory == .all || MacSettingsCategory.category(for: $0.0) == settingsCategory }, id: \.0) { id, label in settingsJump(label, id: id) }
-                }
-                .fixedSize(horizontal: true, vertical: false)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120 * fontScale), alignment: .leading)], alignment: .leading, spacing: 6) {
-                  ForEach(jumps.filter { settingsCategory == .all || MacSettingsCategory.category(for: $0.0) == settingsCategory }, id: \.0) { id, label in settingsJump(label, id: id) }
-                }
-              }
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .padding(.bottom, 16)
-              .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
-              .padding(.bottom, 18)
-
-              SettingsSectionLayout(columns: expanded ? 2 : 1) {
+              VStack(alignment: .leading, spacing: 0) {
+                settingsCategoryHeading(.general)
                 preferenceSection("Appearance", id: "appearance") {
                   VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -538,10 +518,25 @@ extension MainWindowView {
                       .foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.leading, 20)
                   }.frame(minHeight: 48, alignment: .leading)
                 }
-                preferenceSection("Permissions", id: "permissions") {
+                preferenceSection("This device", id: "this-device") {
+                  Button { showingLocalIdentity = true } label: {
+                    HStack(spacing: 10) {
+                      VStack(alignment: .leading, spacing: 2) {
+                        Text(identity.local?.identity.deviceName ?? "This Mac")
+                        Text("Identity and security").font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                      }
+                      Spacer()
+                      Image(systemName: "chevron.right").font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AniCePalette.secondaryText(colorScheme)).accessibilityHidden(true)
+                    }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
+                  }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("This device, identity and security")
+                }
+                settingsCategoryHeading(.permissions)
+                preferenceSection("Mac input", id: "permissions") {
                   MacPhoneInputView(model: phoneInput, onOpenDevices: { navigation.show(.devices) })
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }
+                settingsCategoryHeading(.features)
                 preferenceSection("Desk Deck", id: "desk-deck") {
                   DeskDeckSettingsView(model: deskDeck, peers: pairing.peers)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
@@ -575,19 +570,7 @@ extension MainWindowView {
                   Toggle("Show on Overview and menu bar", isOn: Binding(get: { playback.showOnMac }, set: { playback.setShowOnMac($0) }))
                     .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).frame(minHeight: 48)
                 }
-                preferenceSection("This device", id: "this-device") {
-                  Button { showingLocalIdentity = true } label: {
-                    HStack(spacing: 10) {
-                      VStack(alignment: .leading, spacing: 2) {
-                        Text(identity.local?.identity.deviceName ?? "This Mac")
-                        Text("Identity and security").font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-                      }
-                      Spacer()
-                      Image(systemName: "chevron.right").font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(AniCePalette.secondaryText(colorScheme)).accessibilityHidden(true)
-                    }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
-                  }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("This device, identity and security")
-                }
+                settingsCategoryHeading(.shortcuts)
                 preferenceSection("Shortcuts", id: "shortcuts") {
                   VStack(alignment: .leading, spacing: 8) {
                     Text("Global · while aniCe is running").font(.system(size: 12 * fontScale))
@@ -598,7 +581,7 @@ extension MainWindowView {
               }
             }
             .padding(24)
-            .frame(maxWidth: expanded ? 1120 : 680, alignment: .leading)
+            .frame(maxWidth: 680, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .top)
           }
         }
@@ -609,6 +592,14 @@ extension MainWindowView {
         try? await Task.sleep(for: .milliseconds(700))
         guard !Task.isCancelled else { return }
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) { focusedSettingsSection = nil }
+      }
+      .task(id: navigation.settingsSection) {
+        guard let section = navigation.settingsSection else { return }
+        settingsCategory = MacSettingsCategory.category(for: section)
+        settingsScroller.request(section) {
+          focusedSettingsSection = section
+          settingsFocusToken = UUID()
+        }
       }
     }
   }
@@ -652,68 +643,33 @@ extension MainWindowView {
       .accessibilityAddTraits(settingsCategory == category ? .isSelected : [])
   }
 
-  private func settingsJump(_ label: String, id: String) -> some View {
-    let selected = activeSettingsSection == id
-    let hovered = hoveredSettingsSection == id
-    return Button {
-      activeSettingsSection = id
-      focusedSettingsSection = nil
-      settingsScroller.scroll(to: id, animated: !reduceMotion) {
-        // An older scroll completion must not highlight a section superseded by another shortcut.
-        guard activeSettingsSection == id else { return }
-        focusedSettingsSection = id
-        settingsFocusToken = UUID()
-      }
-    } label: {
-      Text(label)
-        .font(.system(size: 12 * fontScale, weight: selected ? .medium : .regular))
-        .fixedSize(horizontal: true, vertical: false)
-        .foregroundStyle(selected || hovered ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
-        .padding(.horizontal, 9).padding(.vertical, 8)
-        .background(selected ? AniCePalette.subtleAccent(colorScheme) : .clear, in: RoundedRectangle(cornerRadius: 6))
-        .overlay { RoundedRectangle(cornerRadius: 6).stroke(selected ? AniCePalette.separator(colorScheme) : .clear, lineWidth: 0.75) }
-        .contentShape(RoundedRectangle(cornerRadius: 6))
+  @ViewBuilder private func settingsCategoryHeading(_ category: MacSettingsCategory) -> some View {
+    if settingsCategory == .all || settingsCategory == category {
+      Text(category.rawValue)
+        .font(.system(size: 16 * fontScale, weight: .semibold))
+        .foregroundStyle(AniCePalette.primaryText(colorScheme))
+        .accessibilityAddTraits(.isHeader)
+        .padding(.top, 12).padding(.bottom, 16)
     }
-    .buttonStyle(AniCeHoverButtonStyle())
-    .onHover { isHovered in hoveredSettingsSection = isHovered ? id : (hoveredSettingsSection == id ? nil : hoveredSettingsSection) }
-    .animation(.easeOut(duration: 0.14), value: hovered)
-    .accessibilityAddTraits(selected ? .isSelected : [])
-    .accessibilityHint("Scroll to \(label) settings")
   }
-}
 
-
-// Eager, balanced columns keep section anchors available without leaving gaps beside tall groups.
-private struct SettingsSectionLayout: Layout {
-  let columns: Int
-  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-    let width = proposal.width ?? 680
-    let cellWidth = max(0, (width - CGFloat(columns - 1) * 24) / CGFloat(columns))
-    var columnHeights = Array(repeating: CGFloat.zero, count: columns)
-    for subview in subviews {
-      let column = columnHeights.enumerated().min { $0.element < $1.element }?.offset ?? 0
-      columnHeights[column] += subview.sizeThatFits(ProposedViewSize(width: cellWidth, height: nil)).height
-    }
-    return CGSize(width: width, height: columnHeights.max() ?? 0)
-  }
-  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-    let width = max(0, (bounds.width - CGFloat(columns - 1) * 24) / CGFloat(columns))
-    var columnHeights = Array(repeating: CGFloat.zero, count: columns)
-    for index in subviews.indices {
-      let column = columnHeights.enumerated().min { $0.element < $1.element }?.offset ?? 0
-      let size = subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil))
-      subviews[index].place(
-        at: CGPoint(x: bounds.minX + CGFloat(column) * (width + 24), y: bounds.minY + columnHeights[column]),
-        anchor: .topLeading,
-        proposal: ProposedViewSize(width: width, height: size.height))
-      columnHeights[column] += size.height
-    }
-  }
 }
 
 
 @MainActor final class SettingsScrollCoordinator {
   var anchors: [String: NSView] = [:]
+  private var pending: (String, @MainActor @Sendable () -> Void)?
+
+  func request(_ id: String, completion: @escaping @MainActor @Sendable () -> Void) {
+    pending = (id, completion)
+    resolvePending()
+  }
+
+  func resolvePending() {
+    guard let (id, completion) = pending, anchors[id]?.enclosingScrollView != nil else { return }
+    pending = nil
+    scroll(to: id, animated: false, completion: completion)
+  }
 
   func scroll(to id: String, animated: Bool, completion: @escaping @MainActor @Sendable () -> Void) {
     guard let anchor = anchors[id], let scroll = anchor.enclosingScrollView,
@@ -757,11 +713,33 @@ private struct SettingsScrollAnchor: NSViewRepresentable {
   let id: String
   let coordinator: SettingsScrollCoordinator
   func makeNSView(context: Context) -> NSView {
-    let view = NSView()
+    let view = SettingsAnchorView()
+    view.didAttach = { [weak coordinator] in coordinator?.resolvePending() }
+    view.didDetach = { [weak coordinator, weak view] in
+      if coordinator?.anchors[id] === view { coordinator?.anchors.removeValue(forKey: id) }
+    }
     coordinator.anchors[id] = view
     return view
   }
-  func updateNSView(_ view: NSView, context: Context) { coordinator.anchors[id] = view }
+  func updateNSView(_ view: NSView, context: Context) {
+    coordinator.anchors[id] = view
+  }
+  static func dismantleNSView(_ view: NSView, coordinator: ()) {
+    (view as? SettingsAnchorView)?.didAttach = {}
+    (view as? SettingsAnchorView)?.didDetach()
+    (view as? SettingsAnchorView)?.didDetach = {}
+  }
+}
+
+@MainActor private final class SettingsAnchorView: NSView {
+  var didAttach: () -> Void = {}
+  var didDetach: () -> Void = {}
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    if window != nil {
+      DispatchQueue.main.async { [weak self] in self?.didAttach() }
+    } else { didDetach() }
+  }
 }
 
 private struct DeskDeckSettingsView: View {

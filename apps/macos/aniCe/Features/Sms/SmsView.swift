@@ -67,6 +67,7 @@ struct SmsView: View {
   let model: MacSmsModel
   let peers: [PeerTrustRecord]
   let preferences: SmsPreferences
+  var openSettings: (() -> Void)? = nil
   @State private var peerKey = ""
   @State private var address = ""
   @State private var draft = ""
@@ -453,7 +454,9 @@ struct SmsView: View {
 
   /** Toggles the notification controls that sit directly under this row; they never leave the window. */
   @ViewBuilder private func gear(_ peer: DeviceIdentity) -> some View {
-    Button { controlsOpen.toggle() } label: { Label("Notification settings", systemImage: "gearshape") }
+    Button {
+      if let openSettings { openSettings() } else { controlsOpen.toggle() }
+    } label: { Label("Notification settings", systemImage: "gearshape") }
       .labelStyle(.iconOnly).frame(width: 24, height: 24)
       .buttonStyle(.borderless).aniCeControlFeedback().controlSize(.small)
       .help("Notification settings for \(peer.displayName)")

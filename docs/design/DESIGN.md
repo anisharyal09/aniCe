@@ -147,6 +147,7 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 - History: Local-only opt-in storage with configurable capacity (20/50/100 items). See [Clipboard](../features/CLIPBOARD.md).
 
 ### Settings and About
+- Settings defaults to All, an ordered scroll page with General, Permissions, Features and Shortcuts headings. Category controls filter that page without changing preference values; phone controls wrap instead of scrolling horizontally. Mac keeps one readable settings column and Clipboard/Messages gears open their exact category section.
 - Grouped preferences using native controls (toggles, sliders, pickers).
 - Android Settings cards use 12 dp horizontal / 4 dp vertical insets with compact grouped rows; child sections must not add another outer inset.
 - Keep setting labels and helper text in one column with the shared 6 dp gap (4 dp for compact rows); apply padding around the row, not between a separately padded control and its description.

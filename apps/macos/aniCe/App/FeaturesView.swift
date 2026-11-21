@@ -68,7 +68,8 @@ struct FeaturesView: View {
     if !favouritesOnly, navigation.featurePanel == .messages {
       VStack(alignment: .leading, spacing: 16) {
         Text(AppFeature.messages.title).font(.title2.weight(.semibold))
-        SmsView(model: sms, peers: peers, preferences: smsPreferences)
+        SmsView(model: sms, peers: peers, preferences: smsPreferences,
+          openSettings: { navigation.openSettings(section: "messages") })
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
       .padding(24)
@@ -87,8 +88,10 @@ struct FeaturesView: View {
             MediaView(model: playback, visible: playback.mainVisible)
             DisclosureGroup("Playback setup") { PlaybackSetupView(playback: playback) }
           case .files: TransferView(model: transfer, peers: peers, edgeDrop: edgeDrop)
-          case .clipboard: ClipboardView(model: clipboard, peers: peers)
-          case .messages: SmsView(model: sms, peers: peers, preferences: smsPreferences)
+          case .clipboard: ClipboardView(model: clipboard, peers: peers,
+            openSettings: { navigation.openSettings(section: "clipboard") })
+          case .messages: SmsView(model: sms, peers: peers, preferences: smsPreferences,
+            openSettings: { navigation.openSettings(section: "messages") })
           case .keyboardTrackpad: MacKeyboardTrackpadView(model: keyboardTrackpad, onOpenDevices: { navigation.show(.devices) })
           case .findDevice: FindDeviceView(model: findDevice, peers: peers, notifier: findNotifier)
           }

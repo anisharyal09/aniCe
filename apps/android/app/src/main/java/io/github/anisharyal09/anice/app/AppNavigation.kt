@@ -11,6 +11,19 @@ enum class AppDestination(val label: String) { Home("Home"), Devices("Devices"),
 enum class DeviceRoute { Overview, Pairing, Discovery }
 enum class SettingsRoute { Overview, Identity, NotificationApps, About }
 
+enum class SettingsCategory(val label: String) {
+    All("All"), General("General"), Permissions("Permissions"), Features("Features"), Shortcuts("Shortcuts");
+
+    companion object {
+        fun forSection(title: String): SettingsCategory = when (title) {
+            "Appearance", "Updates", "Connection", "This device" -> General
+            "Permissions" -> Permissions
+            "Shortcuts" -> Shortcuts
+            else -> Features
+        }
+    }
+}
+
 internal fun comparisonUsesDeviceSheet(destination: AppDestination, route: DeviceRoute): Boolean =
     route == DeviceRoute.Pairing && destination in listOf(AppDestination.Home, AppDestination.Devices)
 
@@ -63,6 +76,12 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
     var settingsRoute by mutableStateOf(settingsRoute)
     var favouriteFeatures by mutableStateOf(AppFeature.DEFAULT_FAVOURITES)
     var featureOrder by mutableStateOf("")
+    var settingsSection by mutableStateOf<String?>(null)
+    fun openSettings(section: String) {
+        settingsSection = section
+        settingsRoute = SettingsRoute.Overview
+        destination = AppDestination.Settings
+    }
     fun openFeature(feature: AppFeature) {
         if (destination != AppDestination.Features || featurePanel == null) {
             featureOrigin = when (destination) {

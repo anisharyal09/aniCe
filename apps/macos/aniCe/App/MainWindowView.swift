@@ -30,9 +30,7 @@ struct MainWindowView: View {
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.openWindow) private var openWindow
   @State private var systemAppearance = SystemAppearance()
-  @State var activeSettingsSection = "appearance"
   @State var settingsCategory = MacSettingsCategory.all
-  @State var hoveredSettingsSection: String?
   @State var hoveredAboutLink: String?
   @State var focusedSettingsSection: String?
   @State var settingsFocusToken = UUID()
