@@ -95,6 +95,76 @@ private struct FailedHistoryStorage: ClipboardHistoryStorage {
   func delete() throws { throw CocoaError(.fileWriteNoPermission) }
 }
 final class ClipboardTests: XCTestCase {
+  @MainActor func testTrayHistoryRequiresCurrentExplicitConsent() async throws {
+    let history = ClipboardHistory()
+    let consent = PasteTrayHistoryConsent()
+    consent.confirm(history: history)
+    consent.request()
+    XCTAssertTrue(consent.isPresented)
+    XCTAssertFalse(history.enabled)
+    consent.cancel()
+    consent.confirm(history: history)
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertFalse(history.enabled)
+    consent.request()
+    consent.confirm(history: history)
+    XCTAssertFalse(consent.isPresented)
+    try await until { history.enabled }
+    history.setEnabled(false)
+    try await until { !history.enabled }
+    consent.confirm(history: history)
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertFalse(history.enabled, "A dismissed confirmation cannot grant collection again")
+  }
+
+  @MainActor func testTrayHistoryConsentFailureKeepsSavedRowsAndAllowsRetry() async throws {
+    let storage = FailedHistoryStorage()
+    let history = ClipboardHistory(storage: storage)
+    try await until { !history.entries.isEmpty }
+    history.setEnabled(false)
+    let consent = PasteTrayHistoryConsent()
+    consent.request()
+    consent.confirm(history: history)
+    try await until { history.error != nil }
+    XCTAssertFalse(history.enabled)
+    XCTAssertEqual(history.entries, [storage.entry])
+    XCTAssertFalse(consent.isPresented)
+    consent.request()
+    XCTAssertTrue(consent.isPresented)
+    consent.cancel()
+    XCTAssertFalse(history.enabled)
+  }
+
+  @MainActor func testTrayHistoryConsentFitsBothThemesAndNarrowWidths() throws {
+    let folder = URL(fileURLWithPath: ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"]
+      ?? NSTemporaryDirectory(), isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let history = ClipboardHistory()
+    let consent = PasteTrayHistoryConsent()
+    consent.request()
+    var renders = 0
+    for scheme in [ColorScheme.light, .dark] {
+      for width: CGFloat in [280, 360, 760] {
+        let host = NSHostingView(rootView:
+          PasteTrayHistoryConsentView(consent: consent, history: history)
+            .padding(16).frame(width: width)
+            .background(AniCePalette.surface(scheme))
+            .environment(\.colorScheme, scheme))
+        host.frame.size = host.fittingSize
+        host.layoutSubtreeIfNeeded()
+        XCTAssertEqual(host.bounds.width, width)
+        XCTAssertLessThanOrEqual(host.bounds.height, width <= 650 ? 318 : 292)
+        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+          .write(to: folder.appendingPathComponent("tray-consent-\(Int(width))-\(scheme).png"))
+        renders += 1
+      }
+    }
+    XCTAssertEqual(renders, 6)
+    XCTAssertFalse(history.enabled, "Rendering consent must not enable storage")
+  }
+
   func testIndependentCanonicalBytesAndInvalidInventory() throws {
     let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "clipboard-vectors", withExtension: "json"))
     let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])

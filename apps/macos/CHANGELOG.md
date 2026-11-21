@@ -4,6 +4,10 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep clipboard-tray history consent inside its non-activating panel, avoiding detached alerts and main-window focus handoffs.
+
 ## [v0.9.0-beta.4]
 
 Application release v0.9.0-beta.4, build 90024.

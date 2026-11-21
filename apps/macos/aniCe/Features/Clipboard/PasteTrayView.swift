@@ -2,6 +2,7 @@
 // Presents searchable local clipboard cards with stable selection and native copy actions.
 import AppKit
 import SwiftUI
+import Observation
 
 private extension Color {
   /// Parses standard CSS hex color representations (#RGB, #RGBA, #RRGGBB, #RRGGBBAA) into an sRGB Color.
@@ -78,6 +79,43 @@ enum PasteTraySelection {
   }
 }
 
+@Observable @MainActor final class PasteTrayHistoryConsent {
+  private(set) var isPresented = false
+
+  func request() { isPresented = true }
+  func cancel() { isPresented = false }
+  func confirm(history: ClipboardHistory) {
+    guard isPresented else { return }
+    isPresented = false
+    history.setEnabled(true)
+  }
+}
+
+struct PasteTrayHistoryConsentView: View {
+  let consent: PasteTrayHistoryConsent
+  let history: ClipboardHistory
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Keep clipboard history?").font(.headline).accessibilityAddTraits(.isHeader)
+      Text("Save eligible text on this Mac across restarts. Recognized sensitive text is excluded. Turning history off pauses collection and keeps saved items.")
+        .font(.callout).fixedSize(horizontal: false, vertical: true)
+      HStack(spacing: 12) {
+        Spacer(minLength: 0)
+        Button("Cancel", action: consent.cancel)
+          .buttonStyle(AniCeButtonStyle())
+          .keyboardShortcut(.cancelAction)
+          .accessibilityIdentifier("tray-history-cancel")
+        Button("Enable") { consent.confirm(history: history) }
+          .buttonStyle(AniCeButtonStyle(prominent: true))
+          .keyboardShortcut(.defaultAction)
+          .accessibilityIdentifier("tray-history-enable")
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+  }
+}
+
 struct PasteTrayView: View {
   let model: MacClipboardModel
   var width: CGFloat = 760
@@ -94,7 +132,7 @@ struct PasteTrayView: View {
   @State private var selectedIDs: Set<String> = []
   /// The anchor / pivot item ID used to calculate contiguous ranges during Shift + Click or Shift + Arrow.
   @State private var pivotID: String?
-  @State private var confirmingHistory = false
+  @State private var historyConsent = PasteTrayHistoryConsent()
   private enum Focus: Hashable { case tray, search }
   @FocusState private var focus: Focus?
   @State private var previewing = false
@@ -123,14 +161,19 @@ struct PasteTrayView: View {
 
   var body: some View {
     VStack(spacing: 8) {
-      header
-      filterRow
-      if previewing, let selected {
-        PasteTrayExpandedPreview(entry: selected).frame(maxHeight: .infinity)
+      // Keep consent inside the non-activating panel; a modal alert can detach and transfer focus.
+      if historyConsent.isPresented {
+        PasteTrayHistoryConsentView(consent: historyConsent, history: model.history)
       } else {
-        content.frame(height: contentHeight)
+        header
+        filterRow
+        if previewing, let selected {
+          PasteTrayExpandedPreview(entry: selected).frame(maxHeight: .infinity)
+        } else {
+          content.frame(height: contentHeight)
+        }
+        footer
       }
-      footer
     }
     .controlSize(.small)
     .padding(.horizontal, 16).padding(.vertical, width <= 540 ? 13 : 15)
@@ -148,51 +191,56 @@ struct PasteTrayView: View {
       focus = .tray
     }
     .onKeyPress(.escape) {
-      if previewing { previewing = false; focus = .tray }
+      if historyConsent.isPresented { historyConsent.cancel(); focus = .tray }
+      else if previewing { previewing = false; focus = .tray }
       else if focus == .search { query = ""; focus = .tray }
       else { onDismiss() }
       return .handled
     }
     .onKeyPress(.space) {
-      guard focus == .tray else { return .ignored }
+      guard !historyConsent.isPresented, focus == .tray else { return .ignored }
       togglePreview(); return .handled
     }
     .onKeyPress(.return) {
+      if historyConsent.isPresented {
+        historyConsent.confirm(history: model.history); return .handled
+      }
       guard focus == .tray else { return .ignored }; copySelection(); return .handled
     }
     .onKeyPress(.delete) {
-      guard focus == .tray else { return .ignored }
+      guard !historyConsent.isPresented, focus == .tray else { return .ignored }
       deleteSelection(); return .handled
     }
     .onKeyPress(.deleteForward) {
-      guard focus == .tray else { return .ignored }
+      guard !historyConsent.isPresented, focus == .tray else { return .ignored }
       deleteSelection(); return .handled
     }
     .onKeyPress(characters: CharacterSet(charactersIn: "\u{7F}\u{08}")) { _ in
-      guard focus == .tray else { return .ignored }
+      guard !historyConsent.isPresented, focus == .tray else { return .ignored }
       deleteSelection(); return .handled
     }
     .onKeyPress(.upArrow) {
-      guard !previewing else { return .ignored }
+      guard !historyConsent.isPresented, !previewing else { return .ignored }
       let isShift = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? NSEvent.modifierFlags.contains(.shift)
       move(width <= 540 ? -1 : -3, extend: isShift); return .handled
     }
     .onKeyPress(.downArrow) {
-      guard !previewing else { return .ignored }
+      guard !historyConsent.isPresented, !previewing else { return .ignored }
       let isShift = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? NSEvent.modifierFlags.contains(.shift)
       move(width <= 540 ? 1 : 3, extend: isShift); return .handled
     }
     .onKeyPress(.leftArrow) {
-      guard focus != .search else { return .ignored }
+      guard !historyConsent.isPresented, focus != .search else { return .ignored }
       let isShift = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? NSEvent.modifierFlags.contains(.shift)
       move(-1, extend: isShift); return .handled
     }
     .onKeyPress(.rightArrow) {
-      guard focus != .search else { return .ignored }
+      guard !historyConsent.isPresented, focus != .search else { return .ignored }
       let isShift = NSApp.currentEvent?.modifierFlags.contains(.shift) ?? NSEvent.modifierFlags.contains(.shift)
       move(1, extend: isShift); return .handled
     }
     .onKeyPress(characters: PasteTrayKeyboard.searchCharacters) { press in
+      guard !historyConsent.isPresented else { return .ignored }
       guard press.characters != " " else { return .ignored }
       guard focus == .tray, press.modifiers.intersection([.command, .control, .option]).isEmpty else {
         if press.modifiers == .command && press.characters == "f" { focus = .search; return .handled }
@@ -213,12 +261,10 @@ struct PasteTrayView: View {
       pivotID = selection.pivot
       if ids.isEmpty { previewing = false }
     }
-    .alert("Keep clipboard history?", isPresented: $confirmingHistory) {
-      Button("Enable") { model.history.setEnabled(true) }
-      Button("Cancel", role: .cancel) {}
-    } message: {
-      Text("Save eligible text on this Mac across restarts. Recognized sensitive text is excluded. Turning history off pauses collection and keeps saved items.")
+    .onChange(of: model.history.enabled) { _, enabled in
+      if enabled { historyConsent.cancel() }
     }
+    .onDisappear { historyConsent.cancel() }
   }
 
   private var header: some View {
@@ -322,7 +368,7 @@ struct PasteTrayView: View {
       VStack(spacing: 8) {
         Text("Your clipboard, close at hand").font(.headline)
         Text("Enable local history to find and reuse copied text.").font(.callout)
-        Button("Enable history…") { confirmingHistory = true }
+        Button("Enable history…") { historyConsent.request(); focus = .tray }
         if let error = model.history.error { Text(error).font(.caption).foregroundStyle(AniCePalette.error(scheme)) }
       }.frame(maxWidth: .infinity, maxHeight: .infinity)
     } else if entries.isEmpty {
