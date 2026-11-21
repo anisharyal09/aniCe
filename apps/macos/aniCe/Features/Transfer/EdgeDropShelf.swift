@@ -103,6 +103,7 @@ enum EdgeDropGeometry {
   private(set) var hasFileURLs = false
   private(set) var hasPromisedFiles = false
   private(set) var sentFeedback: TransferBatch?
+  private(set) var acceptedDrop: (count: Int, peerName: String)?
 
   @ObservationIgnored private var started = false
   @ObservationIgnored private var sleeping = false
@@ -184,6 +185,9 @@ enum EdgeDropGeometry {
     if let sentFeedback {
       return "Sent \(sentFeedback.files.count) file\(sentFeedback.files.count == 1 ? "" : "s") to"
     }
+    if let acceptedDrop {
+      return "Preparing \(acceptedDrop.count) file\(acceptedDrop.count == 1 ? "" : "s") for"
+    }
     if hasPromisedFiles { return "Save files before sending" }
     if selectionHasUnsupportedItems { return "Drop files only" }
     if !hasFileURLs { return "Drop a file to send" }
@@ -197,11 +201,12 @@ enum EdgeDropGeometry {
   }
 
   var edgeHint: String {
-    sentFeedback == nil ? "\(preferences.edge.title.uppercased()) EDGE · DROP HERE" : "Edge Drop"
+    sentFeedback == nil && acceptedDrop == nil ? "\(preferences.edge.title.uppercased()) EDGE · DROP HERE" : "Edge Drop"
   }
 
   var shelfDetail: String {
     if let sentFeedback { return sentFeedback.peerName }
+    if let acceptedDrop { return "\(acceptedDrop.peerName) · Follow progress in aniCe" }
     if hasPromisedFiles { return "Promised files aren’t supported." }
     if selectionHasUnsupportedItems { return "Every item in the drop must be a local file." }
     if !hasFileURLs { return "Drag saved files from Finder." }
@@ -213,6 +218,7 @@ enum EdgeDropGeometry {
 
   var shelfSymbol: String {
     if sentFeedback != nil { return "checkmark.circle" }
+    if acceptedDrop != nil { return "arrow.triangle.2.circlepath" }
     if hasPromisedFiles || draggedFileCount > 128 { return "doc.badge.ellipsis" }
     if model.preparing { return "arrow.triangle.2.circlepath" }
     if model.isBusy { return "hourglass" }
@@ -221,10 +227,11 @@ enum EdgeDropGeometry {
   }
 
   var shelfColorScheme: ColorScheme { selectedColorScheme }
-  var presentationSize: NSSize { sentFeedback == nil ? EdgeDropGeometry.shelfSize : EdgeDropGeometry.feedbackSize }
+  var presentationSize: NSSize { sentFeedback == nil && acceptedDrop == nil ? EdgeDropGeometry.shelfSize : EdgeDropGeometry.feedbackSize }
 
   func updateNativeDrag(_ pasteboard: NSPasteboard) -> NSDragOperation {
     sentFeedback = nil
+    acceptedDrop = nil
     refreshCandidate(from: pasteboard)
     return canAcceptCurrentDrag ? .copy : []
   }
@@ -236,13 +243,22 @@ enum EdgeDropGeometry {
 
   func finishDrop(_ urls: [URL]) -> Bool {
     let point = shelfFrame.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
+    let recipient = model.connectedAndroidRecipient
+    let previousReservation = model.dropReservation
     let accepted = TransferDropSubmission.receive(urls: urls, model: model)
-    if accepted, let reservation = model.dropReservation {
+    let reserved = accepted && model.dropReservation != nil && model.dropReservation != previousReservation
+    if reserved, let reservation = model.dropReservation {
       pendingDropID = reservation
       feedbackPoint = point
     }
     dismissShelf()
     resetCandidate()
+    if reserved, let recipient, preferences.enabled, !sleeping {
+      acceptedDrop = (urls.count, recipient.displayName)
+      if started, let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) ?? NSScreen.main {
+        showShelf(on: screen, near: point)
+      }
+    }
     return accepted
   }
 
@@ -254,6 +270,7 @@ enum EdgeDropGeometry {
     pendingDropID = nil
     guard preferences.enabled, !sleeping else { return }
     sentFeedback = batch
+    acceptedDrop = nil
     guard started, let point = feedbackPoint,
       let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) ?? NSScreen.main else { return }
     showShelf(on: screen, near: point)
@@ -442,7 +459,7 @@ enum EdgeDropGeometry {
   }
 
   private func scheduleDismiss(after interval: TimeInterval) {
-    guard sentFeedback == nil else { return }
+    guard sentFeedback == nil, acceptedDrop == nil else { return }
     dismissTimer?.invalidate()
     dismissTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
       MainActor.assumeIsolated { self?.dismissShelf() }
@@ -457,6 +474,7 @@ enum EdgeDropGeometry {
     shelf = nil
     shelfFrame = nil
     sentFeedback = nil
+    acceptedDrop = nil
   }
 
   private func resetCandidate() {
