@@ -54,8 +54,8 @@ struct TransferAutoReceiveSettings: View {
   }
 
   private func label(for record: PeerTrustRecord) -> String {
-    let name = record.peer.deviceName
-    let duplicates = senders.filter { $0.peer.deviceName == name }
+    let name = record.peer.displayName
+    let duplicates = senders.filter { $0.peer.displayName == name }
     return duplicates.count > 1 ? "\(name) · \(record.peer.fingerprint.suffix(8))" : name
   }
 }
@@ -148,7 +148,7 @@ struct TransferReceiveDestinationControls: View {
     let names = urls.prefix(8).map(\.lastPathComponent).joined(separator: "\n")
     let additional = urls.count > 8 ? "\n… and \(urls.count - 8) more" : ""
     let review = NSAlert()
-    review.messageText = "Send \(urls.count) file\(urls.count == 1 ? "" : "s") to \(reviewedPeer.deviceName)?"
+    review.messageText = "Send \(urls.count) file\(urls.count == 1 ? "" : "s") to \(reviewedPeer.displayName)?"
     review.informativeText = names + additional
     review.addButton(withTitle: "Send files")
     review.addButton(withTitle: "Cancel")
@@ -512,7 +512,7 @@ struct TransferView: View {
       Label("Choose how to send", systemImage: "wifi.exclamationmark")
         .font(.callout.weight(.medium))
         .foregroundStyle(AniCePalette.primaryText(colorScheme))
-      Text("\(selection.urls.count) file\(selection.urls.count == 1 ? "" : "s") selected for \(selection.recipient.deviceName). \(model.pendingRouteStatus)")
+      Text("\(selection.urls.count) file\(selection.urls.count == 1 ? "" : "s") selected for \(selection.recipient.displayName). \(model.pendingRouteStatus)")
         .font(.caption)
         .foregroundStyle(AniCePalette.secondaryText(colorScheme))
         .fixedSize(horizontal: false, vertical: true)

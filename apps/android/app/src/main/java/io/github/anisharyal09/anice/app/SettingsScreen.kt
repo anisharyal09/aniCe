@@ -4,6 +4,7 @@ package io.github.anisharyal09.anice.app
 
 import android.content.Context
 import android.os.Build
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
@@ -32,6 +33,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.anisharyal09.anice.R
@@ -438,7 +441,16 @@ internal fun AboutScreen(context: Context) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             AboutDetailRow("Source code", "GitHub", "https://github.com/anisharyal09/aniCe", uriHandler::openUri)
             AboutDetailRow("License", "GPL-3.0-or-later", "https://github.com/anisharyal09/aniCe/blob/main/LICENSE", uriHandler::openUri)
-            AboutDetailRow("Report an issue", "GitHub form", reportUrl, uriHandler::openUri)
+            AboutFeedbackRow(
+                onReport = { uriHandler.openUri(reportUrl) },
+                onEmail = {
+                    try {
+                        uriHandler.openUri(IssueReport.emailUrl)
+                    } catch (_: IllegalArgumentException) {
+                        Toast.makeText(context, "No email app is available. Email ${IssueReport.emailAddress}.", Toast.LENGTH_LONG).show()
+                    }
+                },
+            )
             BoxWithConstraints(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                 val compact = maxWidth < 320.dp || LocalDensity.current.fontScale >= 1.4f
                 if (compact) {
@@ -458,23 +470,98 @@ internal fun AboutScreen(context: Context) {
             Column(Modifier.fillMaxWidth().padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("No account needed to connect your devices. No telemetry. Updates and issue reports use GitHub.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(
-                    modifier = Modifier
-                        .clickable(role = Role.Button, onClickLabel = "Support aniCe") {
-                            uriHandler.openUri("https://anisharyal09.com.np/support?from=anice")
-                        }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val contentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
-                    Icon(painterResource(R.drawable.ic_heart), contentDescription = null,
-                        tint = contentColor, modifier = Modifier.size(13.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Support aniCe :)", style = MaterialTheme.typography.labelMedium,
-                        color = contentColor)
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(
+                        modifier = Modifier.heightIn(min = 48.dp)
+                            .clip(RoundedCornerShape(7.dp))
+                            .clickable(role = Role.Button, onClickLabel = "Support aniCe") {
+                                uriHandler.openUri("https://anisharyal09.com.np/support?from=anice")
+                            }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(painterResource(R.drawable.ic_heart), contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(13.dp))
+                        AniCeWordmark(
+                            style = MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                            prefix = "Support ", suffix = " :)", textAlign = TextAlign.Center,
+                        )
+                    }
+                    Box(
+                        modifier = Modifier.heightIn(min = 48.dp)
+                            .clip(RoundedCornerShape(7.dp))
+                            .clickable(role = Role.Button, onClickLabel = "Star aniCe on GitHub") {
+                                uriHandler.openUri("https://github.com/anisharyal09/aniCe")
+                            }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        AniCeWordmark(
+                            style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                            prefix = "☆ Star ", suffix = " on GitHub", textAlign = TextAlign.Center,
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AboutFeedbackRow(onReport: () -> Unit, onEmail: () -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val density = LocalDensity.current
+        val measurer = rememberTextMeasurer()
+        val labelWidth = with(density) {
+            measurer.measure("Report an issue", MaterialTheme.typography.bodyMedium).size.width.toDp()
+        }
+        val actionsWidth = with(density) {
+            measurer.measure("GitHub form", MaterialTheme.typography.bodySmall).size.width.toDp() +
+                measurer.measure("Email", MaterialTheme.typography.bodySmall).size.width.toDp()
+        } + 84.dp // Two icons, label gaps, link padding and the independent action gap.
+        val compact = maxWidth < labelWidth + actionsWidth + 12.dp
+        val title: @Composable () -> Unit = {
+            Box(
+                Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClickLabel = "Report an issue", onClick = onReport),
+                contentAlignment = Alignment.CenterStart,
+            ) { Text("Report an issue", style = MaterialTheme.typography.bodyMedium) }
+        }
+        val actions: @Composable () -> Unit = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AboutFeedbackAction("GitHub form", R.drawable.ic_external_link, onReport, Modifier.weight(1f, fill = false))
+                AboutFeedbackAction("Email", R.drawable.ic_email, onEmail)
+            }
+        }
+        if (compact) {
+            Column(Modifier.fillMaxWidth()) {
+                title()
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) { actions() }
+            }
+        } else {
+            Row(Modifier.fillMaxWidth().heightIn(min = 54.dp), verticalAlignment = Alignment.CenterVertically) {
+                title()
+                Spacer(Modifier.weight(1f))
+                actions()
+            }
+        }
+    }
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+}
+
+@Composable
+private fun AboutFeedbackAction(label: String, icon: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(7.dp))
+            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            softWrap = label != "Email")
     }
 }
 

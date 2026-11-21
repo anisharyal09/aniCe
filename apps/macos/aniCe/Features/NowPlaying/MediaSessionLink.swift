@@ -63,7 +63,7 @@ import Observation
     } catch is MediaWireError { return .discarded } catch { return .unrecognized }
   }
   private func receive(_ message: MediaMessage, channel kind: String) -> Bool {
-    guard let link = links[kind] else { return true }
+    guard links[kind] != nil else { return true }
     switch message.kind {
     case 2:
       if subscribed != kind || subscription != message.string(0) {

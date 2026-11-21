@@ -23,6 +23,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var session: SessionViewModel
     private lateinit var pairing: PairingViewModel
     private lateinit var discovery: DiscoveryViewModel
+    private lateinit var nearbyDiscovery: io.github.anisharyal09.anice.infrastructure.connections.NearbyDiscoveryViewModel
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val startupApp = application as AniCeApplication
@@ -46,6 +47,7 @@ class MainActivity : ComponentActivity() {
         startupApp.startupMark("discovery_view_model")
         val pairingFactory = viewModelFactory { initializer { PairingViewModel(application) } }
         pairing = ViewModelProvider(this, pairingFactory)[PairingViewModel::class.java]
+        nearbyDiscovery = ViewModelProvider(this)[io.github.anisharyal09.anice.infrastructure.connections.NearbyDiscoveryViewModel::class.java]
         startupApp.startupMark("pairing_view_model")
         pairing.onPeersChanged = { records ->
             (application as AniCeApplication).transfer.autoReceivePreferences.prune(records.map { it.peer })
@@ -54,10 +56,12 @@ class MainActivity : ComponentActivity() {
         session = ViewModelProvider(this, sessionFactory)[SessionViewModel::class.java]
         startupApp.startupMark("session_view_model")
         session.beforeConnect = {
+            nearbyDiscovery.eligible(false)
             pairing.cancel()
             discovery.cancel()
         }
         pairing.beforePairing = {
+            nearbyDiscovery.eligible(false)
             io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe.get(this).suspend()
             session.cancel()
             discovery.cancel()
@@ -72,6 +76,7 @@ class MainActivity : ComponentActivity() {
         }
         // Explicit compatibility scanning retires Bluetooth ownership while leaving LAN work alive.
         discovery.beforeStart = {
+            nearbyDiscovery.eligible(false)
             io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe.get(this).suspend()
             session.cancelBluetooth()
             pairing.cancel()
@@ -101,7 +106,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         rootView.viewTreeObserver.addOnPreDrawListener(firstDrawListener)
-        setContent { AniCeTheme { AppRoot(identity, discovery, pairing, session) } }
+        setContent { AniCeTheme { AppRoot(identity, discovery, pairing, session, nearbyDiscovery) } }
         startupApp.startupMark("set_content_returned")
     }
 
@@ -147,6 +152,7 @@ class MainActivity : ComponentActivity() {
         if (::discovery.isInitialized) discovery.foreground()
         if (::pairing.isInitialized) pairing.foreground()
         if (::session.isInitialized) session.foreground(this)
+        if (::nearbyDiscovery.isInitialized) nearbyDiscovery.foreground(true)
         (application as AniCeApplication).transfer.applicationForegrounded()
     }
 
@@ -156,6 +162,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        if (::nearbyDiscovery.isInitialized) nearbyDiscovery.foreground(false)
         remoteVolumeKeys.clear()
         super.onStop()
         (application as AniCeApplication).clipboard.focus(false, this)

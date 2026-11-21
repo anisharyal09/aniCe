@@ -8,6 +8,7 @@ import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.AniCeApplication
 import io.github.anisharyal09.anice.R
@@ -21,6 +22,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
+@SdkSuppress(minSdkVersion = 31)
 class ConnectionCancelRegressionTest {
     // Native policy/owner methods run on Main; hold their asynchronous work before it can access the radio.
     private class HeldDispatcher : CoroutineDispatcher() {
@@ -172,6 +174,28 @@ class ConnectionCancelRegressionTest {
                 fixture.dispatcher.drain()
                 assertTrue(pending.isCompleted)
                 assertNull(fixture.field("connectResume"))
+                fixture.assertPolicyUnchanged(saved)
+                assertFalse(fixture.policy.armed)
+            }
+        } finally { withContext(NonCancellable + Dispatchers.Main) { fixture.close() } }
+    }
+
+    @Test fun cancelledChooserCannotInvalidateItsReplacementOrReachArming() = runBlocking {
+        val fixture = fixture()
+        try {
+            withContext(Dispatchers.Main) {
+                val first = fixture.policy.beginSetup()
+                val next = fixture.policy.beginSetup()
+                fixture.policy.cancelSetup(first)
+                assertEquals(next, fixture.field("setupGeneration"))
+                fixture.policy.cancelSetup(next)
+                val saved = fixture.preferences.all
+                runBlocking {
+                    try {
+                        fixture.policy.arm(fixture.peer, "02:00:00:00:00:01", -1, next)
+                        fail("A cancelled chooser reached trust reads or native observation")
+                    } catch (error: IllegalStateException) { assertEquals("Setup was cancelled.", error.message) }
+                }
                 fixture.assertPolicyUnchanged(saved)
                 assertFalse(fixture.policy.armed)
             }

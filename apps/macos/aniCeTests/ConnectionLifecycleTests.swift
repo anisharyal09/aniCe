@@ -358,7 +358,9 @@ import Network
     let radio = SessionRadioFake(), discovery = MacDiscoveryModel(adapter: radio)
     let pairing = MacPairingModel(identity: service, discovery: discovery, makeStore: { trust })
     let reservation = SessionPeerReservation()
-    let preferences = try XCTUnwrap(UserDefaults(suiteName: "anice.window.visual." + UUID().uuidString))
+    let preferencesName = "anice.window.visual." + UUID().uuidString
+    let preferences = try XCTUnwrap(UserDefaults(suiteName: preferencesName))
+    defer { preferences.removePersistentDomain(forName: preferencesName) }
     preferences.set(true, forKey: "media.showOnMac")
     let session = MacSessionModel(identity: service, adapter: radio, store: { trust }, preferences: preferences, peers: reservation)
     let lan = MacLanSessionModel(identity: service, peers: reservation, store: { trust })
@@ -373,6 +375,16 @@ import Network
       "kMRMediaRemoteNowPlayingInfoDuration": 236, "kMRMediaRemoteNowPlayingInfoElapsedTime": 92,
       "isPlaying": true, "canSendCommandsDirectly": true, "canToggle": true, "canSeek": true]))
     let transfer = MacTransferModel(), notifier = VisualFindNotifier()
+    let clipboard = MacClipboardModel(native: ClipboardNativeFake(),
+      history: ClipboardHistory(preferences: preferences),
+      preferences: ClipboardPreferences(storage: preferences))
+    let edgeDrop = MacEdgeDropController(model: transfer)
+    let phoneInput = MacPhoneInputModel()
+    let sms = MacSmsModel(notifier: VisualSmsNotifier())
+    let dndSync = MacDndSyncModel(defaults: preferences)
+    let deskDeck = MacDeskDeckModel()
+    let phonePower = MacPhonePowerModel()
+    defer { edgeDrop.shutdown(); phoneInput.shutdown(); deskDeck.shutdown() }
     let find = MacFindDeviceModel(notifier: notifier)
     let key = P256.Signing.PrivateKey()
     let peer = try DeviceIdentity.decode(JSONSerialization.data(withJSONObject: [
@@ -433,28 +445,35 @@ import Network
           if let feature { navigation.openFeature(feature) }
           let view = MainWindowView(delegate: AppDelegate(), identity: IdentityViewModel(service: service),
             discovery: discovery, pairing: pairing, session: session, lan: lan, privateListening: MacPrivateListeningModel(preferences: nil), connectionPause: MacConnectionPauseModel(), playback: playback,
-            transfer: transfer, edgeDrop: MacEdgeDropController(model: transfer),
-            clipboard: MacClipboardModel(native: ClipboardNativeFake()), findDevice: find, findNotifier: nil,
-            sms: MacSmsModel(notifier: VisualSmsNotifier()), keyboardTrackpad: keyboardTrackpad,
-            phoneInput: MacPhoneInputModel(), smsPreferences: SmsPreferences(storage: nil),
-            onInitialRender: {}, dndSync: MacDndSyncModel(defaults: preferences), deskDeck: MacDeskDeckModel(), phonePower: MacPhonePowerModel(), navigation: navigation)
+            transfer: transfer, edgeDrop: edgeDrop,
+            clipboard: clipboard, findDevice: find, findNotifier: nil,
+            sms: sms, keyboardTrackpad: keyboardTrackpad,
+            phoneInput: phoneInput, smsPreferences: SmsPreferences(storage: nil),
+            onInitialRender: {}, dndSync: dndSync, deskDeck: deskDeck, phonePower: phonePower, navigation: navigation)
             .defaultAppStorage(preferences)
             .environment(\.colorScheme, appearance == "Light" ? .light : .dark)
             .frame(width: width, height: height)
           let host = NSHostingView(rootView: view)
           let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
             styleMask: [.borderless], backing: .buffered, defer: false)
+          window.isReleasedWhenClosed = false
+          defer {
+            window.contentView = nil
+            window.close()
+          }
           window.appearance = NSAppearance(named: appearance == "Light" ? .aqua : .darkAqua)
           window.contentView = host
           host.frame = NSRect(x: 0, y: 0, width: width, height: height)
           try await Task.sleep(for: .milliseconds(50))
           host.layoutSubtreeIfNeeded()
           XCTAssertEqual(host.fittingSize.width, width, accuracy: 1)
-          let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-          host.cacheDisplay(in: host.bounds, to: bitmap)
-          let bytes = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
-          XCTAssertGreaterThan(bytes.count, 1000)
-          try bytes.write(to: folder.appendingPathComponent("window-\(scenario ?? feature?.rawValue ?? destination.rawValue.lowercased())-\(Int(width))-\(appearance.lowercased()).png"))
+          try autoreleasepool {
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let bytes = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            XCTAssertGreaterThan(bytes.count, 1000)
+            try bytes.write(to: folder.appendingPathComponent("window-\(scenario ?? feature?.rawValue ?? destination.rawValue.lowercased())-\(Int(width))-\(appearance.lowercased()).png"))
+          }
           renders += 1
           XCTAssertFalse(navigation.details, "Changing sections must not open a modal")
         }
@@ -1112,7 +1131,8 @@ import Network
     let fixture = try await PauseSessionFixture(), gate = SessionRecoveryWait()
     let endpoint = try LanDirectEndpoint(ip: "192.0.2.10", port: 51234, profile: .lanTransfer512)
     let lan = MacLanSessionModel(identity: fixture.identity, peers: fixture.reservation,
-      startListener: { _ in }, endpointProvider: { _, _ in endpoint }, store: { fixture.trust })
+      startListener: { _ in }, startPathMonitor: { _ in },
+      endpointProvider: { _, _ in endpoint }, store: { fixture.trust })
     defer { gate.release(); lan.cancel(); fixture.close() }
     fixture.model.setAutomatic(true)
     try await fixture.secureBluetooth()
@@ -1209,7 +1229,8 @@ import Network
     fixture.preferences.set(true, forKey: "lan.automatic")
     var starts = 0
     let lan = MacLanSessionModel(identity: fixture.identity, peers: fixture.reservation,
-      preferences: fixture.preferences, startListener: { _ in starts += 1 }, store: { fixture.trust })
+      preferences: fixture.preferences, startListener: { _ in starts += 1 },
+      startPathMonitor: { _ in }, store: { fixture.trust })
     defer { lan.cancel(); fixture.close() }
     let savedTrust = try Data(contentsOf: fixture.trust.location)
     fixture.model.connectDevice(fixture.peer, alongside: lan)

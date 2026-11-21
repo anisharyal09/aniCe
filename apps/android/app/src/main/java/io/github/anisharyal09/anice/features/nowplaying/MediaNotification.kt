@@ -151,12 +151,12 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
                     presentation.message.number(7),if(presentation.state==1L && !presentation.frozen) presentation.message.number(9)/1000f else 0f,presentation.sampledAt).build())
         }
         val isNotificationActive=manager.activeNotifications.any { it.id==ID }
-        val nextKey=listOf(target.message.string(0),target.source,target.revision,target.title,target.artist,target.player,target.state,target.actions,target.duration,owner.origin,owner.artwork)
+        val nextKey=listOf(target.message.string(0),target.source,target.revision,target.title,target.artist,target.player,target.state,target.actions,target.duration,owner.displayedOrigin,owner.artwork)
         if(notificationKey==nextKey && isNotificationActive) return
         notificationKey=nextKey
         val metadata=MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE,target.title)
             .putString(MediaMetadata.METADATA_KEY_ARTIST,target.artist)
-            .putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,"${target.player} · ${owner.origin}")
+            .putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,"${target.player} · ${owner.displayedOrigin}")
         if(target.duration>0) metadata.putLong(MediaMetadata.METADATA_KEY_DURATION,target.duration)
         owner.artwork?.let { metadata.putBitmap(MediaMetadata.METADATA_KEY_ART,it) }
         current.setMetadata(metadata.build())
@@ -165,7 +165,7 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
         current.setSessionActivity(open);current.isActive=true
         actions.forEach { it.cancel() };actions.clear()
         val builder=Notification.Builder(app,CHANNEL).setSmallIcon(R.drawable.ic_media_play)
-            .setContentTitle(target.title.ifEmpty { target.player }).setContentText("${target.player} · ${owner.origin}")
+            .setContentTitle(target.title.ifEmpty { target.player }).setContentText("${target.player} · ${owner.displayedOrigin}")
             .setContentIntent(open).setOnlyAlertOnce(true).setShowWhen(false)
             .setVisibility(Notification.VISIBILITY_PUBLIC).setOngoing(target.state==1L)
         owner.artwork?.let { builder.setLargeIcon(it) }

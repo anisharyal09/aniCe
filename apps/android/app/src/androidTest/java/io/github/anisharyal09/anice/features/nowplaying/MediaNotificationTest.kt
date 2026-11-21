@@ -118,8 +118,14 @@ class MediaNotificationTest {
                 owner.receive("ble","output-test",PlayerVolumeMessage(4,listOf(Cbor.Text(sub),command.fields[1],Cbor.Integer(0)),VolumeScope.OUTPUT).encode())
                 owner.receive("ble","output-test",PlayerVolumeMessage(2,listOf(Cbor.Text(sub),Cbor.Text(device),Cbor.Text(revision),Cbor.Bool(true),Cbor.Integer(45)),VolumeScope.OUTPUT).encode())
                 assertEquals(9,system.playbackInfo.currentVolume)
-                owner.closed("ble");assertNull(presenter.token);assertFalse(owner.canControlOutputVolume);assertEquals(1,volume.count { it.kind==3L })
+                owner.closed("ble")
+                assertFalse(owner.canControlOutputVolume)
+                assertEquals(1,volume.count { it.kind==3L })
             }
+            // Native presentation is coalesced onto the main queue; retirement is not synchronous
+            // with the authenticated owner's channel callback.
+            instrumentation.waitForIdleSync()
+            instrumentation.runOnMainSync { assertNull(presenter.token) }
         } finally { instrumentation.runOnMainSync { owner.invalidate() } }
     }
 

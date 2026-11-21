@@ -7,9 +7,16 @@ import os
 @MainActor protocol PairingPeripheralAdapter: PeripheralAdapter {
   var pairingWrite: ((Data) -> Bool)? { get set }
   var pairingDisconnect: (() -> Void)? { get set }
+  var pairingAdmitted: (() -> Bool)? { get set }
+  var pairingStopsAdvertisingOnAdmission: Bool { get set }
   func sendPairing(_ message: Data) throws
   func drainPairing() async
   func retirePairingConnection()
+}
+
+extension PairingPeripheralAdapter {
+  var pairingAdmitted: (() -> Bool)? { get { nil } set {} }
+  var pairingStopsAdvertisingOnAdmission: Bool { get { false } set {} }
 }
 
 enum PeripheralMode { case idle, discovery, pairing, trustedSession }
@@ -112,6 +119,8 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
   private var queueBudget = GattQueueBudget()
   var pairingWrite: ((Data) -> Bool)?
   var pairingDisconnect: (() -> Void)?
+  var pairingAdmitted: (() -> Bool)?
+  var pairingStopsAdvertisingOnAdmission = false
   private var incoming: CBMutableCharacteristic?
   private var outgoing: CBMutableCharacteristic?
   private var central: CBCentral?
@@ -128,8 +137,25 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
   private var sendID: UInt64 = 0
   private var received = PairingReassembler()
   private var trafficBudget = 0
+  private var companionSetupAdvertising = false
+  /// Advertise the existing service for an approved setup chooser without changing its occupied slot.
+  func setCompanionSetupAdvertising(_ enabled: Bool) -> Bool {
+    guard mode == .trustedSession, central != nil, let manager, manager.state == .poweredOn, published
+    else { return false }
+    if enabled {
+      if companionSetupAdvertising { return true }
+      companionSetupAdvertising = true
+      advertising.begin()
+      advertise()
+    } else {
+      companionSetupAdvertising = false
+      advertising.stop()
+      manager.stopAdvertising()
+    }
+    return true
+  }
   func sendPairing(_ message: Data) throws {
-    guard advertising.isConfirmed, pairingWrite != nil, let central, outgoing != nil,
+    guard mode == .pairing, pairingWrite != nil, let central, outgoing != nil,
       trafficBudget + message.count <= 32768, queueBudget.canReserve(message.count)
     else { throw PairingFailure.transport }
     let frames = try PairingReassembler.fragments(
@@ -195,6 +221,15 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
   }
   // Stop advertising after admission; established writes use the candidate, not advertising state.
   private func admit(_ candidate: CBCentral) -> Bool {
+    if mode == .pairing {
+      let accepted = pairingAdmitted?() ?? true
+      Self.logger.notice("pairing_admission accepted=\(accepted) generation=\(self.channelGeneration)")
+      if accepted && pairingStopsAdvertisingOnAdmission {
+        advertising.stop()
+        manager?.stopAdvertising()
+      }
+      return accepted
+    }
     guard mode == .trustedSession else { return true }
     guard advertising.isConfirmed, sessionAdmitted?() == true else {
       Self.logger.info("candidate_admission accepted=false advertising=\(self.advertising.isConfirmed)")
@@ -256,8 +291,18 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
     didUnsubscribeFrom characteristic: CBCharacteristic
   ) {
     guard peripheral === manager else { return }
+    let subscribed = outgoing?.subscribedCentrals?.contains {
+      $0.identifier == central.identifier
+    } == true
+    guard GattCandidateAdmission.mayRetireSubscription(
+      candidateMatches: self.central?.identifier == central.identifier,
+      characteristicMatches: characteristic === outgoing,
+      subscriptionRemains: subscribed
+    ) else {
+      Self.logger.notice("unsubscribe_ignored current_subscription=\(subscribed) characteristic_match=\(characteristic === self.outgoing) generation=\(self.channelGeneration)")
+      return
+    }
     retiredCentrals.remove(central.identifier)
-    guard self.central?.identifier == central.identifier else { return }
     resetPairingChannel()
     disconnected()
   }
@@ -267,9 +312,10 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
     guard let first = requests.first else { return }
     guard peripheral === manager,
       mode == .trustedSession
-        ? sessionWrite != nil : advertising.isConfirmed && pairingWrite != nil
+        ? sessionWrite != nil : mode == .pairing && pairingWrite != nil &&
+          (central != nil || advertising.isConfirmed)
     else {
-      Self.logger.info("session_write permission_rejected=true mode_session=\(self.mode == .trustedSession)")
+      Self.logger.notice("session_write permission_rejected=true mode_session=\(self.mode == .trustedSession) generation=\(self.channelGeneration)")
       peripheral.respond(to: first, withResult: .writeNotPermitted)
       return
     }
@@ -284,7 +330,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
       // Core Bluetooth may retain a subscription without another didSubscribe callback.
       // An explicit new window may admit it, but EDHOC and readiness must run afresh.
       // Invalid candidates remain blocked within the window until they subscribe again.
-      if mode == .trustedSession, !admit(first.central) {
+      if (mode == .trustedSession || mode == .pairing), !admit(first.central) {
         peripheral.respond(to: first, withResult: .writeNotPermitted)
         return
       }
@@ -314,7 +360,7 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
       }
       peripheral.respond(to: first, withResult: .success)
     } catch {
-      Self.logger.info("session_write rejected=true candidate_match=\(first.central.identifier == self.central?.identifier) version2=\(first.value?.first == 2)")
+      Self.logger.notice("session_write rejected=true mode=\(String(describing: self.mode), privacy: .public) generation=\(self.channelGeneration) candidate_match=\(first.central.identifier == self.central?.identifier) characteristic_match=\(first.characteristic.uuid == self.incoming?.uuid) offset=\(first.offset) version2=\(first.value?.first == 2) reason=\(String(describing: error), privacy: .public)")
       peripheral.respond(to: first, withResult: .unlikelyError)
       // A malformed unauthenticated frame must not stop the invitation.
       if first.central.identifier == central?.identifier {
@@ -337,6 +383,11 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
     resetPairingChannel()
   }
   private func resetPairingChannel() {
+    if companionSetupAdvertising {
+      advertising.stop()
+      manager?.stopAdvertising()
+    }
+    companionSetupAdvertising = false
     channelGeneration += 1
     for task in submissionDeadlines.values { task.cancel() }
     submissionDeadlines.removeAll()
@@ -474,6 +525,14 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
     }
     if advertising.complete() {
       Self.logger.info("advertising_confirmation succeeded=\(error == nil, privacy: .public)")
+      if companionSetupAdvertising {
+        if error != nil {
+          companionSetupAdvertising = false
+          advertising.stop()
+          peripheral.stopAdvertising()
+        }
+        return
+      }
       event?(error == nil ? .advertising : .failure)
     } else {
       // An old window's late callback cannot confirm a new invitation.
@@ -486,17 +545,24 @@ final class CoreBluetoothPeripheralAdapter: NSObject, SessionPeripheralAdapter,
       peripheral.respond(to: request, withResult: .unlikelyError)
       return
     }
-    let result =
-      read?(
-        characteristic != nil && request.characteristic.uuid == characteristic?.uuid, request.offset
-      ) ?? .unavailable
+    let matches = characteristic != nil && request.characteristic.uuid == characteristic?.uuid
+    let result = read?(matches, request.offset) ?? .unavailable
+    // State-only diagnostics: never log native central identifiers, tokens or payload bytes.
+    Self.logger.notice("discovery_read mode=\(String(describing: self.mode), privacy: .public) matches=\(matches) offset=\(request.offset) owner=\(self.read != nil) published=\(self.published) advertising=\(self.advertising.isConfirmed)")
     switch result {
     case .value(let data):
+      Self.logger.notice("discovery_read result=value bytes=\(data.count) generation=\(self.channelGeneration)")
       request.value = data
       peripheral.respond(to: request, withResult: .success)
-    case .invalidOffset: peripheral.respond(to: request, withResult: .invalidOffset)
-    case .unknownCharacteristic: peripheral.respond(to: request, withResult: .attributeNotFound)
-    case .unavailable: peripheral.respond(to: request, withResult: .unlikelyError)
+    case .invalidOffset:
+      Self.logger.notice("discovery_read result=invalid_offset generation=\(self.channelGeneration)")
+      peripheral.respond(to: request, withResult: .invalidOffset)
+    case .unknownCharacteristic:
+      Self.logger.notice("discovery_read result=unknown_characteristic generation=\(self.channelGeneration)")
+      peripheral.respond(to: request, withResult: .attributeNotFound)
+    case .unavailable:
+      Self.logger.notice("discovery_read unavailable=true")
+      peripheral.respond(to: request, withResult: .unlikelyError)
     }
   }
   func stop() {

@@ -176,6 +176,11 @@ class WorkflowPolicyTests(unittest.TestCase):
                 for forbidden in ("cargo test", "gradlew", "xcodebuild", "unittest", "pytest"):
                     self.assertNotIn(forbidden, run, "%s:%s" % (job_name, forbidden))
 
+        rust_setup = next(step["run"] for step in jobs["verify-rust"]["steps"]
+                          if step.get("name") == "Set up Rust")
+        self.assertIn("--component rustfmt", rust_setup)
+        self.assertIn("--component clippy", rust_setup)
+
     def test_required_lanes_always_upload_evidence(self):
         document = workflow_documents()["ci.yml"]
         for job_name in REQUIRED_JOBS:
@@ -264,6 +269,22 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("pull_request", events)
         self.assertIn("merge_group", events)
         self.assertIn("workflow_dispatch", events)
+
+    def test_ci_runs_once_per_pr_update_and_keeps_main_push_release_evidence(self):
+        document = workflow_documents()["ci.yml"]
+        self.assertEqual(triggers(document), {"push", "pull_request", "merge_group", "workflow_dispatch"})
+        # No feature-branch pushes or path filters that can leave a required check pending.
+        self.assertEqual(document["on"]["push"], {"branches": ["main"]})
+        self.assertEqual(document["on"]["pull_request"], {"branches": ["main"]})
+        self.assertIsNone(document["on"]["merge_group"])
+        self.assertIsNone(document["on"]["workflow_dispatch"])
+
+    def test_ci_concurrency_separates_manual_runs_from_release_push_evidence(self):
+        document = workflow_documents()["ci.yml"]
+        self.assertEqual(document.get("concurrency"), {
+            "group": "${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}",
+            "cancel-in-progress": True,
+        })
 
     def test_pull_request_workflows_never_download_or_run_pr_artifacts(self):
         for name, document in workflow_documents().items():
@@ -650,6 +671,12 @@ PY
         self.assertIn("Xcode_26.3.app", codeql_swift.get("env", {}).get("DEVELOPER_DIR", ""))
         self.assertEqual(codeql_swift.get("permissions"), {"contents": "read", "security-events": "write"})
         self.assertEqual(set(document["jobs"]), {"codeql", "codeql-swift"})
+        for job in document["jobs"].values():
+            init = next(step for step in job["steps"] if step.get("name") == "Initialize CodeQL")
+            analyze = next(step for step in job["steps"] if step.get("name") == "Perform CodeQL Analysis")
+            self.assertEqual(init["uses"].split("@")[1], analyze["uses"].split("@")[1])
+            self.assertEqual(init["with"].get("tools"), "linked")
+            self.assertNotIn("6bb031afdd8eb862ea3fc1848194185e076637e5", init["uses"])
 
     def test_compiled_codeql_languages_have_explicit_builds_before_analysis(self):
         jobs = workflow_documents()['security.yml']['jobs']
@@ -712,6 +739,14 @@ PY
             "/apps/macos/aniCe/Update/",
             "/apps/macos/aniCeTests/MacUpdateSignatureTests.swift",
             "/scripts/requirements.txt",
+            "/protocol/",
+            "/core/rust/pairing/",
+            "/apps/android/app/src/main/java/io/github/anisharyal09/anice/infrastructure/identity/",
+            "/apps/android/app/src/main/java/io/github/anisharyal09/anice/infrastructure/pairing/",
+            "/apps/android/app/src/main/java/io/github/anisharyal09/anice/infrastructure/session/",
+            "/apps/macos/aniCe/Infrastructure/Identity/",
+            "/apps/macos/aniCe/Infrastructure/Pairing/",
+            "/apps/macos/aniCe/Infrastructure/Session/",
         ):
             self.assertIn(required, patterns)
 

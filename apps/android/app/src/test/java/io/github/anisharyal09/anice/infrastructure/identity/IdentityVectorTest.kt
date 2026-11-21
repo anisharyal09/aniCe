@@ -7,6 +7,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.fail
 import org.junit.Test
 
@@ -50,5 +52,18 @@ class IdentityVectorTest {
         assertEquals("Android", DeviceIdentity.displayName("  "))
         assertEquals(64, DeviceIdentity.displayName("😀".repeat(70)).codePointCount(0, 128))
         assertEquals("Pixel", DeviceIdentity.displayName(" Pixel "))
+    }
+
+    @Test fun replacingAValidPublicKeyRequiresItsOwnFingerprint() {
+        val valid = vectors().getJSONArray("valid")
+        val original = DeviceIdentity.fromJson(valid.getJSONObject(0).getJSONObject("identity"))
+        val replacement = DeviceIdentity.fromJson(valid.getJSONObject(1).getJSONObject("identity"))
+        assertNotEquals(original.publicKey, replacement.publicKey)
+        assertNotEquals(original.fingerprint, replacement.fingerprint)
+        val changedKey = original.copy(publicKey = replacement.publicKey)
+        assertThrows(IllegalArgumentException::class.java) { changedKey.validate() }
+        assertEquals(replacement.publicKey,
+            changedKey.copy(fingerprint = replacement.fingerprint).validate().publicKey)
+        assertEquals(original.fingerprint, original.copy(deviceName = "Renamed").validate().fingerprint)
     }
 }

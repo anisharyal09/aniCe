@@ -7,6 +7,9 @@ struct MacPairingView: View {
   var embedded = false
   var showTrustedDevices = true
   var showPairingControls = true
+  var identityModel: IdentityViewModel?
+  @State private var editingLocalName = false
+  @State private var localName = ""
   @State private var resettingTrust = false
   @State private var forgetID: String?
   @Environment(\.colorScheme) private var scheme
@@ -18,6 +21,13 @@ struct MacPairingView: View {
         trustedDevicesPanel
       }
     }
+    .alert("Edit this Mac's name", isPresented: $editingLocalName) {
+      TextField("Mac name", text: $localName)
+      Button("Cancel", role: .cancel) {}
+      Button("Save") { Task { await identityModel?.rename(localName) } }
+        .disabled(localName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+          localName.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.count > 64)
+    } message: { Text("This changes this Mac's own name, not a private nickname.") }
     .alert("Reset local trust?", isPresented: $resettingTrust) {
       Button("Cancel", role: .cancel) {}
       Button("Reset local trust", role: .destructive, action: model.recoverTrustStore)
@@ -43,6 +53,21 @@ struct MacPairingView: View {
 
   private var pairingPanel: some View {
     VStack(alignment: .leading, spacing: 16) {
+      if let identityModel, let local = identityModel.local {
+        HStack {
+          Text(local.identity.deviceName).font(.subheadline)
+          Spacer()
+          Button("Edit name") {
+            if model.nearbyEnabled { model.cancel() }
+            localName = local.identity.deviceName
+            editingLocalName = true
+          }
+            .buttonStyle(AniCeButtonStyle())
+            .disabled(identityModel.isWorking || (model.active && model.phase != "nearby"))
+        }
+        if identityModel.renameFailure { Text("Could not save this Mac's name. Try again.")
+          .font(.caption).foregroundStyle(AniCePalette.error(scheme)) }
+      }
       if !embedded {
       HStack {
         Text(model.active ? "Pairing invitation" : "Add device")
@@ -84,6 +109,21 @@ struct MacPairingView: View {
 
   @ViewBuilder
   private var activeInvitationContent: some View {
+    if model.nearbyEnabled {
+      if model.comparisonCode != nil && ["comparison", "waiting"].contains(model.phase) {
+        MacComparisonCard(model: model)
+      } else if model.phase == "nearby" || model.phase == "preparing" {
+        Text("Bring your phone close with aniCe open, then compare the code on both screens.")
+          .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
+      }
+      if model.phase == "cooldown" { ProgressView().accessibilityLabel("Waiting for nearby pairing availability") }
+      Button("Manual pair") { model.pauseNearby() }
+        .buttonStyle(AniCeButtonStyle())
+        .disabled(["saving", "paired"].contains(model.phase))
+      if ["preparing", "connecting", "authenticating", "verifying", "saving"].contains(model.phase) {
+        ProgressView().accessibilityLabel(model.status)
+      }
+    }
     if model.phase == "invitation", let image = model.qrImage {
       VStack(spacing: 12) {
         ZStack {
@@ -172,11 +212,12 @@ struct MacPairingView: View {
     if model.phase == "preparing" || model.phase == "starting"
       || model.phase == "authenticating" || model.phase == "saving" || model.phase == "cancelling"
     {
-      ProgressView().accessibilityLabel(model.status)
-        .padding(.vertical, 4)
+      if !model.nearbyEnabled {
+        ProgressView().accessibilityLabel(model.status).padding(.vertical, 4)
+      }
     }
 
-    if model.phase != "approval" && model.phase != "cancelling" {
+    if !model.nearbyEnabled && model.phase != "approval" && model.phase != "cancelling" {
       Button("Cancel invitation") { model.cancel() }
         .buttonStyle(AniCeButtonStyle())
         .controlSize(.small)
@@ -212,12 +253,14 @@ struct MacPairingView: View {
               Image(systemName: "phone")
                 .foregroundStyle(AniCePalette.accent(scheme))
               DisclosureGroup {
+                Text("Device name: " + record.peer.knownDeviceName).font(.caption)
                 Text(record.peer.groupedFingerprint)
                   .font(.caption2.monospaced())
                   .foregroundStyle(AniCePalette.secondaryText(scheme))
                   .textSelection(.enabled)
+                MacNicknameEditor(model: model, peer: record.peer)
               } label: {
-                Text(record.peer.deviceName)
+                Text(model.displayedName(for: record.peer))
                   .font(.subheadline.weight(.medium))
                   .fixedSize(horizontal: false, vertical: true)
               }
@@ -244,5 +287,31 @@ struct MacPairingView: View {
     // The enclosing Devices disclosure supplies the group; peers remain flat rows.
     .padding(.vertical, 4)
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+private struct MacNicknameEditor: View {
+  @Bindable var model: MacPairingModel
+  let peer: DeviceIdentity
+  @State private var name = ""
+  @State private var enabled = false
+  @Environment(\.colorScheme) private var scheme
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      TextField("Private nickname", text: $name).textFieldStyle(.roundedBorder)
+      Toggle("Use nickname", isOn: $enabled).toggleStyle(.checkbox)
+      Text("Only on this Mac. Device name remains the default.").font(.caption)
+      Button("Save nickname") { model.saveNickname(peer: peer, name: name, enabled: enabled) }
+        .disabled(model.savingNickname || name.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.count > 64 ||
+          (enabled && name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+      if model.nicknameFailure { Text("Could not save nickname. Try again.").foregroundStyle(AniCePalette.error(scheme)) }
+    }.onAppear {
+      name = model.nickname(for: peer)?.name ?? ""
+      enabled = model.nickname(for: peer)?.enabled ?? false
+    }
+    .onChange(of: model.nickname(for: peer)) { _, value in
+      name = value?.name ?? ""
+      enabled = value?.enabled ?? false
+    }
   }
 }

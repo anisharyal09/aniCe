@@ -1,12 +1,12 @@
 # aniCe for macOS
 
-Swift 6 and SwiftUI provide persistent device identity, a main window and a menu-bar companion. QR/PIN pairing uses mutual approval and local peer trust. Feature behavior and limits are documented in the linked guides.
+Swift 6 and SwiftUI provide persistent device identity, a main window and a menu-bar companion. Nearby numeric comparison and QR/PIN pairing use mutual approval and local peer trust. The nearby profile is provisional and requires independent security review. Feature behavior and limits are documented in the linked guides.
 
 ## Requirements and user setup
 
 Apple Silicon and macOS 14.2 or newer; Intel is unsupported. Swift 6, SwiftUI/AppKit and a native Rust pairing bridge.
 
-The development version is **0.9.0-beta.3 · build 90023**. See [installation, pairing and updates](../../docs/GETTING_STARTED.md) for user instructions, [feature guides](../../README.md#features) for behavior and permissions, and [architecture](../../ARCHITECTURE.md) for identity and transport ownership.
+Release candidate: **0.9.0-beta.4 · build 90024** (unpublished). See [installation and updates](../../docs/GETTING_STARTED.md), [feature guides](../../README.md#features) and [architecture](../../ARCHITECTURE.md).
 
 ## Using the Mac app
 
@@ -55,7 +55,7 @@ aniCeTests/                    Hosted suites and shared fixtures
   FindDevice/                  Find device payload and state transition test suites
   KeyboardTrackpad/            Input ownership, focus, gestures and native HID protocol tests
   PhoneInput/                  Phone-to-Mac receiver, event translation and wire codec tests
-  NowPlaying/                  Media and packaged-adapter suites; standalone AdapterChecks
+  NowPlaying/                  Media, packaged-adapter, parsing and scheduling suites
   Notifications/               Notification wire, snapshot, native presentation and action suites
   Sms/                         SMS wire codec, relay model and notifier test suites
   Transfer/                    Transfer model and wire codec test suites

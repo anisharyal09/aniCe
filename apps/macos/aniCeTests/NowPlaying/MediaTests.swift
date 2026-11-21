@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Verifies native session security and presentation readiness against fixtures and adversarial transitions.
+// Verifies playback ownership, negotiated controls, presentation and native adapter behavior.
 import CryptoKit
 import AppKit
 import Foundation

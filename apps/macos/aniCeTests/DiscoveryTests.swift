@@ -105,10 +105,66 @@ final class DiscoveryTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(r.session.recovery, .permissionSettings)
         r.session.start(); r.fake.event(.unsupported); XCTAssertEqual(r.session.recovery, .unsupported)
     }
+    @MainActor func testBluetoothOffCopyIdentifiesTheMacAndTheRetryAction() async {
+        for nearby in [false, true] {
+            let r = Rig()
+            r.session.start(nearbyAvailability: nearby)
+            r.fake.event(.off)
+            XCTAssertEqual(r.session.state, .bluetoothOff)
+            XCTAssertEqual(r.session.recovery, .bluetoothSettings)
+            XCTAssertTrue(r.session.message.contains("Bluetooth is off on this Mac."))
+            XCTAssertTrue(r.session.message.contains("System Settings → Bluetooth"))
+            XCTAssertEqual(r.session.message.contains("Find nearby again"), nearby)
+            XCTAssertFalse(r.session.active)
+        }
+    }
     @MainActor func testStaleCallbacksAndCancelCannotRestartAdvertising() async {
         let r = Rig(); r.session.start(); let oldEvent = r.fake.event; let oldRead = r.fake.reader
         r.session.start(); oldEvent(.available); oldEvent(.advertising)
         XCTAssertEqual(r.fake.publishes, 0); XCTAssertEqual(oldRead(true, 0), .unavailable)
         r.session.stop(); r.fake.event(.available); XCTAssertEqual(r.fake.publishes, 0)
+    }
+    @MainActor func testNearbyAvailabilityRotatesWithoutInvitationExpiry() async {
+        let r = Rig()
+        r.session.start(nearbyAvailability: true)
+        XCTAssertNil(r.session.nextDeadline)
+        r.fake.event(.available); r.fake.event(.published)
+        XCTAssertEqual(r.session.nextDeadline, 10)
+        XCTAssertEqual(r.session.read(matches: true, offset: 0), .unavailable)
+        r.fake.event(.advertising)
+        XCTAssertEqual(r.session.nextDeadline, 30)
+        r.time = 120
+        XCTAssertEqual(r.session.read(matches: true, offset: 4), .value(Data(repeating: 2, count: 16)))
+        XCTAssertTrue(r.session.active)
+        XCTAssertEqual(r.session.remainingSeconds, 0)
+        XCTAssertEqual(r.session.nextDeadline, 150)
+        let payload = r.session.read(matches: true, offset: 0)
+        r.fake.event(.available); r.fake.event(.advertising)
+        XCTAssertEqual(r.fake.publishes, 1)
+        XCTAssertEqual(r.session.read(matches: true, offset: 0), payload)
+        XCTAssertEqual(r.session.nextDeadline, 150)
+        r.session.stop()
+        XCTAssertNil(r.session.nextDeadline)
+        XCTAssertEqual(r.session.read(matches: true, offset: 0), .unavailable)
+        r.advertise(); r.time += 120
+        XCTAssertEqual(r.session.read(matches: true, offset: 0), .unavailable)
+    }
+    @MainActor func testOptionalSasFlagRotatesAndClearsOnOrdinaryStart() async throws {
+        let r = Rig()
+        r.session.start(nearbyAvailability: true, flags: PairingSas.discoveryFlag)
+        r.fake.event(.available); r.fake.event(.published); r.fake.event(.advertising)
+        for time: TimeInterval in [0, 30, 120] {
+            r.time = time
+            guard case .value(let bytes) = r.session.read(matches: true, offset: 0) else {
+                XCTFail("Missing nearby payload"); return
+            }
+            XCTAssertEqual(try BlePayloadCodec.decode(bytes).flags, 1)
+        }
+        r.session.stop()
+        r.advertise()
+        guard case .value(let bytes) = r.session.read(matches: true, offset: 0) else {
+            XCTFail("Missing ordinary payload"); return
+        }
+        XCTAssertEqual(try BlePayloadCodec.decode(bytes).flags, 0)
     }
 }

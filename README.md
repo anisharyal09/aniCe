@@ -16,11 +16,11 @@
 Drop files to your screen edge to share them, sync clipboards instantly, reply to phone notifications and SMS from your Mac, control your phone with your Mac keyboard and trackpad (`⌥⌘K`), and control Mac playback or view live system stats from your phone (Desk Deck).
 
 <p align="center">
-  <a href="https://github.com/anisharyal09/aniCe/releases/download/v0.9.0-beta.3/aniCe-android.apk">
+  <a href="https://github.com/anisharyal09/aniCe/releases/download/v0.9.0-beta.4/aniCe-android.apk">
     <img src="https://img.shields.io/badge/Download-Android_APK-47534D?style=for-the-badge&amp;logo=android&amp;logoColor=FFFDF9&amp;labelColor=282E2A" alt="Download Android APK">
   </a>
   &nbsp;
-  <a href="https://github.com/anisharyal09/aniCe/releases/download/v0.9.0-beta.3/aniCe-mac.zip">
+  <a href="https://github.com/anisharyal09/aniCe/releases/download/v0.9.0-beta.4/aniCe-mac.zip">
     <img src="https://img.shields.io/badge/Download-Mac_ZIP-47534D?style=for-the-badge&amp;logo=apple&amp;logoColor=FFFDF9&amp;labelColor=282E2A" alt="Download Mac ZIP (Apple Silicon)">
   </a>
 </p>
@@ -31,7 +31,7 @@ Drop files to your screen edge to share them, sync clipboards instantly, reply t
 </p>
 
 <p align="center">
-  <strong>v0.9.0-beta.3</strong> (Apple Silicon macOS 14+ · Android 10+) <br> <a href="docs/FIRST_INSTALL_GUIDE.md">First Installation Guide</a> · <a href="docs/GETTING_STARTED.md">Getting Started</a>
+  Latest published: <strong>v0.9.0-beta.4</strong> (Apple Silicon macOS 14+ · Android 10+) <br> <a href="docs/FIRST_INSTALL_GUIDE.md">First Installation Guide</a> · <a href="docs/GETTING_STARTED.md">Getting Started</a>
 </p>
 
 - **Local connections:** No accounts, relays or analytics. BLE/LAN feature data stays peer-to-peer; updates contact GitHub.

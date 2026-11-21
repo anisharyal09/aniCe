@@ -1,0 +1,6 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Existing secured DATA only; name additionally requires trimmed nonblank 1..64 Unicode code points.
+device-names = ["aniCe device names", 1, 1, [1]] /
+               ["aniCe device names", 1, 2, [revision, name]]
+revision = uint .le 9223372036854775807
+name = tstr .size (1..256)

@@ -60,6 +60,14 @@ class AndroidGattTransport(
   private var locating = false
   private var setupRecovery = GattSetupRecovery()
   private var lastCandidateFailure: PairingTransportFailure? = null
+  private var requiredDiscoveryFlags = 0
+  /** Native locator only; the connection owner must verify pinned credentials before using it for setup. */
+  @SuppressLint("MissingPermission")
+  internal fun connectedAddress(): String? =
+    if (stage == "ready" && !closing) client?.device?.address else null
+  internal fun pairedCandidate(peer: io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity): PairedBleCandidate? =
+    if (!trustedSession && stage == "ready" && !closing)
+      client?.device?.let { PairedBleCandidate(it, peer) } else null
   val scanEndFailure
     get() = lastCandidateFailure
 
@@ -83,6 +91,7 @@ class AndroidGattTransport(
     closedCallback = false
     closing = false
     locating = qr
+    requiredDiscoveryFlags = 0
     lastCandidateFailure = null
     search.begin()
     scanDeadline = search.deadline
@@ -171,11 +180,12 @@ class AndroidGattTransport(
   }
 
   /** An associated address selects a transport candidate; EDHOC still authenticates its pinned key. */
-  fun startCandidate(device: BluetoothDevice) {
+  fun startCandidate(device: BluetoothDevice, requiredDiscoveryFlags: Int = 0) {
     close()
     closedCallback = false
     closing = false
     locating = false
+    this.requiredDiscoveryFlags = requiredDiscoveryFlags
     connect(device)
   }
 
@@ -240,7 +250,7 @@ class AndroidGattTransport(
             Log.i(
               "aniCe-ble",
               "gatt_connection epoch=$op stage=$stage status=$status connected=${state == BluetoothProfile.STATE_CONNECTED} " +
-                "mtu=$mtu queued=${queue.size} writing=$writing closing=$closing",
+                "mtu=$mtu queued=${queue.size} writing=$writing closing=$closing session=$trustedSession",
             )
             if (state == BluetoothProfile.STATE_DISCONNECTED) {
               finish(closing, if (!closing) "Bluetooth disconnected (GATT status $status, stage $stage)." else null)
@@ -354,7 +364,7 @@ class AndroidGattTransport(
             }
             stage = "profile"
             progress("services", connectionDeadline)
-            require(g.readCharacteristic(discovery))
+            readProfile(g, discovery)
           }
 
         @Deprecated("Legacy callback required before API 33")
@@ -372,13 +382,35 @@ class AndroidGattTransport(
         private fun profileRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray, status: Int) = dispatch(g) {
           if (stage != "profile" || c.uuid != UUID.fromString(BlePayloadCodec.CHARACTERISTIC_UUID)) return@dispatch
           if (setupRecovery.afterPendingOperation()) { services(g); return@dispatch }
-          val valid = status == BluetoothGatt.GATT_SUCCESS && try {
-            BlePayloadCodec.decode(value); true
-          } catch (_: IllegalArgumentException) { false }
-          Log.i("aniCe-ble", "profile_read epoch=$op status=$status valid=$valid instance=${c.instanceId}")
+          val payload = if (status == BluetoothGatt.GATT_SUCCESS) try {
+            BlePayloadCodec.decode(value)
+          } catch (_: IllegalArgumentException) { null } else null
+          val valid = payload != null
+          val comparisonAvailable = payload?.let { it.flags and PairingSas.DISCOVERY_FLAG != 0 } == true
+          Log.i("aniCe-ble", "profile_read epoch=$op status=$status valid=$valid instance=${c.instanceId} session=$trustedSession comparison=$comparisonAvailable")
+          if (SystemClock.elapsedRealtime() + 500 < connectionDeadline &&
+              setupRecovery.retrySessionAvailability(status, comparisonAvailable, trustedSession)) {
+            // A just-completed pairing may still own this fixed public service. Retry only this
+            // unauthenticated read; never refresh caches, retarget a peer or replay a sealed write.
+            Log.i("aniCe-ble", "profile_wait epoch=$op session=$trustedSession")
+            handler.postDelayed({
+              if (epoch == op && client === g && stage == "profile" && !closing) {
+                if (setupRecovery.afterPendingOperation()) services(g) else readProfile(g, c)
+              }
+            }, 500)
+            return@dispatch
+          }
           if (!valid) {
             if (setupRecovery.retryProfileRead(status)) rediscoverServices(g)
-            else finish(false, "Could not verify the Mac's Bluetooth service layout (GATT status $status).")
+            else finish(false, setupRecovery.profileReadFailure(status, trustedSession).message)
+            return@dispatch
+          }
+          if (trustedSession && comparisonAvailable) {
+            finish(false, "Pairing is saved, but the Mac is still finishing nearby setup. Keep aniCe open and choose Connect again.")
+            return@dispatch
+          }
+          if (requireNotNull(payload).flags and requiredDiscoveryFlags != requiredDiscoveryFlags) {
+            finish(false, "This Mac does not offer code comparison. Open Manual pair to use QR or PIN.")
             return@dispatch
           }
           subscribe(g)
@@ -475,8 +507,8 @@ class AndroidGattTransport(
                 require(budget + bytes.size <= 32768)
                 budget += bytes.size
               }
-              if (trustedSession && bytes.firstOrNull() != 6.toByte())
-                Log.i("aniCe-ble", "received epoch=$op envelope=${bytes.firstOrNull()} bytes=${bytes.size}")
+              if (!trustedSession || bytes.firstOrNull() != 6.toByte())
+                Log.i("aniCe-ble", "received epoch=$op envelope=${bytes.firstOrNull()} bytes=${bytes.size} session=$trustedSession")
               message(bytes)
             }
             changed()
@@ -538,6 +570,16 @@ class AndroidGattTransport(
       require(g.discoverServices())
     } catch (_: Exception) {
       finish(false, failureMessage(), retryCandidate = true)
+    }
+  }
+
+  private fun readProfile(g: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+    if (closing || client !== g || stage != "profile") return
+    try {
+      if (!g.readCharacteristic(characteristic))
+        finish(false, "Could not submit the Mac's Bluetooth discovery read.")
+    } catch (_: SecurityException) {
+      finish(false, "Bluetooth access changed. Allow nearby devices and connect again.")
     }
   }
 

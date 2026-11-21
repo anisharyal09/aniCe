@@ -215,7 +215,8 @@ def generate():
         {'name': 'indefinite-array', 'kind': 4, 'bytesHex': (b'\x9f' + done[1:] + b'\xff').hex()},
         {'name': 'invalid-utf8', 'kind': 3, 'bytesHex': bytes(record).hex()},
     ]
-    assert len(good) >= 55 and len(bad) >= 85
+    if len(good) < 55 or len(bad) < 85:
+        raise AssertionError("SMS fixture inventory shrank")
     return {'valid': good, 'invalid': bad}
 
 

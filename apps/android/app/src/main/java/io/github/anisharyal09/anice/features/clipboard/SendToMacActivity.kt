@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Shares passed text or one explicitly focused clipboard sample through existing secured delivery.
 package io.github.anisharyal09.anice.features.clipboard
+import io.github.anisharyal09.anice.infrastructure.connections.displayName
 
 import android.content.Context
 import android.content.Intent
@@ -149,7 +150,7 @@ class SendToMacActivity : ComponentActivity() {
                 Text(if (state.openingLink) "Open Link in Mac" else "Send to Mac", style = MaterialTheme.typography.titleLarge)
                 if (state.sharedLink != null && operation == null) {
                     Text("Open this link in your Mac’s default browser, or send it to the Mac clipboard.")
-                    Text(app.clipboard.sharePeer?.deviceName?.let { "To $it" } ?: "Connect your Mac first")
+                    Text(app.clipboard.sharePeer?.displayName?.let { "To $it" } ?: "Connect your Mac first")
                     Button(onClick = state::chooseOpenLink, enabled = state.canOpenLink, shape = MaterialTheme.shapes.small) {
                         Text("Open in Mac")
                     }
@@ -161,7 +162,7 @@ class SendToMacActivity : ComponentActivity() {
                     else if (captured == null) Text("Copy plain text, then open this tile again.")
                     else {
                         Text("${captured.text.toByteArray(Charsets.UTF_8).size} bytes · ${if (captured.sensitive) "Sensitive text" else "Plain text"}")
-                        Text(app.clipboard.sharePeer?.deviceName?.let { "To $it" } ?: "Connect your Mac first")
+                    Text(app.clipboard.sharePeer?.displayName?.let { "To $it" } ?: "Connect your Mac first")
                         OutlinedButton(onClick = state::send, shape = MaterialTheme.shapes.small) {
                             Icon(painterResource(R.drawable.ic_clipboard), contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
@@ -169,7 +170,7 @@ class SendToMacActivity : ComponentActivity() {
                         }
                     }
                 } else when (result) {
-                    null -> { Text(if (state.openingLink) "Opening on ${app.clipboard.sharePeer?.deviceName ?: "Mac"}…" else "Sending to ${app.clipboard.sharePeer?.deviceName ?: "Mac"}…"); LinearProgressIndicator(Modifier.fillMaxWidth()) }
+                    null -> { Text(if (state.openingLink) "Opening on ${app.clipboard.sharePeer?.displayName ?: "Mac"}…" else "Sending to ${app.clipboard.sharePeer?.displayName ?: "Mac"}…"); LinearProgressIndicator(Modifier.fillMaxWidth()) }
                     ClipboardSendResult.APPLIED -> Text(if (state.openingLink) "Opened in Mac" else "Sent to Mac")
                     ClipboardSendResult.UNAVAILABLE -> Text("Connect your Mac in aniCe, then try again.")
                     ClipboardSendResult.BUSY -> Text("Another send is in progress")

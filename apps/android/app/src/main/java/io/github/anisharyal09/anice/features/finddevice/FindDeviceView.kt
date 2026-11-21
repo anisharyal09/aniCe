@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Presents peer-scoped Find Device actions and local notification setup using Android resources.
 package io.github.anisharyal09.anice.features.finddevice
+import io.github.anisharyal09.anice.infrastructure.connections.displayName
 
 import android.Manifest
 import android.content.Intent
@@ -101,7 +102,7 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(record.peer.deviceName, style = MaterialTheme.typography.titleSmall)
+                                Text(record.peer.displayName, style = MaterialTheme.typography.titleSmall)
                                 val status = if (owner.feedbackPeer == record.peer && owner.feedbackKey != "find_idle") {
                                     feedbackText
                                 } else if (!owner.supports(record.peer)) {
@@ -114,7 +115,7 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
                                 }
                                 Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            val findLabel = stringResource(R.string.find_peer_action, record.peer.deviceName)
+                            val findLabel = stringResource(R.string.find_peer_action, record.peer.displayName)
                             FilledTonalButton(
                                 onClick = { owner.find(record.peer) },
                                 enabled = owner.canFind(record.peer),
@@ -131,7 +132,7 @@ fun FindDeviceView(owner: FindDeviceController, peers: List<PeerTrustRecord>, mo
         }
         val feedbackPeerMissing = owner.feedbackPeer?.let { peer -> peers.none { it.peer == peer } } == true
         if (feedbackPeerMissing && owner.feedbackKey != "find_idle") {
-            owner.feedbackPeer?.let { Text(it.deviceName, style = MaterialTheme.typography.bodySmall) }
+            owner.feedbackPeer?.let { Text(it.displayName, style = MaterialTheme.typography.bodySmall) }
         }
         val showIdle = owner.feedbackKey == "find_idle" && peers.isEmpty()
         if (showIdle || (owner.feedbackKey != "find_idle" && (owner.feedbackPeer == null || feedbackPeerMissing) && owner.feedbackKey.isNotEmpty())) {

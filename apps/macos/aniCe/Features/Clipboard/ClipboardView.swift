@@ -17,8 +17,8 @@ struct ClipboardSettingsView: View {
       else if peers.count > 1 {
         Picker("Device", selection: Binding(get: { model.selected.map { $0.deviceId + ":" + $0.fingerprint } ?? "" }, set: { value in
           model.select(peers.first { $0.peer.deviceId + ":" + $0.peer.fingerprint == value }?.peer)
-        })) { ForEach(peers) { record in Text(record.peer.deviceName).tag(record.peer.deviceId + ":" + record.peer.fingerprint) } }
-      } else if !compactSettings, let peer = peers.first { Text(peer.peer.deviceName).font(.headline) }
+        })) { ForEach(peers) { record in Text(record.peer.displayName).tag(record.peer.deviceId + ":" + record.peer.fingerprint) } }
+      } else if !compactSettings, let peer = peers.first { Text(peer.peer.displayName).font(.headline) }
       if !showPreferences, model.selected != nil {
         Text(model.automatic ? "Automatic sharing on" : "Manual sharing")
           .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -227,7 +227,7 @@ struct ClipboardSendButton: View {
       .alert("Send sensitive text?", isPresented: Binding(get: { sensitiveSample != nil }, set: { if !$0 { sensitiveSample = nil } }), presenting: sensitiveSample) { captured in
         Button("Send") { model.sendConfirmed(captured); sensitiveSample = nil }
         Button("Cancel", role: .cancel) { sensitiveSample = nil; model.clearPreview() }
-      } message: { _ in Text("This clipboard is marked sensitive. Send it to \(model.selected?.deviceName ?? "the selected device")?") }
+      } message: { _ in Text("This clipboard is marked sensitive. Send it to \(model.selected?.displayName ?? "the selected device")?") }
       .onChange(of: model.selected.map { $0.deviceId + ":" + $0.fingerprint }) { _, _ in sensitiveSample = nil }
       .onChange(of: model.preview == nil) { _, empty in if empty { sensitiveSample = nil } }
       .onDisappear { sensitiveSample = nil; model.clearPreview() }

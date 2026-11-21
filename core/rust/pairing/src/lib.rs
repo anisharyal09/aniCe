@@ -34,8 +34,8 @@ struct Server {
 
 /// Active session state variants.
 enum State {
-    Server(Server),
-    Client(ClientLogin<Suite>),
+    Server(Box<Server>),
+    Client(Box<ClientLogin<Suite>>),
 }
 
 /// In-memory table entry with activity timestamp.
@@ -54,6 +54,10 @@ fn prune(states: &mut HashMap<u64, Entry>, now: Instant) {
 
 /// Process-local thread-safe table for ephemeral pairing sessions.
 static STATES: OnceLock<Mutex<(u64, HashMap<u64, Entry>)>> = OnceLock::new();
+
+/// Opaque failure: the native boundary deliberately exposes no authentication internals.
+#[derive(Debug)]
+pub struct BridgeError;
 
 /// Key stretching function configured with Argon2id: 64 MiB memory, t=3 passes, p=1 lane.
 fn ksf() -> argon2::Argon2<'static> {
@@ -76,25 +80,30 @@ fn identifiers() -> Identifiers<'static> {
 pub fn fields(values: &[&[u8]]) -> Vec<u8> {
     values
         .iter()
-        .flat_map(|v| (v.len() as u32).to_be_bytes().into_iter().chain(v.iter().copied()))
+        .flat_map(|v| {
+            (v.len() as u32)
+                .to_be_bytes()
+                .into_iter()
+                .chain(v.iter().copied())
+        })
         .collect()
 }
 
 /// Parses uint32 length-prefixed fields from input buffer.
-pub fn parse(input: &[u8]) -> Result<Vec<&[u8]>, ()> {
+pub fn parse(input: &[u8]) -> Result<Vec<&[u8]>, BridgeError> {
     let mut f = Vec::new();
     let mut rest = input;
     if rest.len() > 4096 {
-        return Err(());
+        return Err(BridgeError);
     }
     while !rest.is_empty() {
         if rest.len() < 4 || f.len() >= 8 {
-            return Err(());
+            return Err(BridgeError);
         }
-        let n = u32::from_be_bytes(rest[..4].try_into().map_err(|_| ())?) as usize;
+        let n = u32::from_be_bytes(rest[..4].try_into().map_err(|_| BridgeError)?) as usize;
         rest = &rest[4..];
         if n > rest.len() {
-            return Err(());
+            return Err(BridgeError);
         }
         f.push(&rest[..n]);
         rest = &rest[n..];
@@ -103,17 +112,19 @@ pub fn parse(input: &[u8]) -> Result<Vec<&[u8]>, ()> {
 }
 
 /// Decodes uint64 session handle.
-fn handle(bytes: &[u8]) -> Result<u64, ()> {
-    Ok(u64::from_be_bytes(bytes.try_into().map_err(|_| ())?))
+fn handle(bytes: &[u8]) -> Result<u64, BridgeError> {
+    Ok(u64::from_be_bytes(
+        bytes.try_into().map_err(|_| BridgeError)?,
+    ))
 }
 
 /// Dispatches operations 1..6 on in-memory OPAQUE state machines.
-pub fn command(op: u32, input: &[u8]) -> Result<Vec<u8>, ()> {
+pub fn command(op: u32, input: &[u8]) -> Result<Vec<u8>, BridgeError> {
     let f = parse(input)?;
     let mut lock = STATES
         .get_or_init(|| Mutex::new((0, HashMap::new())))
         .lock()
-        .map_err(|_| ())?;
+        .map_err(|_| BridgeError)?;
     let now = Instant::now();
     prune(&mut lock.1, now);
     let mut rng = OsRng;
@@ -126,11 +137,13 @@ pub fn command(op: u32, input: &[u8]) -> Result<Vec<u8>, ()> {
                 || !f[0].iter().all(u8::is_ascii_digit)
                 || lock.1.len() >= 64
             {
-                return Err(());
+                return Err(BridgeError);
             }
             let setup = ServerSetup::<Suite>::new(&mut rng);
-            let reg = ClientRegistration::<Suite>::start(&mut rng, f[0]).map_err(|_| ())?;
-            let response = ServerRegistration::start(&setup, reg.message, f[1]).map_err(|_| ())?;
+            let reg =
+                ClientRegistration::<Suite>::start(&mut rng, f[0]).map_err(|_| BridgeError)?;
+            let response =
+                ServerRegistration::start(&setup, reg.message, f[1]).map_err(|_| BridgeError)?;
             let finished = reg
                 .state
                 .finish(
@@ -139,7 +152,7 @@ pub fn command(op: u32, input: &[u8]) -> Result<Vec<u8>, ()> {
                     response.message,
                     ClientRegistrationFinishParameters::new(identifiers(), Some(&ksf())),
                 )
-                .map_err(|_| ())?;
+                .map_err(|_| BridgeError)?;
             let server = Server {
                 setup,
                 record: ServerRegistration::finish(finished.message),
@@ -148,40 +161,56 @@ pub fn command(op: u32, input: &[u8]) -> Result<Vec<u8>, ()> {
                 context: Vec::new(),
                 attempts: 0,
             };
-            lock.0 = lock.0.checked_add(1).ok_or(())?;
+            lock.0 = lock.0.checked_add(1).ok_or(BridgeError)?;
             let id = lock.0;
-            lock.1.insert(id, Entry { state: State::Server(server), used: now });
+            lock.1.insert(
+                id,
+                Entry {
+                    state: State::Server(Box::new(server)),
+                    used: now,
+                },
+            );
             Ok(id.to_be_bytes().to_vec())
         }
         // Op 2: Client login start with 6-digit PIN (outputs clientHandle and CredentialRequest)
         2 => {
-            if f.len() != 1 || f[0].len() != 6 || !f[0].iter().all(u8::is_ascii_digit) || lock.1.len() >= 64 {
-                return Err(());
+            if f.len() != 1
+                || f[0].len() != 6
+                || !f[0].iter().all(u8::is_ascii_digit)
+                || lock.1.len() >= 64
+            {
+                return Err(BridgeError);
             }
-            let start = ClientLogin::<Suite>::start(&mut rng, f[0]).map_err(|_| ())?;
-            lock.0 = lock.0.checked_add(1).ok_or(())?;
+            let start = ClientLogin::<Suite>::start(&mut rng, f[0]).map_err(|_| BridgeError)?;
+            lock.0 = lock.0.checked_add(1).ok_or(BridgeError)?;
             let id = lock.0;
             let out = fields(&[&id.to_be_bytes(), &start.message.serialize()]);
-            lock.1.insert(id, Entry { state: State::Client(start.state), used: now });
+            lock.1.insert(
+                id,
+                Entry {
+                    state: State::Client(Box::new(start.state)),
+                    used: now,
+                },
+            );
             Ok(out)
         }
         // Op 3: Server login start (processes CredentialRequest, produces CredentialResponse)
         3 => {
             if f.len() != 3 {
-                return Err(());
+                return Err(BridgeError);
             }
             let id = handle(f[0])?;
-            let entry = lock.1.get_mut(&id).ok_or(())?;
+            let entry = lock.1.get_mut(&id).ok_or(BridgeError)?;
             entry.used = now;
             let State::Server(s) = &mut entry.state else {
-                return Err(());
+                return Err(BridgeError);
             };
             if s.attempts >= 5 {
-                return Err(());
+                return Err(BridgeError);
             }
             s.attempts += 1;
             s.login = None;
-            let req = CredentialRequest::deserialize(f[1]).map_err(|_| ())?;
+            let req = CredentialRequest::deserialize(f[1]).map_err(|_| BridgeError)?;
             let start = ServerLogin::start(
                 &mut rng,
                 &s.setup,
@@ -193,7 +222,7 @@ pub fn command(op: u32, input: &[u8]) -> Result<Vec<u8>, ()> {
                     identifiers: identifiers(),
                 },
             )
-            .map_err(|_| ())?;
+            .map_err(|_| BridgeError)?;
             let out = start.message.serialize().to_vec();
             s.login = Some(start.state);
             s.context = f[2].to_vec();
@@ -202,39 +231,40 @@ pub fn command(op: u32, input: &[u8]) -> Result<Vec<u8>, ()> {
         // Op 4: Client login finish (processes CredentialResponse, outputs CredentialFinalization and sessionKey)
         4 => {
             if f.len() != 4 {
-                return Err(());
+                return Err(BridgeError);
             }
             let id = handle(f[0])?;
             if !matches!(lock.1.get(&id).map(|e| &e.state), Some(State::Client(_))) {
-                return Err(());
+                return Err(BridgeError);
             }
-            let State::Client(s) = lock.1.remove(&id).ok_or(())?.state else {
-                return Err(());
+            let State::Client(s) = lock.1.remove(&id).ok_or(BridgeError)?.state else {
+                return Err(BridgeError);
             };
-            let response = CredentialResponse::deserialize(f[2]).map_err(|_| ())?;
-            let finish = s
+            let response = CredentialResponse::deserialize(f[2]).map_err(|_| BridgeError)?;
+            let finish = (*s)
                 .finish(
                     &mut rng,
                     f[1],
                     response,
                     ClientLoginFinishParameters::new(Some(f[3]), identifiers(), Some(&ksf())),
                 )
-                .map_err(|_| ())?;
+                .map_err(|_| BridgeError)?;
             Ok(fields(&[&finish.message.serialize(), &finish.session_key]))
         }
         // Op 5: Server login finish (processes CredentialFinalization, outputs shared sessionKey)
         5 => {
             if f.len() != 2 {
-                return Err(());
+                return Err(BridgeError);
             }
             let id = handle(f[0])?;
-            let entry = lock.1.get_mut(&id).ok_or(())?;
+            let entry = lock.1.get_mut(&id).ok_or(BridgeError)?;
             entry.used = now;
             let State::Server(s) = &mut entry.state else {
-                return Err(());
+                return Err(BridgeError);
             };
-            let finalization = CredentialFinalization::deserialize(f[1]).map_err(|_| ())?;
-            let login = s.login.take().ok_or(())?;
+            let finalization =
+                CredentialFinalization::deserialize(f[1]).map_err(|_| BridgeError)?;
+            let login = s.login.take().ok_or(BridgeError)?;
             let finish = login
                 .finish(
                     finalization,
@@ -243,24 +273,29 @@ pub fn command(op: u32, input: &[u8]) -> Result<Vec<u8>, ()> {
                         identifiers: identifiers(),
                     },
                 )
-                .map_err(|_| ())?;
+                .map_err(|_| BridgeError)?;
             Ok(finish.session_key.to_vec())
         }
         // Op 6: Release session handle from memory
         6 => {
             if f.len() != 1 {
-                return Err(());
+                return Err(BridgeError);
             }
             lock.1.remove(&handle(f[0])?);
             Ok(vec![1])
         }
-        _ => Err(()),
+        _ => Err(BridgeError),
     }
 }
 
 /// C ABI entry point.
 ///
 /// Caller owns input and output buffers. Returns bytes written on success, or -1 on failure.
+///
+/// # Safety
+/// Non-null `input` must address `len` readable initialized bytes, and non-null
+/// `out` must address `capacity` writable bytes. Both allocations must remain
+/// valid for the call, with no concurrent mutation of input or access to output.
 #[no_mangle]
 pub unsafe extern "C" fn anice_pake(
     op: u32,
@@ -277,7 +312,7 @@ pub unsafe extern "C" fn anice_pake(
         let mut result = command(op, &input)?;
         if result.len() > capacity {
             result.zeroize();
-            return Err(());
+            return Err(BridgeError);
         }
         std::ptr::copy_nonoverlapping(result.as_ptr(), out, result.len());
         let n = result.len();
@@ -300,12 +335,12 @@ pub extern "system" fn Java_io_github_anisharyal09_anice_infrastructure_pairing_
     input: jni::objects::JByteArray,
 ) -> jni::sys::jbyteArray {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        if env.get_array_length(&input).map_err(|_| ())? > 4096 {
-            return Err(());
+        if env.get_array_length(&input).map_err(|_| BridgeError)? > 4096 {
+            return Err(BridgeError);
         }
-        let bytes = Zeroizing::new(env.convert_byte_array(input).map_err(|_| ())?);
+        let bytes = Zeroizing::new(env.convert_byte_array(input).map_err(|_| BridgeError)?);
         let result = Zeroizing::new(command(op as u32, &bytes)?);
-        env.byte_array_from_slice(&result).map_err(|_| ())
+        env.byte_array_from_slice(&result).map_err(|_| BridgeError)
     }));
     match result {
         Ok(Ok(arr)) => arr.into_raw(),
@@ -315,4 +350,3 @@ pub extern "system" fn Java_io_github_anisharyal09_anice_infrastructure_pairing_
         }
     }
 }
-

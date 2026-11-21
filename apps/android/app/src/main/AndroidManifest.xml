@@ -92,8 +92,7 @@
         </service>
         <receiver android:name=".features.finddevice.FindDeviceDismissReceiver" android:exported="false" />
         <receiver android:name=".features.transfer.TransferActionReceiver" android:exported="false" />
-        <activity android:name=".features.backgroundprobe.CompanionProbeActivity" android:exported="false" />
-        <!-- Disabled until native compatibility is verified; API-31 class cannot load on API 29/30. -->
+        <!-- API-31 companion ownership stays disabled on API 29/30. -->
         <service android:name=".features.backgroundprobe.CompanionProbeService" android:enabled="@bool/companion_probe_supported"
             tools:targetApi="31" android:exported="true" android:permission="android.permission.BIND_COMPANION_DEVICE_SERVICE">
             <intent-filter><action android:name="android.companion.CompanionDeviceService" /></intent-filter>

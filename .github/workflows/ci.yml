@@ -6,7 +6,8 @@ name: CI
 
 on:
   push:
-    branches: [main, 'feat/**', 'fix/**', 'micro-feat/**', 'seamless-redesign']
+    # Feature branches use PR checks; main pushes retain exact-commit release evidence.
+    branches: [main]
   pull_request:
     branches: [main]
   merge_group:
@@ -20,7 +21,8 @@ defaults:
     shell: bash
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # A manual run must not cancel the main-push evidence required for release signing.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -119,7 +121,7 @@ jobs:
 
       - name: Set up Rust
         run: |
-          rustup toolchain install stable --profile minimal
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
           rustup default stable
 
       - name: Verify Rust pairing bridge
@@ -235,9 +237,9 @@ jobs:
           path: build/reports/verification/
 
   verify-required:
-    # This is the only branch-protection check.  It has no checkout and no
-    # token, so it cannot execute pull-request code.  The workflow file itself
-    # must be protected by CODEOWNERS and required code-owner review.
+    # Require this aggregate in main's GitHub ruleset; YAML cannot enforce
+    # branch protection. This job has no checkout or repository permissions.
+    # Protect the workflow itself with CODEOWNERS and required code-owner review.
     if: always()
     needs: [verify-ci-integrity, verify-contracts, verify-rust, verify-android, verify-macos]
     runs-on: ubuntu-24.04

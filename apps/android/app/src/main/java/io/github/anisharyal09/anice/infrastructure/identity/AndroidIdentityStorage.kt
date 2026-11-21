@@ -80,7 +80,6 @@ class AndroidIdentityKeys : IdentityKeyStore {
                 .setDigests(KeyProperties.DIGEST_SHA256).setUserAuthenticationRequired(false).build())
             generateKeyPair()
         }
-        Unit
     }
     override fun publicKey(alias: String): ByteArray? = access {
         val store = store()

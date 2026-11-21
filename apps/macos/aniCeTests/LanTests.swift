@@ -221,7 +221,8 @@ final class LanTests: XCTestCase {
     // Native callbacks are injected without opening a socket or publishing a physical Bonjour service.
     let endpoint = try LanDirectEndpoint(ip: "192.0.2.10", port: 51234, profile: .lanTransfer512)
     let owner = MacLanSessionModel(identity: identity, peers: reservation,
-      startListener: { _ in starts += 1 }, endpointProvider: { _, _ in endpoint }, store: { trust })
+      startListener: { _ in starts += 1 }, startPathMonitor: { _ in },
+      endpointProvider: { _, _ in endpoint }, store: { trust })
     @MainActor final class Channel: SecuredChannel {
       let descriptor: ChannelDescriptor
       var sent = [Data]()
@@ -240,15 +241,25 @@ final class LanTests: XCTestCase {
     XCTAssertEqual(starts, 1)
     let registered = try XCTUnwrap(listener.serviceRegistrationUpdateHandler)
     listener.stateUpdateHandler?(.ready)
-    try await Task.sleep(for: .milliseconds(20))
+    let publicationDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+    while !ble.sent.contains(where: { (try? LanRendezvousWire.decodeMessage($0))?.endpoint == endpoint }),
+      ContinuousClock.now < publicationDeadline {
+      try await Task.sleep(for: .milliseconds(2))
+    }
     XCTAssertTrue(try ble.sent.contains { try LanRendezvousWire.decodeMessage($0)?.endpoint == endpoint },
       "Direct admission must not wait for a Bonjour registration callback")
-    let admissionDeadline = owner.maintenanceDeadline
-    XCTAssertNotNil(admissionDeadline)
+    let admissionDeadline = try XCTUnwrap(owner.maintenanceDeadline)
+    let registrationProcessed = expectation(description: "Bonjour registration updates owner state")
+    owner.channelStateChanged = { registrationProcessed.fulfill() }
     registered(.add(.service(name: "test", type: "_anice._tcp", domain: "local.", interface: nil)))
-    try await Task.sleep(for: .milliseconds(20))
+    await fulfillment(of: [registrationProcessed], timeout: 2)
+    owner.channelStateChanged = {}
+    let maintenanceDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+    while owner.maintenanceDeadline == nil, ContinuousClock.now < maintenanceDeadline {
+      try await Task.sleep(for: .milliseconds(2))
+    }
     XCTAssertTrue(owner.allowing); XCTAssertNotNil(reservation.peer)
-    XCTAssertEqual(owner.maintenanceDeadline, admissionDeadline)
+    XCTAssertEqual(try XCTUnwrap(owner.maintenanceDeadline), admissionDeadline)
     owner.retireSession(reason: "injected EOF")
     XCTAssertTrue(owner.listener === listener)
     XCTAssertFalse(owner.allowing); XCTAssertNil(listener.service); XCTAssertNil(reservation.peer)
@@ -905,7 +916,14 @@ final class LanTests: XCTestCase {
   }
 
   func testLanTransferIndependentOracleAndStandardIsolation() throws {
-    let root = try helper.root("lan-transfer-vectors")
+    for (fixture, profile) in [
+      ("lan-transfer-vectors", SessionProfile.lanTransfer),
+      ("lan-512-vectors", SessionProfile.lanTransfer512),
+    ] { try verifyLanTransferProfile(fixture: fixture, profile: profile) }
+  }
+
+  private func verifyLanTransferProfile(fixture: String, profile: SessionProfile) throws {
+    let root = try helper.root(fixture)
     let valid = try XCTUnwrap(root["valid"] as? [[String: Any]])
     let invalid = try XCTUnwrap(root["invalid"] as? [[String: Any]])
     XCTAssertGreaterThanOrEqual(valid.count, 3); XCTAssertGreaterThanOrEqual(invalid.count, 10)
@@ -914,41 +932,47 @@ final class LanTests: XCTestCase {
       let size = try XCTUnwrap(row["length"] as? Int)
       let plain = Data((0..<size).map { UInt8($0 % 251) })
       let record = try SessionRecordCodec.seal(key: key, iv: iv, id: id, direction: 1,
-        kind: .data, sequence: 0, plaintext: plain, profile: .lanTransfer)
+        kind: .data, sequence: 0, plaintext: plain, profile: profile)
       let digest = SHA256.hash(data: record).map { String(format: "%02x", $0) }.joined()
       XCTAssertEqual(digest, row["recordSHA256"] as? String)
       XCTAssertEqual(record.prefix(14), try helper.b(row, "header"))
       XCTAssertEqual(record.suffix(16), try helper.b(row, "tag"))
       XCTAssertEqual(try SessionRecordCodec.open(key: key, iv: iv, id: id, direction: 1,
-        expected: 0, record: record, profile: .lanTransfer).1, plain)
+        expected: 0, record: record, profile: profile).1, plain)
       XCTAssertThrowsError(try SessionRecordCodec.open(key: key, iv: iv, id: id, direction: 1,
         expected: 0, record: record)) { XCTAssertEqual($0 as? SessionFailure, .malformed) }
+      if profile == .lanTransfer512 {
+        XCTAssertThrowsError(try SessionRecordCodec.open(key: key, iv: iv, id: id, direction: 1,
+          expected: 0, record: record, profile: .lanTransfer)) {
+          XCTAssertEqual($0 as? SessionFailure, .malformed)
+        }
+      }
     }
     for row in invalid {
       let reason = try XCTUnwrap(SessionFailure(rawValue: XCTUnwrap(row["reason"] as? String)))
       XCTAssertThrowsError(try SessionRecordCodec.open(key: key, iv: iv, id: id, direction: 1,
-        expected: 0, record: helper.b(row, "record"), profile: .lanTransfer)) {
+        expected: 0, record: helper.b(row, "record"), profile: profile)) {
         XCTAssertEqual($0 as? SessionFailure, reason)
       }
     }
     XCTAssertThrowsError(try SessionRecordCodec.seal(key: key, iv: iv, id: id, direction: 1,
-      kind: .data, sequence: 0, plaintext: Data(repeating: 0, count: 262145), profile: .lanTransfer))
-    XCTAssertThrowsError(try SessionEnvelope.encode(1, Data(repeating: 0, count: 4096), profile: .lanTransfer))
-    let envelope = Data(repeating: 6, count: 262175)
-    let frame = try LanFraming.encode(envelope, profile: .lanTransfer)
-    var bulk = LanFraming(profile: .lanTransfer)
+      kind: .data, sequence: 0, plaintext: Data(repeating: 0, count: profile.maximumPlaintext + 1), profile: profile))
+    XCTAssertThrowsError(try SessionEnvelope.encode(1, Data(repeating: 0, count: 4096), profile: profile))
+    let envelope = Data(repeating: 6, count: profile.maximumEnvelope)
+    let frame = try LanFraming.encode(envelope, profile: profile)
+    var bulk = LanFraming(profile: profile)
     XCTAssertEqual(try feed(frame, into: &bulk), [envelope])
     var standard = LanFraming()
     XCTAssertThrowsError(try feed(Data(frame.prefix(5)), into: &standard)) {
       XCTAssertEqual($0 as? SessionFailure, .unsupportedProfile)
     }
-    var budget = LanQueueBudget(profile: .lanTransfer)
+    var budget = LanQueueBudget(profile: profile)
     for _ in 0..<4 { try budget.reserve(envelope.count) }
     XCTAssertFalse(budget.canReserve(1))
     for _ in 0..<4 { budget.release(envelope.count) }
     XCTAssertTrue(budget.canReserve(envelope.count))
     XCTAssertFalse(LanQueueBudget(profile: .standard).canReserve(envelope.count))
-    XCTAssertNotEqual(SessionProfile.standard.exporterLabel, SessionProfile.lanTransfer.exporterLabel)
+    XCTAssertNotEqual(SessionProfile.standard.exporterLabel, profile.exporterLabel)
   }
 
   @MainActor func testUnknownAdmissionIsExclusiveAndKnownPeersRemainPinned() throws {

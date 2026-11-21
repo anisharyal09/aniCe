@@ -15,6 +15,8 @@ actor PairingEngine {
   private let store: PeerTrustStore
   private let send: @Sendable (Data) async -> Void
   private let event: @Sendable (String, DeviceIdentity?) async -> Void
+  private let comparison: @Sendable (String) async -> Void
+  private let isCurrent: @Sendable () -> Bool
 
   private var pake: Data?
   private var stage = 0
@@ -35,17 +37,31 @@ actor PairingEngine {
   private var receiptSent = false
   private var receiptReceived = false
   private let localBytes: Data
+  private var clientCommitment = Data()
+  private var serverCommitment = Data()
+  private var serverComparisonNonce = Data()
+  private var localIdentitySalt = Data()
+  private var clientIdentityCommitment = Data()
+  private var serverIdentityCommitment = Data()
+  private var localCompared = false
+  private var peerCompared = false
+  private var identitySent = false
+  private var comparisonCode: String?
 
   init(
     method: PairingMethod, identity: IdentityService, store: PeerTrustStore,
     send: @escaping @Sendable (Data) async -> Void,
-    event: @escaping @Sendable (String, DeviceIdentity?) async -> Void
+    event: @escaping @Sendable (String, DeviceIdentity?) async -> Void,
+    comparison: @escaping @Sendable (String) async -> Void = { _ in },
+    isCurrent: @escaping @Sendable () -> Bool = { true }
   ) async throws {
     self.method = method
     self.identity = identity
     self.store = store
     self.send = send
     self.event = event
+    self.comparison = comparison
+    self.isCurrent = isCurrent
     local = try await identity.publicIdentity()
     localBytes = try PairingCodec.identityBytes(local)
     rendezvous = try PairingCodec.random(16)
@@ -61,10 +77,14 @@ actor PairingEngine {
       qr = PairingQR(
         rendezvous: rendezvous, secret: try PairingCodec.random(32), fingerprint: fingerprint)
       pin = nil
-    } else {
+    } else if method == .pin {
       qr = nil
       pin = try PairingCodec.pin()
       pake = try NativePake.call(1, [Data(pin!.utf8), rendezvous])
+    } else {
+      localIdentitySalt = try PairingCodec.random(32)
+      serverIdentityCommitment = try PairingSas.identityCommitment(
+        role: 2, salt: localIdentitySalt, identity: localBytes)
     }
   }
 
@@ -73,7 +93,20 @@ actor PairingEngine {
   }
 
   func receive(_ data: Data) async throws {
-    if data == PairingCodec.message(1) {
+    do { try await receiveMessage(data) }
+    catch {
+      if method == .sas { close() }
+      throw error
+    }
+  }
+
+  private func receiveMessage(_ data: Data) async throws {
+    guard stage >= 0, method != .sas || isCurrent() else { throw PairingFailure.cancelled }
+    if method == .sas && stage != 2 {
+      try await receiveSasBootstrap(data)
+      return
+    }
+    if method != .sas && data == PairingCodec.message(1) {
       await send(invitation())
       return
     }
@@ -144,8 +177,17 @@ actor PairingEngine {
       switch plain.first {
       case 10:
         guard peer == nil else { throw PairingFailure.malformed }
-        let f = try PairingCodec.unpack(plain, type: 10, count: 1)
+        if method == .sas {
+          guard localCompared, peerCompared, identitySent else { throw PairingFailure.authentication }
+        }
+        let f = try PairingCodec.unpack(plain, type: 10, count: method == .sas ? 2 : 1)
         guard f[0].count <= 2048 else { throw PairingFailure.malformed }
+        if method == .sas {
+          let opened = try PairingSas.identityCommitment(role: 1, salt: f[1], identity: f[0])
+          guard PairingCodec.equal(opened, clientIdentityCommitment) else {
+            throw PairingFailure.authentication
+          }
+        }
         let record: DeviceIdentity
         do { record = try DeviceIdentity.decode(f[0]) }
         catch { throw PairingFailure.malformed }
@@ -158,6 +200,7 @@ actor PairingEngine {
         let signature = try await identity.sign(
           message: PairingCodec.proof(channel.hash, f[0], localBytes, 2))
         guard op == generation, signature.identity == local else { throw PairingFailure.cancelled }
+        if method == .sas, !isCurrent() { throw PairingFailure.cancelled }
         await send(try channel.seal(PairingCodec.message(11, [signature.signature])))
 
       case 11:
@@ -168,7 +211,10 @@ actor PairingEngine {
             message: PairingCodec.proof(channel.hash, peerBytes, localBytes, 1), signature: f[0])
         else { throw PairingFailure.authentication }
         proofVerified = true
-        await event("approval", peer)
+        if method == .sas {
+          guard localCompared, peerCompared else { throw PairingFailure.authentication }
+          try await approve()
+        } else { await event("approval", peer) }
 
       case 12:
         _ = try PairingCodec.unpack(plain, type: 12, count: 0)
@@ -182,6 +228,7 @@ actor PairingEngine {
           throw PairingFailure.authentication
         }
         let hash = PairingCodec.hash(PairingCodec.proof(channel.hash, peerBytes, localBytes))
+        if method == .sas, !isCurrent() { throw PairingFailure.cancelled }
         try store.activate(peerID: peer.deviceId, hash: hash, receipt: f[0])
         receiptReceived = true
         await complete()
@@ -190,10 +237,107 @@ actor PairingEngine {
         _ = try PairingCodec.unpack(plain, type: 14, count: 0)
         throw PairingFailure.cancelled
 
+      case 15:
+        _ = try PairingCodec.unpack(plain, type: 15, count: 0)
+        guard method == .sas, comparisonCode != nil, !peerCompared, !identitySent else {
+          throw PairingFailure.authentication
+        }
+        peerCompared = true
+        try await discloseIdentity()
+
       default:
         throw PairingFailure.malformed
       }
     }
+  }
+
+  /// Both peers commit before comparison randomness is revealed; the channel is not trusted yet.
+  private func receiveSasBootstrap(_ data: Data) async throws {
+    if stage == 0, data == PairingCodec.message(1) {
+      await send(invitation())
+      return
+    }
+    if stage == 0 {
+      let fields = try PairingCodec.unpack(data, type: 3, count: 3)
+      guard attempts < 5, fields[0] == Data([3]), fields[1] == rendezvous, fields[2].count == 32
+      else { throw PairingFailure.authentication }
+      attempts += 1
+      clientCommitment = fields[2]
+      let key = P256.KeyAgreement.PrivateKey()
+      ephemeral = key
+      serverPublic = key.publicKey.x963Representation
+      serverComparisonNonce = try PairingCodec.random(32)
+      serverCommitment = try PairingSas.commitment(role: 2, rendezvous: rendezvous,
+        serverNonce: serverNonce, publicKey: serverPublic, nonce: serverComparisonNonce,
+        identityCommitment: serverIdentityCommitment)
+      stage = 10
+      await event("authenticating", nil)
+      await send(PairingCodec.message(4, [serverNonce, serverCommitment]))
+    } else if stage == 10 {
+      let fields = try PairingCodec.unpack(data, type: 8, count: 3)
+      clientPublic = fields[0]
+      clientNonce = fields[1]
+      clientIdentityCommitment = fields[2]
+      let transcript = try sasTranscript()
+      guard let ephemeral else { throw PairingFailure.authentication }
+      let shared = try ephemeral.sharedSecretFromKeyAgreement(
+        with: P256.KeyAgreement.PublicKey(x963Representation: clientPublic))
+      var sharedBytes = shared.withUnsafeBytes { Data($0) }
+      defer { sharedBytes.resetBytes(in: 0..<sharedBytes.count) }
+      bootstrap = PairingSas.bootstrap(shared: sharedBytes, transcript: transcript)
+      comparisonCode = try PairingSas.digits(key: bootstrap, transcript: transcript)
+      self.ephemeral = nil
+      stage = 11
+      await send(PairingCodec.message(9, [serverPublic, serverComparisonNonce, serverIdentityCommitment]))
+    } else if stage == 11 {
+      let fields = try PairingCodec.unpack(data, type: 5, count: 1)
+      let transcript = try sasTranscript()
+      let hash = PairingCodec.hash(transcript)
+      guard PairingCodec.equal(fields[0],
+        PairingCodec.mac(PairingCodec.derive(bootstrap, "client-auth", hash), transcript))
+      else { throw PairingFailure.authentication }
+      let channel = PairingChannel(key: bootstrap, transcript: transcript, server: true)
+      self.channel = channel
+      bootstrap.resetBytes(in: 0..<bootstrap.count)
+      bootstrap.removeAll()
+      stage = 2
+      await send(PairingCodec.message(6, [channel.confirm()]))
+      guard let comparisonCode else { throw PairingFailure.authentication }
+      await comparison(comparisonCode)
+      await event("comparison", nil)
+    } else { throw PairingFailure.authentication }
+  }
+
+  private func sasTranscript() throws -> Data {
+    try PairingSas.transcript(rendezvous: rendezvous, serverNonce: serverNonce,
+      clientCommitment: clientCommitment, serverCommitment: serverCommitment,
+      clientPublic: clientPublic, serverPublic: serverPublic, clientNonce: clientNonce,
+      serverComparisonNonce: serverComparisonNonce, clientIdentityCommitment: clientIdentityCommitment,
+      serverIdentityCommitment: serverIdentityCommitment)
+  }
+
+  func confirmComparison() async throws {
+    guard method == .sas, isCurrent(), stage == 2, comparisonCode != nil, !localCompared, let channel else {
+      throw PairingFailure.authentication
+    }
+    let op = generation
+    let current = try await identity.publicIdentity()
+    guard op == generation, isCurrent(), current == local, stage == 2, !localCompared else {
+      throw PairingFailure.cancelled
+    }
+    localCompared = true
+    await send(try channel.seal(PairingCodec.message(15)))
+    try await discloseIdentity()
+  }
+
+  private func discloseIdentity() async throws {
+    guard localCompared, peerCompared, !identitySent, let channel else { return }
+    let op = generation
+    let current = try await identity.publicIdentity()
+    guard op == generation, isCurrent(), current == local else { throw PairingFailure.cancelled }
+    identitySent = true
+    await event("verifying", nil)
+    await send(try channel.seal(PairingCodec.message(10, [localBytes, localIdentitySalt])))
   }
 
   func approve() async throws {
@@ -210,6 +354,7 @@ actor PairingEngine {
     }
     prepared = true
     await event("saving", peer)
+    if method == .sas, !isCurrent() { throw PairingFailure.cancelled }
     let hash = PairingCodec.hash(PairingCodec.proof(channel.hash, peerBytes, localBytes))
     let op = generation
     try store.prepare(
@@ -219,6 +364,7 @@ actor PairingEngine {
     // Signing can suspend the actor; cancellation or identity replacement invalidates its result.
     let signature = try await identity.sign(message: PairingCodec.receipt(hash, 2))
     guard op == generation, signature.identity == local else { throw PairingFailure.cancelled }
+    if method == .sas, !isCurrent() { throw PairingFailure.cancelled }
     await send(try channel.seal(PairingCodec.message(13, [signature.signature])))
     receiptSent = true
     await complete()
@@ -244,6 +390,8 @@ actor PairingEngine {
 
   /// Aborts an individual candidate attempt while retaining the parent invitation.
   func abortAttempt() throws {
+    // Nearby attempts never reuse comparison material or a previously displayed code.
+    if method == .sas { close(); throw PairingFailure.cancelled }
     generation += 1
     channel?.destroy()
     channel = nil
@@ -266,12 +414,22 @@ actor PairingEngine {
   /// Notify the authenticated peer before discarding the channel needed to encrypt cancellation.
   func decline() async throws {
     defer { close() }
-    guard proofVerified, let channel else { throw PairingFailure.authentication }
+    guard proofVerified || (method == .sas && comparisonCode != nil), let channel else {
+      throw PairingFailure.authentication
+    }
     await send(try channel.seal(PairingCodec.message(14)))
   }
 
   /// Clears retained secret buffers, drops key references and releases the PAKE handle.
   func close() {
+    stage = -1
+    comparisonCode = nil
+    localCompared = false
+    peerCompared = false
+    localIdentitySalt.resetBytes(in: 0..<localIdentitySalt.count)
+    localIdentitySalt.removeAll()
+    serverComparisonNonce.resetBytes(in: 0..<serverComparisonNonce.count)
+    serverComparisonNonce.removeAll()
     let secretSize = qr?.secret.count ?? 0
     qr?.secret.resetBytes(in: 0..<secretSize)
     qr = nil

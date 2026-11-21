@@ -23,6 +23,10 @@ UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a
 def encode(value):
     return cbor2.dumps(value, canonical=True)
 
+def require(condition, message):
+    if not condition:
+        raise AssertionError(message)
+
 
 def parse(raw):
     if len(raw) > 524416:
@@ -203,7 +207,7 @@ def vectors():
     positives = []
     for name, row in valid:
         raw = encode(row)
-        assert parse(raw) == row, name
+        require(parse(raw) == row, name)
         positives.append(dict(name=name, kind=row[2], bytesHex=raw.hex()))
     negatives = []
     for name, raw in bad:
@@ -221,12 +225,12 @@ def vectors():
     unrecognized = []
     for name, row in unknown:
         raw = encode(row)
-        assert parse(raw) is None
+        require(parse(raw) is None, "Other feature recognized: " + name)
         unrecognized.append(dict(name=name, bytesHex=raw.hex()))
-    assert len(encode(valid[6][1])) == 3927
-    assert len(positives) >= 40 and len(negatives) >= 100
-    assert len({row["name"] for row in positives + negatives + unrecognized}) == (
-        len(positives) + len(negatives) + len(unrecognized))
+    require(len(encode(valid[6][1])) == 3927, "Maximum Audio encoding size changed")
+    require(len(positives) >= 40 and len(negatives) >= 100, "Fixture inventory shrank")
+    require(len({row["name"] for row in positives + negatives + unrecognized}) == (
+        len(positives) + len(negatives) + len(unrecognized)), "Duplicate fixture names")
     return dict(valid=positives, invalid=negatives, unrecognized=unrecognized)
 
 

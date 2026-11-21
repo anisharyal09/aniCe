@@ -62,7 +62,7 @@ internal object LanRendezvousWire {
                 endpoint = LanDirectEndpoint(ip, port.toInt(), SessionProfile.entries.single { it.wire.toLong() == profile })
             }
         }
-        return LanRendezvousMessage(version!!.toInt(), state.toInt(), endpoint)
+        return LanRendezvousMessage(version.toInt(), state.toInt(), endpoint)
     }
 }
 

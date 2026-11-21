@@ -1,15 +1,55 @@
 # Protocol changelog
 
-Records shared communication-contract changes and compatibility implications. Protocol contracts remain independently versioned; entries are grouped by application development milestone until the first public release. Repository-wide changes are recorded in the [root changelog](../CHANGELOG.md).
+Shared contract changes and compatibility implications, grouped by application version. Protocol contracts remain independently versioned. See the [root changelog](../CHANGELOG.md) for product changes.
 
 ## [Unreleased]
 
 ### Added
 
 - Define Private Listening v1 LAN DATA with six bound message kinds, 960-frame stereo PCM16 packets, checked source timelines and retained-channel maintenance semantics.
+
+### Changed
+
+- Refine local listening buffer targets and healthy-audio transfer pacing; unchanged six-message PCM, cryptographic and session contracts.
+- Clarify local lower-delay buffering profiles and native startup floors for Private Listening; all six wire messages and crypto/session bounds are unchanged.
+
+## [v0.9.0-beta.4]
+
+Protocol updates for `0.9.0-beta.4`.
+
+### Added
+
+- Define capability-gated Foreground companion setup v1 over secured BLE DATA: sixty-second generic advertising, current-credential/channel/locator scoping, native single-device approval and cancellation fences; no new trust or bonding.
+- Define Device Names v1 capability-gated revision/name reports over existing secured DATA, with no identity credential changes, connection leases or transmitted aliases.
+- Define provisional method-3 committed P-256 numeric comparison, uniform six-digit derivation, salted identity openings after mutual confirmation and existing trust receipts; add independent shared vectors and optional discovery flag `0x0001`. Older journal readers cannot load method-3 evidence; QR/PIN wire formats remain unchanged.
+- Document nearby discovery lifetime, foreground ownership, generic prompts, RSSI policy and manual fallback for the provisional SAS profile.
 - Add ignorable rendezvous-v2 user-demand state 5 for bounded file-action recovery after transport-only Disconnect; v1 peers keep ordinary state 4 behavior.
 - Define ignorable Connection Pause v1 DATA notices for bounded pre-teardown peer presentation, with independent shared fixtures and no remote preference mutation.
 - Define backward-compatible LAN rendezvous v2 direct IPv4 locators and LAN renewal v1 authenticated drain barriers, retaining frame profiles, fresh-session cryptography and legacy expiry.
+
+### Changed
+
+- Verify every fixture generator configuration, including SAS, notification, Phone-to-Mac and LAN profile 4; run independent crypto-oracle regressions with patched CBOR tooling. Correct schema-invalid SAS sample identities and their derived vectors; all other fixture bytes and cryptographic parameters remain unchanged.
+- Correct the contract index, optional caller-ID description and PAKE bridge's 64-byte SHA-512 session-key documentation; retain native 32-byte HKDF bootstrap.
+- Require the same authenticated single-Mac companion enrollment for all pairing methods and explicit Auto connect; older peers keep manual connections.
+- Bound native post-SAS locator handoff and pre-authentication profile waits, require current-subscription retirement and clarify first-launch permission behavior.
+- Define LAN-specific ten-second PING/PONG budgets, generation-scoped peer-state verification and elapsed background-idle deadlines; session control bytes and BLE liveness remain unchanged.
+- Distinguish attempt cancellation from a Disconnect pause, require immediate closure of unfinished pause admission and exclude pause metadata from automatic LAN demand.
+- Distinguish aniCe's legacy multicast lock from native NSD multicast ownership; wire bytes and discovery budgets are unchanged.
+- Clarify direct-first manual candidate selection, authenticated locator trust boundaries, companion-media LAN ownership and retained-socket renewal in protocol indexes and ADR references.
+- Exclude bounded negotiated LAN maintenance from transfer transport waits while preserving fixed offer, recovery and security deadlines.
+
+### Fixed
+
+- Clarify separate bounded companion capability/ack waits and capacity-driven pre-seal retries without changing wire bytes or replaying submitted requests.
+- Clarify same-attempt comparison presentation and stop anonymous availability during occupied pairing admission or cooldown without changing SAS wire bytes.
+
+## [v0.9.0-beta.3]
+
+Protocol updates accompanying v0.9.0-beta.3.
+
+### Added
+
 - Add bounded kind 9 Android source-app PNG records, preserving the existing notification record and unknown-kind compatibility behavior.
 - Define Notification Mirroring v1 inside authenticated DATA, with bounded selected-app updates, optional incoming-call notifications, high-water snapshots, revision-bound actions, dismissal sync and shared positive/negative CBOR fixtures.
 - Define Desk Deck v5 output selection, with a bounded revisioned catalog and opaque device IDs.
@@ -24,13 +64,6 @@ Records shared communication-contract changes and compatibility implications. Pr
 
 ### Changed
 
-- Refine local listening buffer targets and healthy-audio transfer pacing; unchanged six-message PCM, cryptographic and session contracts.
-- Clarify local lower-delay buffering profiles and native startup floors for Private Listening; all six wire messages and crypto/session bounds are unchanged.
-- Define LAN-specific ten-second PING/PONG budgets, generation-scoped peer-state verification and elapsed background-idle deadlines; session control bytes and BLE liveness remain unchanged.
-- Distinguish attempt cancellation from a Disconnect pause, require immediate closure of unfinished pause admission and exclude pause metadata from automatic LAN demand.
-- Distinguish aniCe's legacy multicast lock from native NSD multicast ownership; wire bytes and discovery budgets are unchanged.
-- Clarify direct-first manual candidate selection, authenticated locator trust boundaries, companion-media LAN ownership and retained-socket renewal in protocol indexes and ADR references.
-- Exclude bounded negotiated LAN maintenance from transfer transport waits while preserving fixed offer, recovery and security deadlines.
 - Clarify transfer status channel/job binding, bounded notification revision retention and current profile-4 benchmark selection; wire layouts and cryptographic parameters are unchanged.
 - Align the protocol index with LAN revision 3, Desk Deck v5 and the native BLE transfer window; wire formats and negotiated limits are unchanged.
 - Extend Device Power v1 publication to Mac while retaining the existing wire shape and older-peer behavior.

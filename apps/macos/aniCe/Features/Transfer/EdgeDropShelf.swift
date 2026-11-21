@@ -206,9 +206,9 @@ enum EdgeDropGeometry {
     if selectionHasUnsupportedItems { return "Every item in the drop must be a local file." }
     if !hasFileURLs { return "Drag saved files from Finder." }
     if draggedFileCount > 128 { return "Send at most 128 files in one batch." }
-    if model.preparing || model.isBusy { return model.activeChannel?.descriptor.peer.deviceName ?? "Wait for the current transfer to finish." }
-    if let recipient = model.connectedAndroidRecipient { return recipient.deviceName }
-    return model.activeChannel?.descriptor.peer.deviceName ?? "Connect a compatible phone to aniCe."
+    if model.preparing || model.isBusy { return model.activeChannel?.descriptor.peer.displayName ?? "Wait for the current transfer to finish." }
+    if let recipient = model.connectedAndroidRecipient { return recipient.displayName }
+    return model.activeChannel?.descriptor.peer.displayName ?? "Connect a compatible phone to aniCe."
   }
 
   var shelfSymbol: String {

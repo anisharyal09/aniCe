@@ -19,6 +19,15 @@
 		E90100000000000000000001 /* PrivateListeningWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90100000000000000000002; };
 		E90100000000000000000003 /* PrivateListeningWireTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90100000000000000000004; };
 		E90100000000000000000005 /* vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = E90100000000000000000006; };
+		E50300000000000000000003 /* MacNicknamePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50300000000000000000004; };
+		E50300000000000000000001 /* MacCompanionSetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50300000000000000000002; };
+		E50200000000000000000003 /* PeerNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50200000000000000000004; };
+		E50200000000000000000001 /* PeerNickname.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50200000000000000000002; };
+		E50100000000000000000001 /* PairingSas.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50100000000000000000002; };
+		E50100000000000000000003 /* NearbyPairingAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50100000000000000000004; };
+		E50100000000000000000005 /* MacComparisonCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50100000000000000000006; };
+		E50100000000000000000007 /* PairingSasTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50100000000000000000008; };
+		E50100000000000000000009 /* sas-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = E5010000000000000000000A; };
 		F40200000000000000000001 /* UpdateSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40200000000000000000002 /* UpdateSchedule.swift */; };
 		F40200000000000000000003 /* ReleaseNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40200000000000000000004 /* ReleaseNotes.swift */; };
 		F40200000000000000000005 /* ReleaseNotesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40200000000000000000006 /* ReleaseNotesTests.swift */; };
@@ -104,6 +113,7 @@
 		20D75B5CC79C143EB93C72B8 /* ../../protocol/test-vectors/lan/lan-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = C64BCC11C65D266FBF1EF09A /* ../../protocol/test-vectors/lan/lan-vectors.json */; };
 		AEFDB145607840AA801D2345 /* ../../protocol/test-vectors/lan/bulk-probe-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = BEFDB145607840AA801D2345 /* ../../protocol/test-vectors/lan/bulk-probe-vectors.json */; };
 		AEFDB145607840AA801D2346 /* ../../protocol/test-vectors/lan/lan-transfer-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = BEFDB145607840AA801D2346 /* ../../protocol/test-vectors/lan/lan-transfer-vectors.json */; };
+		AEFDB145607840AA801D2347 /* ../../protocol/test-vectors/lan/lan-512-vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = BEFDB145607840AA801D2347 /* ../../protocol/test-vectors/lan/lan-512-vectors.json */; };
 		A34D9997D94406D2CD684BEE /* aniCe/Features/NowPlaying/MediaWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F786D4EA28875E8B52A5050; };
 		2AC7B0EC9E0FD0C1ED8EAC03 /* aniCe/Features/NowPlaying/MacPlaybackModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E997F22245B67C3AA3AE4C; };
 		CC1FEE3CCD0C897922760D25 /* aniCe/Features/NowPlaying/MediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A3699A9022B41B5DC0049D2; };
@@ -118,6 +128,7 @@
 		26AEED17CBDDE483B38EF1F2 /* aniCeTests/NavigationAppearanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4EE9233703057A84035C690; };
 		17DF506938FC5A7030B149A4 /* aniCeTests/SessionFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AF1A8C5ED31593319075195; };
 		56BF6E0E9BF7C49DD96623E1 /* aniCeTests/NowPlaying/PackagedAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 545AA68D8842B1A3825E53B9; };
+		AF0200000000000000000001 /* aniCeTests/NowPlaying/AdapterChecks.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000002; };
 		37D4295E83741498D4CCD68B /* aniCeTests/NowPlaying/MediaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AC6FE7E995098CD289F52EB; };
 		877A16FC897B3FDF1BE11F56 /* aniCe/App/FeaturesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DCA2E4BCAC982F9693EBC96; };
 		A420E9395D8F99F11FF1B3B5 /* aniCeTests/IdentityFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65EFE3CD37ACE93ADAFC6439; };
@@ -217,6 +228,15 @@
 		E90100000000000000000002 /* PrivateListeningWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/PrivateListening/PrivateListeningWire.swift"; sourceTree = SOURCE_ROOT; };
 		E90100000000000000000004 /* PrivateListeningWireTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/PrivateListening/PrivateListeningWireTests.swift"; sourceTree = SOURCE_ROOT; };
 		E90100000000000000000006 /* vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/private-listening/vectors.json"; sourceTree = SOURCE_ROOT; };
+		E50300000000000000000004 /* MacNicknamePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Features/Pairing/MacNicknamePanel.swift; sourceTree = SOURCE_ROOT; };
+		E50300000000000000000002 /* MacCompanionSetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Connections/MacCompanionSetup.swift; sourceTree = SOURCE_ROOT; };
+		E50200000000000000000004 /* PeerNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Connections/PeerNames.swift; sourceTree = SOURCE_ROOT; };
+		E50200000000000000000002 /* PeerNickname.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Connections/PeerNickname.swift; sourceTree = SOURCE_ROOT; };
+		E50100000000000000000002 /* PairingSas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Pairing/PairingSas.swift; sourceTree = SOURCE_ROOT; };
+		E50100000000000000000004 /* NearbyPairingAdmission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Infrastructure/Pairing/NearbyPairingAdmission.swift; sourceTree = SOURCE_ROOT; };
+		E50100000000000000000006 /* MacComparisonCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Features/Pairing/MacComparisonCard.swift; sourceTree = SOURCE_ROOT; };
+		E50100000000000000000008 /* PairingSasTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/PairingSasTests.swift; sourceTree = SOURCE_ROOT; };
+		E5010000000000000000000A /* sas-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/sas-vectors.json"; sourceTree = SOURCE_ROOT; };
 		F40200000000000000000002 /* UpdateSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/UpdateSchedule.swift; sourceTree = SOURCE_ROOT; };
 		F40200000000000000000004 /* ReleaseNotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCe/Update/ReleaseNotes.swift; sourceTree = SOURCE_ROOT; };
 		F40200000000000000000006 /* ReleaseNotesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = aniCeTests/ReleaseNotesTests.swift; sourceTree = SOURCE_ROOT; };
@@ -305,6 +325,7 @@
 		C64BCC11C65D266FBF1EF09A /* ../../protocol/test-vectors/lan/lan-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/lan/lan-vectors.json"; sourceTree = SOURCE_ROOT; };
 		BEFDB145607840AA801D2345 /* ../../protocol/test-vectors/lan/bulk-probe-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/lan/bulk-probe-vectors.json"; sourceTree = SOURCE_ROOT; };
 		BEFDB145607840AA801D2346 /* ../../protocol/test-vectors/lan/lan-transfer-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/lan/lan-transfer-vectors.json"; sourceTree = SOURCE_ROOT; };
+		BEFDB145607840AA801D2347 /* ../../protocol/test-vectors/lan/lan-512-vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../protocol/test-vectors/lan/lan-512-vectors.json"; sourceTree = SOURCE_ROOT; };
 		4F786D4EA28875E8B52A5050 /* aniCe/Features/NowPlaying/MediaWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/MediaWire.swift"; sourceTree = SOURCE_ROOT; };
 		D0E997F22245B67C3AA3AE4C /* aniCe/Features/NowPlaying/MacPlaybackModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/MacPlaybackModel.swift"; sourceTree = SOURCE_ROOT; };
 		9A3699A9022B41B5DC0049D2 /* aniCe/Features/NowPlaying/MediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/MediaView.swift"; sourceTree = SOURCE_ROOT; };
@@ -319,6 +340,7 @@
 		C4EE9233703057A84035C690 /* aniCeTests/NavigationAppearanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/NavigationAppearanceTests.swift"; sourceTree = SOURCE_ROOT; };
 		9AF1A8C5ED31593319075195 /* aniCeTests/SessionFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/SessionFixtures.swift"; sourceTree = SOURCE_ROOT; };
 		545AA68D8842B1A3825E53B9 /* aniCeTests/NowPlaying/PackagedAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/NowPlaying/PackagedAdapterTests.swift"; sourceTree = SOURCE_ROOT; };
+		AF0200000000000000000002 /* aniCeTests/NowPlaying/AdapterChecks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/NowPlaying/AdapterChecks.swift"; sourceTree = SOURCE_ROOT; };
 		6AC6FE7E995098CD289F52EB /* aniCeTests/NowPlaying/MediaTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/NowPlaying/MediaTests.swift"; sourceTree = SOURCE_ROOT; };
 		9DCA2E4BCAC982F9693EBC96 /* aniCe/App/FeaturesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/App/FeaturesView.swift"; sourceTree = SOURCE_ROOT; };
 		65EFE3CD37ACE93ADAFC6439 /* aniCeTests/IdentityFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/IdentityFixture.swift"; sourceTree = SOURCE_ROOT; };
@@ -460,6 +482,7 @@
 				9DCA2E4BCAC982F9693EBC96,
 				6AC6FE7E995098CD289F52EB,
 				545AA68D8842B1A3825E53B9,
+				AF0200000000000000000002 /* aniCeTests/NowPlaying/AdapterChecks.swift */,
 				9AF1A8C5ED31593319075195,
 				C4EE9233703057A84035C690,
 				40AD2698142215B36FAF9467,
@@ -540,6 +563,8 @@
 				1C2BA8C8461E82EE4511F509 /* ../../protocol/test-vectors/session/session-vectors.json */,
 				543555DA645C37CC884E3341 /* aniCeTests/SessionTests.swift */,
 				88FFC4482694BD876043669A /* aniCeTests/PairingTests.swift */,
+				E50100000000000000000008 /* PairingSasTests.swift */,
+				E5010000000000000000000A /* sas-vectors.json */,
 				04E1689DBE5CE27F2E4DE8D6 /* ../../protocol/test-vectors/pairing-vectors.json */,
 				000000000000000000000450 /* aniCeTests/DiscoveryTests.swift */,
 				000000000000000000000452 /* ../../protocol/test-vectors/discovery-vectors.json */,
@@ -685,6 +710,7 @@
 				C64BCC11C65D266FBF1EF09A /* ../../protocol/test-vectors/lan/lan-vectors.json */,
 				BEFDB145607840AA801D2345 /* ../../protocol/test-vectors/lan/bulk-probe-vectors.json */,
 				BEFDB145607840AA801D2346 /* ../../protocol/test-vectors/lan/lan-transfer-vectors.json */,
+				BEFDB145607840AA801D2347 /* ../../protocol/test-vectors/lan/lan-512-vectors.json */,
 				CB65A7E003DC10544E89E3FA /* aniCeTests/LanTests.swift */,
 				AF0100000000000000000004 /* LanRenewalTests.swift */,
 				088E75AB91963156C23260D5 /* aniCe/Infrastructure/Connections/MacLanSessionModel.swift */,
@@ -706,6 +732,12 @@
 				10A95CA8384F875E996F9139 /* aniCe/Infrastructure/Pairing/PeerTrustStore.swift */,
 				CD07081F7ADD4C099951B7A4 /* aniCe/Infrastructure/Pairing/PairingCodec.swift */,
 				268EC69CB50F448DB38013F1 /* aniCe/Infrastructure/Pairing/PairingEngine.swift */,
+				E50100000000000000000002 /* PairingSas.swift */,
+				E50200000000000000000002 /* PeerNickname.swift */,
+				E50200000000000000000004 /* PeerNames.swift */,
+				E50300000000000000000002 /* MacCompanionSetup.swift */,
+				E50300000000000000000004 /* MacNicknamePanel.swift */,
+				E50100000000000000000004 /* NearbyPairingAdmission.swift */,
 			);
 			path = Pairing;
 			sourceTree = "<group>";
@@ -715,6 +747,7 @@
 			children = (
 				9381F2D8BA7A0C690FC893B1 /* aniCe/Features/Pairing/MacPairingModel.swift */,
 				63457F669CCC8B7994A71D7A /* aniCe/Features/Pairing/MacPairingView.swift */,
+				E50100000000000000000006 /* MacComparisonCard.swift */,
 			);
 			path = Pairing;
 			sourceTree = "<group>";
@@ -817,12 +850,14 @@
 				20D75B5CC79C143EB93C72B8 /* ../../protocol/test-vectors/lan/lan-vectors.json in Resources */,
 				AEFDB145607840AA801D2345 /* ../../protocol/test-vectors/lan/bulk-probe-vectors.json in Resources */,
 				AEFDB145607840AA801D2346 /* ../../protocol/test-vectors/lan/lan-transfer-vectors.json in Resources */,
+				AEFDB145607840AA801D2347 /* ../../protocol/test-vectors/lan/lan-512-vectors.json in Resources */,
 				AC0100000000000000000003 /* ../../protocol/test-vectors/session/control-vectors.json in Resources */,
 				90BA01483465B1F3C815C722 /* ../../protocol/test-vectors/session/record-vectors.json in Resources */,
 				AD60B788888304BB99EB56FE /* ../../protocol/test-vectors/session/rfc9529-components.json in Resources */,
 				2E55CC0A81ADFCE6FE8B1B1D /* ../../protocol/test-vectors/session/session-vectors.json in Resources */,
 				B5BD6790BA172D324FBA4CA9 /* ../../protocol/test-vectors/pairing-vectors.json in Resources */,
 				000000000000000000000453 /* ../../protocol/test-vectors/discovery-vectors.json in Resources */,
+				E50100000000000000000009 /* sas-vectors.json in Resources */,
 				000000000000000000000204 /* ../../protocol/test-vectors/identity-vectors.json in Resources */,
 				B10100000000000000000003 /* ../../protocol/test-vectors/transfer/transfer-vectors.json in Resources */,
 				B30100000000000000000008 /* ../../protocol/test-vectors/sms/sms-vectors.json in Resources */,
@@ -924,6 +959,13 @@
 				D8D003F789CFE6CBB27FC01E /* aniCe/Infrastructure/Pairing/PeerTrustStore.swift in Sources */,
 				C0703186165FF0C5D2612FF7 /* aniCe/Infrastructure/Pairing/PairingCodec.swift in Sources */,
 				CC2537F76576ED2CBAF9A80F /* aniCe/Infrastructure/Pairing/PairingEngine.swift in Sources */,
+				E50100000000000000000001 /* PairingSas.swift in Sources */,
+				E50200000000000000000001 /* PeerNickname.swift in Sources */,
+				E50200000000000000000003 /* PeerNames.swift in Sources */,
+				E50300000000000000000001 /* MacCompanionSetup.swift in Sources */,
+				E50300000000000000000003 /* MacNicknamePanel.swift in Sources */,
+				E50100000000000000000003 /* NearbyPairingAdmission.swift in Sources */,
+				E50100000000000000000005 /* MacComparisonCard.swift in Sources */,
 				C0CEE5B8CCC6DAEFBF420732 /* aniCe/Features/Pairing/MacPairingModel.swift in Sources */,
 				03966CFE7DA22180981E0047 /* aniCe/Features/Pairing/MacPairingView.swift in Sources */,
 				000000000000000000000420 /* BlePayloadCodec.swift in Sources */,
@@ -992,6 +1034,7 @@
 				A420E9395D8F99F11FF1B3B5,
 				37D4295E83741498D4CCD68B,
 				56BF6E0E9BF7C49DD96623E1,
+				AF0200000000000000000001 /* aniCeTests/NowPlaying/AdapterChecks.swift in Sources */,
 				17DF506938FC5A7030B149A4,
 				26AEED17CBDDE483B38EF1F2,
 				FD60488BDC5E40231B8C60BB /* aniCeTests/LanTests.swift in Sources */,
@@ -999,6 +1042,7 @@
 				E3487FED9B21BFAE7A90130C /* aniCeTests/SessionChannelTests.swift in Sources */,
 				FAA584EDF2DE5163EB1443FE /* aniCeTests/SessionTests.swift in Sources */,
 				5AC4A19CBFF38BE42CBB0A83 /* aniCeTests/PairingTests.swift in Sources */,
+				E50100000000000000000007 /* PairingSasTests.swift in Sources */,
 				000000000000000000000451 /* aniCeTests/DiscoveryTests.swift in Sources */,
 				F40100000000000000000019 /* MacUpdateStagingTests.swift in Sources */,
 				F4010000000000000000001F /* MacUpdateRecordTests.swift in Sources */,
@@ -1155,7 +1199,7 @@
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CURRENT_PROJECT_VERSION = 90023;
+				CURRENT_PROJECT_VERSION = 90024;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1169,7 +1213,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = "0.9.0-beta.3";
+				MARKETING_VERSION = "0.9.0-beta.4";
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.anisharyal09.anice;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) ANICE_DEVELOPMENT_KEYCHAIN";
@@ -1184,7 +1228,7 @@
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CURRENT_PROJECT_VERSION = 90023;
+				CURRENT_PROJECT_VERSION = 90024;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1198,7 +1242,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = "0.9.0-beta.3";
+				MARKETING_VERSION = "0.9.0-beta.4";
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.anisharyal09.anice;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) ANICE_DEVELOPMENT_KEYCHAIN";

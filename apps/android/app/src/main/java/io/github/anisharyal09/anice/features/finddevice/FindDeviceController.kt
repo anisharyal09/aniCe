@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Serially owns generation-bound Find Device requests, replay floors and native alert lifetimes.
 package io.github.anisharyal09.anice.features.finddevice
+import io.github.anisharyal09.anice.infrastructure.connections.displayName
 
 import androidx.compose.runtime.*
 import io.github.anisharyal09.anice.infrastructure.connections.*
@@ -113,13 +114,13 @@ class FindDeviceController(
         if (alerts[key] != null || link.history.processing != null) { val response = reply(message, FindResult.BUSY); remember(response, link); enqueue(response, link); return DataHandling.HANDLED }
         val identifier = "find-device-" + UUID.randomUUID()
         alerts[key] = Alert(descriptor, identifier, now() + 60000)
-        incomingAlert = IncomingFindAlert(identifier, descriptor.peer.deviceName); schedule()
+        incomingAlert = IncomingFindAlert(identifier, descriptor.peer.displayName); schedule()
         link.history.processing = message.sequence
         scope.launch {
             if (!live(descriptor) || alerts[key]?.identifier != identifier) {
                 link.history.processing = null; return@launch
             }
-            val result = try { notifier.post(identifier, descriptor.peer.deviceName) }
+            val result = try { notifier.post(identifier, descriptor.peer.displayName) }
                 catch (e: CancellationException) { notifier.clear(identifier); throw e }
                 catch (_: Exception) { FindResult.FAILED }
                 finally { link.history.processing = null }
@@ -143,7 +144,7 @@ class FindDeviceController(
     fun dismiss(identifier: String) {
         val key = alerts.entries.firstOrNull { it.value.identifier == identifier }?.key ?: return
         alerts.remove(key)
-        incomingAlert = alerts.values.lastOrNull()?.let { IncomingFindAlert(it.identifier, it.descriptor.peer.deviceName) }
+        incomingAlert = alerts.values.lastOrNull()?.let { IncomingFindAlert(it.identifier, it.descriptor.peer.displayName) }
         notifier.clear(identifier); schedule()
     }
     fun expire() {

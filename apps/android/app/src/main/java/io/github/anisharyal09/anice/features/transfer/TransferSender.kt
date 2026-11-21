@@ -89,7 +89,7 @@ internal fun <T> TransferController.prepareSources(
         }
         val channel = activeChannel
         if (reviewedPeer != null && (channel?.descriptor?.peer?.deviceId != reviewedPeer.first ||
-                channel?.descriptor?.peer?.fingerprint != reviewedPeer.second)) {
+                channel.descriptor.peer.fingerprint != reviewedPeer.second)) {
             updateState(TransferState.Failed("The connected device changed. Review the selected files before sending."))
             return
         }

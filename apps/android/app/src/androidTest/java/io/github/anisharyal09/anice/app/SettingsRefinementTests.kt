@@ -4,6 +4,9 @@ package io.github.anisharyal09.anice.app
 
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.ComponentName
+import android.app.job.JobInfo
+import android.app.job.JobScheduler
 import android.content.res.Configuration
 import android.graphics.Rect
 import android.os.Build
@@ -16,9 +19,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -35,7 +40,11 @@ import io.github.anisharyal09.anice.update.UpdateReviewSheet
 import io.github.anisharyal09.anice.update.UpdateSettingsContent
 import io.github.anisharyal09.anice.update.UpdateStatus
 import io.github.anisharyal09.anice.update.UpdateVersion
+import io.github.anisharyal09.anice.update.UpdateCheckService
+import io.github.anisharyal09.anice.update.UPDATE_JOB_ID
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import java.io.File
@@ -48,10 +57,373 @@ import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
+import org.junit.Rule
+import io.github.anisharyal09.anice.ui.EmulatorPresentationRule
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class SettingsRefinementTests {
+    @get:Rule val presentation: org.junit.rules.TestRule = EmulatorPresentationRule()
+    @Test fun automaticUpdateOptionIsCollapsedAndManualChecksStayAvailableWhenOff() {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        runner.uiAutomation
+        for (dark in listOf(false, true)) {
+            for (scale in listOf(0.8f, 1f, 1.2f)) {
+                for (width in listOf(300.dp, 600.dp)) {
+                    val activity = runner.startActivitySync(
+                        Intent(runner.targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    ) as MainActivity
+                    val automatic = mutableStateOf(true)
+                    val changes = AtomicInteger()
+                    val checks = AtomicInteger()
+                    try {
+                        val drawn = CountDownLatch(1)
+                        runner.runOnMainSync {
+                            activity.setContent {
+                                Fixture(dark, scale) {
+                                    Column(Modifier.widthIn(max = width).fillMaxWidth().padding(12.dp)) {
+                                        Text("Updates", style = MaterialTheme.typography.titleMedium)
+                                        UpdateSettingsContent(false, automatic.value, UpdateStatus.Idle, null, {}, {
+                                            automatic.value = it
+                                            changes.incrementAndGet()
+                                        }, { checks.incrementAndGet() })
+                                    }
+                                }
+                                SideEffect { activity.window.decorView.postOnAnimation { drawn.countDown() } }
+                            }
+                        }
+                        assertTrue(drawn.await(10, TimeUnit.SECONDS))
+                        idle()
+                        val label = "Check for updates automatically"
+                        awaitLabel("More options")
+                        assertNull(find(root(), label))
+                        assertTrue(automatic.value)
+                        val disclosure = clickable(find(root(), "More options"))
+                        assertTrue(bounds(disclosure).height() >= (48 * activity.resources.displayMetrics.density).toInt())
+                        val checkAction = bounds(clickable(find(root(), "Check for updates")))
+                        val optionsAction = bounds(disclosure)
+                        assertTrue("More options uses the empty leading space beside manual checking",
+                            optionsAction.right <= checkAction.left)
+                        assertEquals("Both compact actions share one row at supported text sizes",
+                            optionsAction.centerY().toFloat(), checkAction.centerY().toFloat(),
+                            3 * activity.resources.displayMetrics.density)
+                        if (Build.VERSION.SDK_INT >= 30) assertEquals("Collapsed", disclosure!!.stateDescription?.toString())
+                        capture("automatic-updates-collapsed-${if (dark) "dark" else "light"}-${(scale * 100).toInt()}-${width.value.toInt()}")
+                        click("More options")
+                        awaitLabel(label)
+                        val toggle = clickable(find(root(), label))
+                        assertNotNull(toggle)
+                        assertTrue(toggle!!.isCheckable)
+                        assertTrue(toggle.isChecked)
+                        assertTrue(bounds(toggle).height() >= (48 * activity.resources.displayMetrics.density).toInt())
+                        assertTrue(bounds(toggle).bottom <= bounds(root()).bottom)
+                        click(label)
+                        assertFalse(automatic.value)
+                        assertEquals(1, changes.get())
+                        awaitLabel("Manual checks remain available.")
+                        capture("automatic-updates-off-${if (dark) "dark" else "light"}-${(scale * 100).toInt()}-${width.value.toInt()}")
+                        click("More options")
+                        awaitNoLabel(label)
+                        awaitLabel("Automatic checks are off.")
+                        click("Check for updates")
+                        assertEquals(1, checks.get())
+                        assertFalse(automatic.value)
+                        click("More options")
+                        awaitLabel(label)
+                        click(label)
+                        assertTrue(automatic.value)
+                        assertEquals(2, changes.get())
+                        awaitLabel("On launch when due; daily at 7:30 PM NPT.")
+                        assertNull(find(root(), "Nepal time"))
+                    } finally {
+                        runner.runOnMainSync { activity.finish() }
+                        runner.waitForIdleSync()
+                    }
+                }
+            }
+        }
+    }
+
+    @Test fun updateOptionsKeepLeadingAlignmentAndExpandedStateWhenActionsReflow() {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        runner.uiAutomation
+        val activity = runner.startActivitySync(
+            Intent(runner.targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ) as MainActivity
+        val scale = mutableFloatStateOf(1f)
+        val direction = mutableStateOf(LayoutDirection.Ltr)
+        try {
+            val drawn = CountDownLatch(1)
+            runner.runOnMainSync {
+                activity.setContent {
+                    Fixture(true, scale.floatValue) {
+                        CompositionLocalProvider(LocalLayoutDirection provides direction.value) {
+                            Column(Modifier.widthIn(max = 300.dp).fillMaxWidth().padding(12.dp)) {
+                                UpdateSettingsContent(false, true, UpdateStatus.Idle, null, {}, {}, {})
+                            }
+                        }
+                    }
+                    SideEffect { activity.window.decorView.postOnAnimation { drawn.countDown() } }
+                }
+            }
+            assertTrue(drawn.await(10, TimeUnit.SECONDS))
+            idle()
+            click("More options")
+            awaitLabel("On launch when due; daily at 7:30 PM NPT.")
+            runner.runOnMainSync { scale.floatValue = 2f }
+            idle()
+            capture("automatic-updates-reflow-dark-200")
+            awaitLabel("Check for updates automatically")
+            awaitLabel("More options")
+            awaitLabel("Check for updates")
+            val largeTree = root()
+            val options = bounds(clickable(find(largeTree, "More options")))
+            val check = bounds(clickable(find(largeTree, "Check for updates")))
+            assertTrue("Large text reflows actions instead of overlapping", options.bottom <= check.top)
+            capture("automatic-updates-reflow-dark-200")
+            runner.runOnMainSync { scale.floatValue = 1.2f; direction.value = LayoutDirection.Rtl }
+            idle()
+            awaitLabel("On launch when due; daily at 7:30 PM NPT.")
+            awaitLabel("More options")
+            awaitLabel("Check for updates")
+            val rtlTree = root()
+            val rtlOptions = bounds(clickable(find(rtlTree, "More options")))
+            val rtlCheck = bounds(clickable(find(rtlTree, "Check for updates")))
+            assertTrue("More options follows the leading edge in RTL", rtlCheck.right <= rtlOptions.left)
+            assertEquals(rtlOptions.centerY().toFloat(), rtlCheck.centerY().toFloat(),
+                3 * activity.resources.displayMetrics.density)
+            capture("automatic-updates-rtl-dark-120")
+        } finally {
+            runner.runOnMainSync { activity.finish() }
+            runner.waitForIdleSync()
+        }
+    }
+
+    @Test fun automaticOptOutCancelsScheduledJobsAndPersistsWithoutBlockingManualChecks() = runBlocking {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        val preferences = runner.targetContext.getSharedPreferences("update-test-${UUID.randomUUID()}", 0)
+        val scheduler = runner.targetContext.getSystemService(JobScheduler::class.java)
+        assumeTrue("Do not replace another preview's update job", scheduler.getPendingJob(UPDATE_JOB_ID) == null)
+        val calls = AtomicInteger()
+        lateinit var manager: AndroidUpdateManager
+        var check: Job? = null
+        try {
+            assertEquals(JobScheduler.RESULT_SUCCESS, scheduler.schedule(
+                JobInfo.Builder(UPDATE_JOB_ID, ComponentName(runner.targetContext, UpdateCheckService::class.java))
+                    .setMinimumLatency(86_400_000L).build()))
+            assertNotNull(scheduler.getPendingJob(UPDATE_JOB_ID))
+            runner.runOnMainSync {
+                manager = AndroidUpdateManager(runner.targetContext, ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ ->
+                    calls.incrementAndGet()
+                    ReleaseResponse(200, "[]")
+                }), automaticLifecycleEnabled = true)
+                assertTrue(manager.automaticChecks.value)
+                manager.setAutomaticChecks(false)
+                assertNull(manager.check())
+                manager.foregroundStarted()
+                manager.dismissReview()
+                manager.setIncludeBeta(true)
+                manager.scheduleNextCheck()
+            }
+            runner.waitForIdleSync()
+            assertNull(scheduler.getPendingJob(UPDATE_JOB_ID))
+            assertEquals(0, calls.get())
+            runner.runOnMainSync {
+                val restarted = AndroidUpdateManager(runner.targetContext, ReleaseDiscovery(preferences))
+                assertFalse(restarted.automaticChecks.value)
+                assertNull(restarted.check())
+                check = manager.check(force = true)
+            }
+            withTimeout(5000) { check!!.join() }
+            assertEquals(1, calls.get())
+            assertEquals(UpdateStatus.UpToDate, manager.status.value)
+            assertFalse(manager.automaticChecks.value)
+            assertNull(scheduler.getPendingJob(UPDATE_JOB_ID))
+            runner.runOnMainSync {
+                // An already-completed evening arms tomorrow's job instead of an immediate one the preview service cancels.
+                assertTrue(preferences.edit().putLong("last_success", System.currentTimeMillis()).commit())
+                manager.setAutomaticChecks(true)
+                assertTrue(AndroidUpdateManager(runner.targetContext, ReleaseDiscovery(preferences)).automaticChecks.value)
+                manager.foregroundStopped()
+            }
+            assertNotNull("Re-enabling recreates the real native update job", scheduler.getPendingJob(UPDATE_JOB_ID))
+            runner.runOnMainSync { manager.setAutomaticChecks(false) }
+            assertNull(scheduler.getPendingJob(UPDATE_JOB_ID))
+        } finally {
+            check?.join()
+            scheduler.cancel(UPDATE_JOB_ID)
+            assertTrue(preferences.edit().clear().commit())
+        }
+    }
+
+    @Test fun launchAndNativeJobUseSavedOptOutAndResumeWhenEnabled() = runBlocking {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        val preferences = runner.targetContext.getSharedPreferences("update-test-${UUID.randomUUID()}", 0)
+        val scheduler = runner.targetContext.getSystemService(JobScheduler::class.java)
+        assumeTrue("Do not replace another preview's update job", scheduler.getPendingJob(UPDATE_JOB_ID) == null)
+        val calls = AtomicInteger()
+        val requested = CompletableDeferred<Unit>()
+        lateinit var manager: AndroidUpdateManager
+        var initialized = false
+        try {
+            assertTrue(preferences.edit().putBoolean("automatic_checks", false).commit())
+            runner.runOnMainSync {
+                manager = AndroidUpdateManager(runner.targetContext, ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ ->
+                    calls.incrementAndGet()
+                    requested.complete(Unit)
+                    ReleaseResponse(200, "[]")
+                }), automaticLifecycleEnabled = true)
+                initialized = true
+                manager.foregroundStarted()
+                manager.scheduleNextCheck()
+            }
+            runner.waitForIdleSync()
+            assertEquals(0, calls.get())
+            assertNull(scheduler.getPendingJob(UPDATE_JOB_ID))
+            runner.runOnMainSync {
+                manager.setAutomaticChecks(true)
+                // The preview service treats this build as non-production; drop the immediate overdue job
+                // so the foreground check below owns the request and the next job is the real deadline.
+                scheduler.cancel(UPDATE_JOB_ID)
+            }
+            withTimeout(5000) { requested.await(); manager.status.first { it == UpdateStatus.UpToDate } }
+            runner.waitForIdleSync()
+            assertEquals(1, calls.get())
+            // The successful check moved the deadline to tomorrow; arm and inspect the real persisted job.
+            runner.runOnMainSync {
+                scheduler.cancel(UPDATE_JOB_ID)
+                manager.scheduleNextCheck()
+            }
+            val job = requireNotNull(scheduler.getPendingJob(UPDATE_JOB_ID))
+            assertTrue(job.isPersisted)
+            assertEquals(JobInfo.NETWORK_TYPE_ANY, job.networkType)
+            runner.runOnMainSync {
+                manager.setAutomaticChecks(false)
+                manager.foregroundStopped()
+            }
+            assertNull(scheduler.getPendingJob(UPDATE_JOB_ID))
+            assertFalse(AndroidUpdateManager(runner.targetContext, ReleaseDiscovery(preferences)).automaticChecks.value)
+        } finally {
+            runner.runOnMainSync { if (initialized) manager.setAutomaticChecks(false) }
+            scheduler.cancel(UPDATE_JOB_ID)
+            assertTrue(preferences.edit().clear().commit())
+        }
+    }
+
+    @Test fun settingsCheckboxStopsNativeSchedulingAndManualCheckUsesTheSameOwner() = runBlocking {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        val preferences = runner.targetContext.getSharedPreferences("update-test-${UUID.randomUUID()}", 0)
+        val scheduler = runner.targetContext.getSystemService(JobScheduler::class.java)
+        assumeTrue("Do not replace another preview's update job", scheduler.getPendingJob(UPDATE_JOB_ID) == null)
+        val activity = runner.startActivitySync(
+            Intent(runner.targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ) as MainActivity
+        val calls = AtomicInteger()
+        lateinit var manager: AndroidUpdateManager
+        try {
+            val drawn = CountDownLatch(1)
+            assertTrue(preferences.edit().putLong("last_success", System.currentTimeMillis()).commit())
+            runner.runOnMainSync {
+                manager = AndroidUpdateManager(runner.targetContext, ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ ->
+                    calls.incrementAndGet()
+                    ReleaseResponse(200, "[]")
+                }), automaticLifecycleEnabled = true)
+                manager.scheduleNextCheck()
+                activity.setContent {
+                    Fixture(true, 1f) {
+                        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                            io.github.anisharyal09.anice.update.UpdateSettings(manager)
+                        }
+                    }
+                    SideEffect { activity.window.decorView.postOnAnimation { drawn.countDown() } }
+                }
+            }
+            assertTrue(drawn.await(10, TimeUnit.SECONDS))
+            idle()
+            assertNotNull(scheduler.getPendingJob(UPDATE_JOB_ID))
+            click("More options")
+            click("Check for updates automatically")
+            assertFalse(manager.automaticChecks.value)
+            assertFalse(preferences.getBoolean("automatic_checks", true))
+            assertNull(scheduler.getPendingJob(UPDATE_JOB_ID))
+            runner.runOnMainSync {
+                assertNull(manager.check())
+                manager.foregroundStarted()
+            }
+            idle()
+            assertEquals(0, calls.get())
+            click("Check for updates")
+            withTimeout(5000) { manager.status.first { it == UpdateStatus.UpToDate } }
+            assertEquals(1, calls.get())
+            assertNull(scheduler.getPendingJob(UPDATE_JOB_ID))
+            assertFalse(manager.automaticChecks.value)
+        } finally {
+            runner.runOnMainSync { activity.finish() }
+            scheduler.cancel(UPDATE_JOB_ID)
+            assertTrue(preferences.edit().clear().commit())
+        }
+    }
+
+    @Test fun disablingAutomaticChecksCancelsOnlyAutomaticMetadataAndPreservesQueuedManualChecks() = runBlocking {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        val cases = listOf(
+            Triple(false, false, false), Triple(true, false, false), Triple(false, true, false),
+            Triple(false, false, true), Triple(false, true, true),
+        )
+        for ((manual, queuedManual, betaChange) in cases) {
+            val preferences = runner.targetContext.getSharedPreferences("update-test-${UUID.randomUUID()}", 0)
+            val started = CountDownLatch(1)
+            val resume = CountDownLatch(1)
+            val calls = AtomicInteger()
+            lateinit var manager: AndroidUpdateManager
+            var check: Job? = null
+            try {
+                runner.runOnMainSync {
+                    manager = AndroidUpdateManager(runner.targetContext, ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ ->
+                        if (calls.incrementAndGet() == 1) {
+                            started.countDown()
+                            check(resume.await(5, TimeUnit.SECONDS))
+                        }
+                        ReleaseResponse(200, "[]")
+                    }))
+                    check = manager.check(force = manual)
+                }
+                assertTrue(started.await(5, TimeUnit.SECONDS))
+                runner.runOnMainSync {
+                    if (queuedManual) manager.check(force = true)
+                    if (betaChange) manager.setIncludeBeta(true)
+                    manager.setAutomaticChecks(false)
+                }
+                resume.countDown()
+                withTimeout(5000) { check!!.join() }
+                if (queuedManual) {
+                    withTimeout(5000) { manager.status.first { it == UpdateStatus.UpToDate } }
+                }
+                if (manual || queuedManual) {
+                    assertEquals(UpdateStatus.UpToDate, manager.status.value)
+                    assertTrue(preferences.contains("last_success"))
+                } else {
+                    assertEquals(UpdateStatus.Idle, manager.status.value)
+                    assertFalse(preferences.contains("cached_releases"))
+                    assertFalse(preferences.contains("last_success"))
+                }
+                assertEquals(0, preferences.getInt("failures", 0))
+                assertFalse(manager.automaticChecks.value)
+                assertEquals(if (queuedManual) 2 else 1, calls.get())
+            } finally {
+                resume.countDown()
+                check?.join()
+                assertTrue(preferences.edit().clear().commit())
+            }
+        }
+    }
+
     @Suppress("DEPRECATION")
     @Test fun betaOptInRequiresConfirmationAndCancelOrBackPreservesTheSetting() {
         assumeEmulator()
@@ -68,7 +440,7 @@ class SettingsRefinementTests {
                 val drawn = CountDownLatch(1)
                 runner.runOnMainSync {
                     activity.setContent {
-                        fixture(dark, 1f) {
+                        Fixture(dark, 1f) {
                             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("Updates", style = MaterialTheme.typography.titleMedium)
                                 BetaUpdatePreference(beta.value) {
@@ -147,10 +519,10 @@ class SettingsRefinementTests {
                         val drawn = CountDownLatch(1)
                         runner.runOnMainSync {
                             activity.setContent {
-                                fixture(dark, scale) {
+                                Fixture(dark, scale) {
                                     Column(Modifier.widthIn(max = if (narrow) 300.dp else 360.dp).fillMaxWidth().padding(12.dp)) {
                                         Text("Updates", style = MaterialTheme.typography.titleMedium)
-                                        UpdateSettingsContent(false, status, "v0.9.0-beta.2", {}, { checks.incrementAndGet() })
+                                        UpdateSettingsContent(false, true, status, "v0.9.0-beta.2", {}, {}, { checks.incrementAndGet() })
                                     }
                                 }
                                 SideEffect { activity.window.decorView.postOnAnimation { drawn.countDown() } }
@@ -168,12 +540,13 @@ class SettingsRefinementTests {
                             actionBounds.height() >= (48 * activity.resources.displayMetrics.density).toInt())
                         if (status != UpdateStatus.Checking) {
                             val statusBounds = bounds(find(root(), summary))
-                            if (narrow) {
-                                assertTrue("Narrow or large-text layouts get status above the trailing action",
-                                    statusBounds.bottom <= actionBounds.top)
-                                assertTrue(statusBounds.width() >= (240 * activity.resources.displayMetrics.density).toInt())
+                            assertTrue("Status stays above the compact options/check row", statusBounds.bottom <= actionBounds.top)
+                            assertTrue(statusBounds.width() >= (240 * activity.resources.displayMetrics.density).toInt())
+                            val options = bounds(clickable(find(root(), "More options")))
+                            if (scale == 2f) {
+                                assertTrue("Large-text actions reflow without squeezing labels", options.bottom <= actionBounds.top)
                             } else {
-                                assertTrue("Status and check action must not overlap", statusBounds.right <= actionBounds.left)
+                                assertTrue("Options and manual checks never overlap", options.right <= actionBounds.left)
                             }
                             val viewport = bounds(root())
                             assertTrue("The full update status remains onscreen", statusBounds.bottom <= viewport.bottom)
@@ -219,7 +592,7 @@ class SettingsRefinementTests {
                 try {
                     runner.runOnMainSync {
                         activity.setContent {
-                            fixture(dark, scale) {
+                            Fixture(dark, scale) {
                                 Column {
                                     Text("Home fixture")
                                     Button(onClick = { showing.value = true }) { Text("Review update") }
@@ -322,13 +695,14 @@ class SettingsRefinementTests {
             val release = requireNotNull(manager.available.value)
             assertEquals(tag, release.version.tag)
             lateinit var restarted: AndroidUpdateManager
+            var restoredReview: Job? = null
             runner.runOnMainSync {
                 restarted = AndroidUpdateManager(runner.targetContext,
                     ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ -> error("Cached review must work offline") }))
-                restarted.review()
+                restoredReview = restarted.review()
                 check = restarted.check()
             }
-            withTimeout(5000) { check!!.join() }
+            withTimeout(5000) { restoredReview?.join(); check?.join() }
             assertEquals(release, restarted.available.value)
             assertTrue(restarted.reviewing.value)
             runner.runOnMainSync {
@@ -487,7 +861,7 @@ class SettingsRefinementTests {
                     val drawn = CountDownLatch(1)
                     runner.runOnMainSync {
                         activity.setContent {
-                            fixture(dark, scale) {
+                            Fixture(dark, scale) {
                                 CompositionLocalProvider(LocalUriHandler provides object : UriHandler {
                                     override fun openUri(uri: String) { opened.add(uri) }
                                 }) {
@@ -499,13 +873,24 @@ class SettingsRefinementTests {
                     }
                     assertTrue(drawn.await(10, TimeUnit.SECONDS))
                     idle()
+                    reveal("Reach out")
                     assertNotNull(find(root(), "Reach out"))
                     assertNull(find(root(), "Developer"))
                     val contact = bounds(find(root(), "Reach out"))
                     val profile = bounds(clickable(find(root(), "@anisharyal09")))
                     val x = bounds(clickable(find(root(), "X profile")))
                     val linkedIn = bounds(clickable(find(root(), "LinkedIn profile")))
-                    val row = bounds(clickable(find(root(), "Report an issue")))
+                    val row = bounds(clickable(find(root(), "License")))
+                    val email = bounds(clickable(find(root(), "Email")))
+                    val github = bounds(clickable(find(root(), "GitHub form")))
+                    assertTrue("GitHub and Email have independent targets", github.right <= email.left)
+                    assertEquals("Email stays beside the issue form",
+                        github.centerY().toFloat(), email.centerY().toFloat(), 3 * activity.resources.displayMetrics.density)
+                    assertTrue(email.height() >= (48 * activity.resources.displayMetrics.density).toInt())
+                    assertEquals("Email keeps one readable line even when GitHub form wraps",
+                        48 * activity.resources.displayMetrics.density, email.height().toFloat(), 1f)
+                    assertEquals("The Email action remains trailing", row.right.toFloat(),
+                        email.right.toFloat(), 4 * activity.resources.displayMetrics.density)
                     if (scale <= 1.2f) {
                         assertEquals("Contact name and socials must share one row when they fit",
                             profile.centerY().toFloat(), x.centerY().toFloat(), 3 * activity.resources.displayMetrics.density)
@@ -541,6 +926,31 @@ class SettingsRefinementTests {
                     assertEquals("bug_report.yml", fields["template"])
                     assertFalse(fields["app-version"].isNullOrBlank())
                     assertTrue(fields["os-version"]!!.startsWith("Android "))
+                    opened.clear()
+                    click("Email")
+                    assertEquals(listOf(IssueReport.emailUrl), opened)
+                    opened.clear()
+                    reveal("Star aniCe on GitHub")
+                    val support = bounds(clickable(find(root(), "Support aniCe")))
+                    val star = bounds(clickable(find(root(), "Star aniCe on GitHub")))
+                    val density = activity.resources.displayMetrics.density
+                    assertTrue(support.height() >= (48 * density).toInt())
+                    assertTrue(star.height() >= (48 * density).toInt())
+                    assertEquals("Support and star links share the About content center",
+                        row.centerX().toFloat(), support.centerX().toFloat(), 3 * density)
+                    assertEquals(support.centerX().toFloat(), star.centerX().toFloat(), 3 * density)
+                    assertTrue("The quiet reminder stays below support without overlapping its target",
+                        support.bottom <= star.top)
+                    assertTrue("The complete star text remains inside the viewport",
+                        star.left >= bounds(root()).left && star.right <= bounds(root()).right &&
+                            star.bottom <= bounds(root()).bottom)
+                    assertTrue("Rendering About never opens support or GitHub automatically", opened.isEmpty())
+                    capture("about-footer-${if (dark) "dark" else "light"}-${(scale * 100).toInt()}-${width.value.toInt()}")
+                    click("Star aniCe on GitHub")
+                    assertEquals(listOf("https://github.com/anisharyal09/aniCe"), opened)
+                    opened.clear()
+                    click("Support aniCe")
+                    assertEquals(listOf("https://anisharyal09.com.np/support?from=anice"), opened)
                 } finally {
                     runner.runOnMainSync { activity.finish() }
                     runner.waitForIdleSync()
@@ -549,7 +959,7 @@ class SettingsRefinementTests {
         }
     }
 
-    @Composable private fun fixture(dark: Boolean, scale: Float, content: @Composable () -> Unit) {
+    @Composable private fun Fixture(dark: Boolean, scale: Float, content: @Composable () -> Unit) {
         val configuration = Configuration(LocalConfiguration.current).apply {
             uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
                 if (dark) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
@@ -606,6 +1016,24 @@ class SettingsRefinementTests {
         assertNotNull("Missing action: $label", action)
         assertTrue(action!!.performAction(AccessibilityNodeInfo.ACTION_CLICK))
         idle()
+    }
+    private fun reveal(label: String) {
+        repeat(6) {
+            val node = find(root(), label)
+            if (node != null && node.isVisibleToUser && !bounds(node).isEmpty) return
+            val scroll = scrollable(root())
+            assertNotNull("Missing About scroll container", scroll)
+            val area = bounds(scroll)
+            val startY = area.top + area.height() * 3 / 4
+            val endY = area.top + area.height() / 4
+            val command = "input swipe ${area.centerX()} $startY ${area.centerX()} $endY 300"
+            ParcelFileDescriptor.AutoCloseInputStream(
+                InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
+            ).use { it.readBytes() }
+            idle()
+        }
+        capture("about-footer-reveal-failure")
+        fail("Could not reveal $label: target=${find(root(), label)?.let { bounds(it) }}, viewport=${bounds(root())}")
     }
     private fun pressBack() {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation

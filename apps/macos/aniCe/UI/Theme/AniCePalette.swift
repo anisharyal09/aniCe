@@ -62,12 +62,14 @@ enum AniCePalette {
 struct AniCeWordmark: View {
   var size: CGFloat = 17
   var weight: Font.Weight = .semibold
+  var prefix = ""
+  var suffix = ""
   @Environment(\.colorScheme) private var scheme
 
   var body: some View {
-    (Text("ani") + Text("Ce").foregroundStyle(AniCePalette.wordmarkAccent(scheme)))
+    (Text(prefix + "ani") + Text("Ce").foregroundStyle(AniCePalette.wordmarkAccent(scheme)) + Text(suffix))
       .font(.system(size: size, weight: weight))
-      .accessibilityLabel("aniCe")
+      .accessibilityLabel(prefix + "aniCe" + suffix)
   }
 }
 

@@ -16,6 +16,11 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 TEST = 'io.github.anisharyal09.anice.infrastructure.session.LanNativeTest'
 
+def require(condition, message):
+    """Acceptance checks must remain active under python -O / PYTHONOPTIMIZE."""
+    if not condition:
+        raise AssertionError(message)
+
 
 def read_event(process, timeout=45):
     with selectors.DefaultSelector() as selector:
@@ -30,53 +35,54 @@ def read_event(process, timeout=45):
 
 def require_test(log):
     codes = re.findall(r'^INSTRUMENTATION_STATUS_CODE: (-?\d+)$', log, re.M)
-    assert codes == ['1', '0'], 'Instrumentation did not run and pass exactly one test'
-    assert re.findall(r'^INSTRUMENTATION_CODE: (-?\d+)$', log, re.M) == ['-1']
-    assert re.search(r'^OK \(1 test\)\s*$', log, re.M)
-    assert log.count('INSTRUMENTATION_STATUS: test=protectedTcpInterchange') == 2
-    assert log.count('INSTRUMENTATION_STATUS: class=' + TEST) == 2
-    assert re.findall(r'^INSTRUMENTATION_STATUS: numtests=(\d+)$', log, re.M) == ['1', '1']
-    assert re.findall(r'^INSTRUMENTATION_STATUS: current=(\d+)$', log, re.M) == ['1', '1']
-    assert not any(token in log for token in ('FAILURES', 'INSTRUMENTATION_FAILED', 'shortMsg='))
+    require(codes == ['1', '0'], 'Instrumentation did not run and pass exactly one test')
+    require(re.findall(r'^INSTRUMENTATION_CODE: (-?\d+)$', log, re.M) == ['-1'], 'Runner did not complete')
+    require(re.search(r'^OK \(1 test\)\s*$', log, re.M), 'Missing one-test success summary')
+    require(log.count('INSTRUMENTATION_STATUS: test=protectedTcpInterchange') == 2, 'Wrong test method')
+    require(log.count('INSTRUMENTATION_STATUS: class=' + TEST) == 2, 'Wrong test class')
+    require(re.findall(r'^INSTRUMENTATION_STATUS: numtests=(\d+)$', log, re.M) == ['1', '1'], 'Wrong test inventory')
+    require(re.findall(r'^INSTRUMENTATION_STATUS: current=(\d+)$', log, re.M) == ['1', '1'], 'Wrong test position')
+    require(not any(token in log for token in ('FAILURES', 'INSTRUMENTATION_FAILED', 'shortMsg=')), 'Runner failed or crashed')
 
 
 def require_deadline_failure(log):
-    assert re.findall(r'^INSTRUMENTATION_STATUS_CODE: (-?\d+)$', log, re.M) == ['1', '-2']
+    require(re.findall(r'^INSTRUMENTATION_STATUS_CODE: (-?\d+)$', log, re.M) == ['1', '-2'], 'Missing benchmark failure')
     expected = 'java.lang.AssertionError: Production DATA benchmark exceeded its completion budget'
-    assert re.findall(r'^INSTRUMENTATION_STATUS: stack=(.*)$', log, re.M) == [expected]
-    assert 'Caused by: kotlinx.coroutines.TimeoutCancellationException:' in log
+    require(re.findall(r'^INSTRUMENTATION_STATUS: stack=(.*)$', log, re.M) == [expected], 'Unexpected benchmark failure')
+    require('Caused by: kotlinx.coroutines.TimeoutCancellationException:' in log, 'Missing deadline cause')
     normalized = log.replace('INSTRUMENTATION_STATUS_CODE: -2', 'INSTRUMENTATION_STATUS_CODE: 0')
     normalized = normalized.replace('FAILURES!!!', '').replace('Tests run: 1,  Failures: 1', 'OK (1 test)')
     require_test(normalized)
 
 
 def benchmark_result(android, mac, total, window):
-    assert total in (4 * 1048576, 16 * 1048576, 100 * 1048576, 1024 * 1048576) and window in (4, 8, 32, 64)
+    require(total in (4 * 1048576, 16 * 1048576, 100 * 1048576, 1024 * 1048576) and window in (4, 8, 32, 64), 'Invalid benchmark parameters')
     for metrics in (android, mac):
-        assert isinstance(metrics, dict)
-        assert metrics['bytes'] == total and metrics['window'] == window
+        require(isinstance(metrics, dict), 'Missing benchmark measurements')
+        require(metrics['bytes'] == total and metrics['window'] == window, 'Benchmark parameters disagree')
     names = ('androidSendMiBs', 'androidReceiveMiBs', 'macSendMiBs', 'macReceiveMiBs')
     measurements = {key: value for metrics in (android, mac)
                     for key, value in metrics.items() if key not in ('bytes', 'window')}
     rates = [measurements[name] for name in names]
-    assert all(isinstance(value, (int, float)) and not isinstance(value, bool)
-               and math.isfinite(value) and value > 0 for value in rates)
+    require(all(isinstance(value, (int, float)) and not isinstance(value, bool)
+                and math.isfinite(value) and value > 0 for value in rates), 'Invalid throughput measurements')
     return dict(bytes=total, window=window, **measurements,
                 throughputPassed=all(value >= 8 for value in rates),
                 responsiveness='pending', macAllocation='pending')
 
 
 def benchmark_deadline_result(progress, total, window):
-    assert isinstance(progress, dict)
-    assert progress['completed'] is False and progress['throughputPassed'] is False
-    assert progress['bytes'] == total and progress['window'] == window
-    assert progress['reason'] == 'completion-deadline'
+    require(isinstance(progress, dict), 'Missing deadline evidence')
+    require(progress['completed'] is False and progress['throughputPassed'] is False, 'Deadline cannot report success')
+    require(progress['bytes'] == total and progress['window'] == window, 'Deadline parameters disagree')
+    require(progress['reason'] == 'completion-deadline', 'Unexpected deadline reason')
     elapsed = progress['elapsedSeconds']
-    assert isinstance(elapsed, (int, float)) and math.isfinite(elapsed)
-    assert elapsed >= max(60, total / 1048576 * 0.5) - 1
+    require(isinstance(elapsed, (int, float)) and not isinstance(elapsed, bool) and math.isfinite(elapsed), 'Invalid deadline time')
+    require(elapsed >= max(60, total / 1048576 * 0.5) - 1, 'Benchmark ended before its deadline')
     for name in ('androidReceivedBytes', 'androidAcknowledgedBytes'):
-        assert isinstance(progress[name], int) and 0 <= progress[name] <= total
-    assert progress['androidCpuMs'] >= 0
+        require(type(progress[name]) is int and 0 <= progress[name] <= total, 'Invalid byte progress')
+    require(type(progress['androidCpuMs']) in (int, float) and math.isfinite(progress['androidCpuMs'])
+            and progress['androidCpuMs'] >= 0, 'Invalid CPU measurement')
     return progress
 
 
@@ -100,8 +106,9 @@ def parse_args(argv=None):
 
 def main():
     args = parse_args()
-    output = args.output or Path(tempfile.mkdtemp(prefix='anice-lan-native-'))
-    output.mkdir(parents=True, exist_ok=True)
+    if args.output:
+        args.output.mkdir(parents=True, exist_ok=True)
+    output = Path(tempfile.mkdtemp(prefix='anice-lan-native-', dir=args.output)).resolve()
     adb = ['adb', '-s', args.serial]
     def command(*parts):
         return subprocess.run([*adb, *map(str, parts)], check=True, capture_output=True, text=True, timeout=20).stdout
@@ -115,10 +122,11 @@ def main():
                 ROOT / 'apps/macos/SessionInterchange/TcpInterchange.swift', ROOT / 'apps/macos/SessionInterchange/main.swift']
     if args.mac_binary:
         binary = args.mac_binary.resolve(strict=True)
-        assert binary.is_file() and os.access(binary, os.X_OK)
+        require(binary.is_file() and os.access(binary, os.X_OK), 'Native helper is not executable')
     else:
         binary = output / 'tcp-interchange'
-        environment = dict(os.environ, DEVELOPER_DIR='/Applications/Xcode.app/Contents/Developer')
+        environment = os.environ.copy()
+        environment.setdefault('DEVELOPER_DIR', '/Applications/Xcode.app/Contents/Developer')
         with (output / 'build.log').open('w') as log:
             subprocess.run(['xcrun', 'swiftc', *(['-O'] if args.benchmark_mib else []), '-swift-version', '6', '-D', 'ANICE_DEVELOPMENT_KEYCHAIN',
                             '-module-cache-path', str(output / 'module-cache'), '-framework', 'Foundation',
@@ -179,7 +187,7 @@ def main():
             command('shell', 'run-as', package, 'touch', remote + '/go')
             result = wait_file('result.json')
             android_metrics = result.pop('benchmark', None)
-            assert result == dict(tcp=True, controls=True, bidirectionalBytes=4000, family=args.family)
+            require(result == dict(tcp=True, controls=True, bidirectionalBytes=4000, family=args.family), 'Native TCP agreement failed')
             benchmark = None
             if args.benchmark_mib:
                 mac_metrics = read_event(mac, timeout=1200)['benchmark']
@@ -189,16 +197,13 @@ def main():
                 benchmark['profile'] = args.profile
                 (output / 'benchmark.json').write_text(json.dumps(benchmark, indent=2) + '\n')
             cleanup = read_event(mac)
-            assert cleanup == dict(cleanup=True, tcp=True, bidirectionalBytes=4000)
+            require(cleanup == dict(cleanup=True, tcp=True, bidirectionalBytes=4000), 'Native identity cleanup failed')
             cleaned = True
             command('shell', 'run-as', package, 'touch', remote + '/ack')
             instrumentation.wait(timeout=40)
             mac.wait(timeout=10)
         require_test((output / 'instrumentation.log').read_text())
-        assert instrumentation.returncode == 0 and mac.returncode == 0
-        (output / 'result.json').write_text(json.dumps(dict(result, isolatedCleanup=True), indent=2) + '\n')
-        print(f'Native LAN ({args.family}): NSD, protected identities, readiness, controls, 4,000 bytes each direction and cleanup passed.')
-        print(output)
+        require(instrumentation.returncode == 0 and mac.returncode == 0, 'Native process failed')
         if benchmark:
             print(json.dumps(benchmark))
             if not benchmark['throughputPassed']:
@@ -215,6 +220,10 @@ def main():
         if server and not cleaned:
             subprocess.run([str(binary), '--cleanup', server['cleanupNamespace']], check=True, timeout=20, capture_output=True)
         command('shell', 'rm', '-f', bootstrap)
+    # A failed cleanup or a prior invocation must never leave this run with success evidence.
+    (output / 'result.json').write_text(json.dumps(dict(result, isolatedCleanup=True), indent=2) + '\n')
+    print(f'Native LAN ({args.family}): NSD, protected identities, readiness, controls, 4,000 bytes each direction and cleanup passed.')
+    print(output)
 
 
 if __name__ == '__main__':

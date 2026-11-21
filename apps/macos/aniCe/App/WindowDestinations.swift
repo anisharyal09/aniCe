@@ -3,6 +3,99 @@
 import SwiftUI
 import AppKit
 
+struct AboutFeedbackLinks: View {
+  var reportURL: URL
+  var fontScale: Double = 1.0
+  @Environment(\.colorScheme) private var colorScheme
+
+  var body: some View {
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: 12) {
+        reportTitle
+        Spacer(minLength: 12)
+        actions
+      }
+      VStack(alignment: .leading, spacing: 0) {
+        reportTitle
+        actions.frame(maxWidth: .infinity, alignment: .trailing)
+      }
+    }
+    .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+    .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
+  }
+
+  private var reportTitle: some View {
+    Link(destination: reportURL) {
+      Text("Report an issue").font(.system(size: 13 * fontScale))
+        .foregroundStyle(AniCePalette.primaryText(colorScheme)).fixedSize()
+        .frame(minHeight: 36).contentShape(Rectangle())
+    }
+    .buttonStyle(AniCeHoverButtonStyle())
+    .accessibilityLabel("Report an issue")
+  }
+
+  private var actions: some View {
+    HStack(spacing: 8) {
+      Link(destination: reportURL) {
+        Label("GitHub form", systemImage: "arrow.up.right")
+          .font(.system(size: 12 * fontScale)).fixedSize()
+          .padding(.horizontal, 4).frame(minHeight: 36).contentShape(Rectangle())
+      }
+      .buttonStyle(AniCeHoverButtonStyle())
+      .accessibilityLabel("GitHub issue form")
+      Link(destination: IssueReport.emailURL) {
+        Label("Email", systemImage: "envelope")
+          .font(.system(size: 12 * fontScale)).fixedSize()
+          .padding(.horizontal, 4).frame(minHeight: 36).contentShape(Rectangle())
+      }
+      .buttonStyle(AniCeHoverButtonStyle())
+      .accessibilityLabel("Email aniCe")
+      .help("Email anish.creations.hq@gmail.com")
+    }
+    .foregroundStyle(AniCePalette.secondaryText(colorScheme)).fixedSize()
+  }
+}
+
+struct AboutSupportLinks: View {
+  var fontScale: Double = 1.0
+  @Environment(\.colorScheme) private var colorScheme
+
+  var body: some View {
+    VStack(spacing: 0) {
+      Link(destination: URL(string: "https://anisharyal09.com.np/support?from=anice")!) {
+        HStack(spacing: 6) {
+          Image(systemName: "heart").font(.system(size: 13 * fontScale)).accessibilityHidden(true)
+          AniCeWordmark(size: 13 * fontScale, weight: .regular, prefix: "Support ", suffix: " :)")
+            .multilineTextAlignment(.center)
+        }
+        .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .frame(minHeight: 32)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(AniCeHoverButtonStyle())
+      .accessibilityIdentifier("about.support")
+      .accessibilityLabel("Support aniCe")
+      .help("Support aniCe")
+
+      Link(destination: URL(string: "https://github.com/anisharyal09/aniCe")!) {
+        AniCeWordmark(size: 12 * fontScale, weight: .regular, prefix: "☆ Star ", suffix: " on GitHub")
+          .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
+          .padding(.horizontal, 8).padding(.vertical, 4)
+          .frame(minHeight: 32)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(AniCeHoverButtonStyle())
+      .accessibilityIdentifier("about.star")
+      .accessibilityLabel("Star aniCe on GitHub")
+      .help("Open aniCe on GitHub to star the repository")
+    }
+    .frame(maxWidth: .infinity)
+  }
+}
+
 extension MainWindowView {
   @ViewBuilder var homeContent: some View {
     GeometryReader { geometry in
@@ -24,7 +117,7 @@ extension MainWindowView {
           } else {
             VStack(alignment: .leading, spacing: 12) {
               Text("Connect your Android phone").font(.title3.weight(.semibold))
-              Text("Choose Add device on this Mac. Then choose Add device on your phone to scan the QR code or enter the six-digit code shown here.")
+              Text("Open aniCe on your Android phone and bring it close. Confirm the matching code on both screens. Use Add device for QR or manual-code pairing.")
                 .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
               Button("Add device") { navigation.show(.devices, route: .pairing) }.buttonStyle(AniCeButtonStyle())
             }
@@ -104,7 +197,7 @@ extension MainWindowView {
           Image(systemName: "arrow.up.to.line").font(.system(size: 24)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           VStack(alignment: .leading, spacing: 6) {
             Text("Send files").font(.system(size: 14 * fontScale, weight: .medium))
-            Text(transfer.connectedAndroidRecipient.map { "Drop files here to send to " + $0.deviceName } ?? "Connect a compatible Android phone to send files")
+            Text(transfer.connectedAndroidRecipient.map { "Drop files here to send to " + $0.displayName } ?? "Connect a compatible Android phone to send files")
               .font(.callout).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           }
           Spacer(minLength: 12)
@@ -144,12 +237,13 @@ extension MainWindowView {
               details: Binding(get: { navigation.details && navigation.focusedPeer == record.peer.deviceId },
                 set: { navigation.focusedPeer = record.peer.deviceId; navigation.details = $0 }),
               diagnostics: $navigation.diagnostics, focusedPeer: record.peer.deviceId, discovery: discovery,
-              canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
-              onManageDevices: { navigation.show(.devices, route: .pairing) })
+               canDiscover: !pairing.active && !session.allowing, automaticEnabled: !pairing.active,
+               onManageDevices: { navigation.show(.devices, route: .pairing) },
+               onRenamePeer: { nicknamePeer = $0 })
           }
           if pairing.hasTrustedAndroid || pairing.trustRecoveryNeeded {
             DisclosureGroup("Trust and saved devices") {
-              MacPairingView(model: pairing, showPairingControls: false)
+              MacPairingView(model: pairing, showPairingControls: false, identityModel: identity)
             }.font(.callout).frame(minHeight: 36, alignment: .leading).padding(.top, 8)
           }
 
@@ -162,7 +256,10 @@ extension MainWindowView {
             Spacer()
             Image(systemName: "chevron.forward").accessibilityHidden(true)
           }.frame(minHeight: 36).contentShape(Rectangle())
-        }.buttonStyle(AniCeHoverButtonStyle())
+         }.buttonStyle(AniCeHoverButtonStyle())
+           .contextMenu { Button("Edit name…") { editingLocalName = true } }
+           .highPriorityGesture(LongPressGesture().onEnded { _ in editingLocalName = true })
+           .accessibilityAction(named: "Edit device name") { editingLocalName = true }
         Divider()
       }.padding(28).frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -179,11 +276,13 @@ extension MainWindowView {
             get: { navigation.automaticAfterPairing && navigation.automaticLanAfterPairing },
             set: { navigation.automaticAfterPairing = $0; navigation.automaticLanAfterPairing = $0 }))
             .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).disabled(pairing.phase == "paired")
-          MacPairingView(model: pairing, embedded: true, showTrustedDevices: false)
-          HStack {
-            Spacer()
-            Button("Cancel") { pairing.cancel(); navigation.show(.devices) }
-              .buttonStyle(AniCeButtonStyle()).keyboardShortcut(.cancelAction)
+          MacPairingView(model: pairing, embedded: true, showTrustedDevices: false, identityModel: identity)
+          if !pairing.nearbyEnabled {
+            HStack {
+              Spacer()
+              Button("Cancel") { pairing.cancel(); navigation.show(.devices) }
+                .buttonStyle(AniCeButtonStyle()).keyboardShortcut(.cancelAction)
+            }
           }
         }.padding(24)
       }.frame(minWidth: 400, idealWidth: 460, maxHeight: 680)
@@ -218,7 +317,7 @@ extension MainWindowView {
           .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
           aboutLink("Source code", detail: "GitHub", destination: "https://github.com/anisharyal09/aniCe")
           aboutLink("License", detail: "GPL-3.0-or-later", destination: "https://github.com/anisharyal09/aniCe/blob/main/LICENSE")
-          aboutLink("Report an issue", detail: "GitHub form", destination: IssueReport.currentURL.absoluteString)
+          AboutFeedbackLinks(reportURL: IssueReport.currentURL, fontScale: fontScale)
           ViewThatFits(in: .horizontal) {
             HStack(spacing: 12) {
               Text("Reach out").font(.system(size: 13 * fontScale)).fixedSize()
@@ -242,18 +341,7 @@ extension MainWindowView {
             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
             .fixedSize(horizontal: false, vertical: true)
 
-          Link(destination: URL(string: "https://anisharyal09.com.np/support?from=anice")!) {
-            HStack(spacing: 6) {
-              Image(systemName: "heart").font(.system(size: 13 * fontScale))
-              Text("Support aniCe :)").font(.system(size: 13 * fontScale))
-            }
-            .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
-          }
-          .buttonStyle(AniCeHoverButtonStyle())
-          .accessibilityLabel("Support aniCe")
-          .help("Support aniCe")
+          AboutSupportLinks(fontScale: fontScale)
         }
         .padding(.top, 4)
         .frame(maxWidth: 660, alignment: .leading)
@@ -429,6 +517,7 @@ extension MainWindowView {
                       Button("Open \(release.version.tag) on GitHub") { NSWorkspace.shared.open(release.pageURL) }
                     }
                     if !updates.status.isEmpty { Text(updates.status).font(.system(size: 12 * fontScale)) }
+                    AutomaticUpdateCheckOptions(checked: $updates.automaticChecks)
                   }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }
                 preferenceSection("Connection", id: "connection") {
@@ -593,7 +682,7 @@ private struct SettingsSectionLayout: Layout {
 @MainActor final class SettingsScrollCoordinator {
   var anchors: [String: NSView] = [:]
 
-  func scroll(to id: String, animated: Bool, completion: @escaping () -> Void) {
+  func scroll(to id: String, animated: Bool, completion: @escaping @MainActor @Sendable () -> Void) {
     guard let anchor = anchors[id], let scroll = anchor.enclosingScrollView,
           let document = scroll.documentView else { return }
     document.layoutSubtreeIfNeeded()
@@ -618,8 +707,10 @@ private struct SettingsSectionLayout: Layout {
         context.duration = 0.18
         clip.animator().setBoundsOrigin(origin)
       } completionHandler: {
-        scroll.reflectScrolledClipView(clip)
-        completion()
+        Task { @MainActor in
+          scroll.reflectScrolledClipView(clip)
+          completion()
+        }
       }
     } else {
       clip.scroll(to: origin)
@@ -661,7 +752,7 @@ private struct DeskDeckSettingsView: View {
           let peer = record.peer
           VStack(alignment: .leading, spacing: 4) {
             HStack {
-              Text(peer.deviceName).font(.system(size: 13 * fontScale, weight: .medium)).lineLimit(1)
+              Text(peer.displayName).font(.system(size: 13 * fontScale, weight: .medium)).lineLimit(1)
               Spacer()
               Button("Add app…") { chooseApplication(for: peer) }
                 .disabled(model.availableApprovalCount(for: peer) >= 32)
@@ -679,7 +770,7 @@ private struct DeskDeckSettingsView: View {
                     .foregroundStyle(AniCePalette.secondaryText(colorScheme)).lineLimit(1)
                 }
                 Button("Remove") { model.removeApprovedApp(id: app.id, for: peer) }
-                  .accessibilityLabel("Remove \(app.name) for \(peer.deviceName)")
+                  .accessibilityLabel("Remove \(app.name) for \(peer.displayName)")
               }.frame(minHeight: 32)
             }
             if model.availableApprovalCount(for: peer) >= 32 {

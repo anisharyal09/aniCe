@@ -14,7 +14,7 @@ import UserNotifications
     self.center = center
     super.init()
     setup = Task { [weak self] in
-      guard let self else { return }
+      guard self != nil else { return }
       let pending = await center.pendingNotificationRequests()
       center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter { $0.hasPrefix("find-device-") })
       let old = await center.deliveredNotifications()

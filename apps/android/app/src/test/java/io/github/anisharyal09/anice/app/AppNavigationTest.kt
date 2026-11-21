@@ -7,6 +7,13 @@ import org.junit.Test
 import io.github.anisharyal09.anice.ui.theme.Appearance
 
 class AppNavigationTest {
+    @org.junit.Test fun comparisonCannotBeHiddenByAnInactiveDeviceRoute() {
+        for (destination in AppDestination.entries) for (route in DeviceRoute.entries) {
+            org.junit.Assert.assertEquals(
+                route == DeviceRoute.Pairing && destination in listOf(AppDestination.Home, AppDestination.Devices),
+                comparisonUsesDeviceSheet(destination, route))
+        }
+    }
     @Test fun nestedBackAndTabChangesRetainDeviceContext() {
         val state = AppNavigation()
         assertEquals(AppDestination.Home, state.destination)

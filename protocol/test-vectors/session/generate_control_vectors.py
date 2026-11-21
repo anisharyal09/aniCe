@@ -16,7 +16,7 @@ def validate(raw):
     if len(raw) > 128:
         raise ValueError("malformed")
     try:
-        row = cbor2.loads(raw)
+        row = cbor2.loads(raw, max_depth=8)
     except cbor2.CBORDecodeError as error:
         raise ValueError("malformed") from error
     if encode(row) != raw or type(row) is not list or len(row) != 4 or row[0] != "aniCe control":
@@ -72,9 +72,11 @@ def vectors():
             negatives.append({"name": name, "payloadHex": raw.hex(), "reason": str(error)})
         else:
             raise AssertionError(f"negative accepted: {name}")
-    assert len(valid) >= 3 and len(negatives) >= 15
+    if len(valid) < 3 or len(negatives) < 15:
+        raise AssertionError("Control fixture inventory shrank")
     for fixture in valid:
-        assert validate(bytes.fromhex(fixture["payloadHex"])) == (fixture["type"], fixture["value"])
+        if validate(bytes.fromhex(fixture["payloadHex"])) != (fixture["type"], fixture["value"]):
+            raise AssertionError("Control fixture disagrees with its oracle")
     return {"valid": valid, "invalid": negatives}
 
 
@@ -85,7 +87,8 @@ if __name__ == "__main__":
     path = Path(__file__).with_name("control-vectors.json")
     content = json.dumps(vectors(), indent=2) + "\n"
     if args.check:
-        assert path.read_text() == content, "control vectors differ from the independent oracle"
+        if path.read_text() != content:
+            raise SystemExit("Control vectors differ from the independent oracle")
     else:
         path.write_text(content)
     print("8 valid / 26 invalid control fixtures verified")

@@ -17,7 +17,7 @@ def parse(raw, tag, maximum):
     if len(raw) > maximum:
         raise ValueError("malformed")
     try:
-        row = cbor2.loads(raw)
+        row = cbor2.loads(raw, max_depth=8)
     except cbor2.CBORDecodeError as error:
         raise ValueError("malformed") from error
     if encode(row) != raw or type(row) is not list or not row or row[0] != tag:
@@ -77,7 +77,8 @@ def fixtures(valid, invalid, oracle):
             raise AssertionError("Negative fixture accepted: " + name)
     for row in positives:
         oracle(bytes.fromhex(row["payloadHex"]))
-    assert len(positives) >= 4 and len(negatives) >= 15
+    if len(positives) < 4 or len(negatives) < 15:
+        raise AssertionError("LAN control fixture inventory shrank")
     return dict(valid=positives, invalid=negatives)
 
 
@@ -153,7 +154,8 @@ if __name__ == "__main__":
         path = Path(__file__).with_name(name)
         rendered = json.dumps(rows, indent=2) + "\n"
         if args.check:
-            assert path.read_text() == rendered, name + " differs from its independent oracle"
+            if path.read_text() != rendered:
+                raise SystemExit(name + " differs from its independent oracle")
         else:
             path.write_text(rendered)
         print(f"{name}: {len(rows['valid'])} valid / {len(rows['invalid'])} invalid")

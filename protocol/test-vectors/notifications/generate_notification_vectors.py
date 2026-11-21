@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Independently encodes canonical notification mirroring fixtures.
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -46,7 +47,6 @@ def generate():
     def row(name, value):
         return {"name": name, "kind": value[2], "bytesHex": encode(value).hex()}
 
-    actions = [[index, f"Action {index}", "Reply"] for index in range(8)]
     maximum = ["", notification_id, epoch, 9007199254740991, "p" * 255, "a" * 128,
                "t" * 512, "b" * 1024,
                [[index, "A" * 48, "R" * 48] for index in range(8)]]
@@ -93,5 +93,14 @@ def generate():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--check", action="store_true", help="verify the fixture instead of rewriting it")
+    args = parser.parse_args()
     target = Path(__file__).with_name("notification-vectors.json")
-    target.write_text(json.dumps(generate(), indent=2) + "\n")
+    content = json.dumps(generate(), indent=2) + "\n"
+    if args.check:
+        if target.read_text(encoding="utf-8") != content:
+            raise SystemExit("Notification fixtures differ; regenerate them and review the diff.")
+        print("Notification fixtures match their independent encoder.")
+    else:
+        target.write_text(content, encoding="utf-8")

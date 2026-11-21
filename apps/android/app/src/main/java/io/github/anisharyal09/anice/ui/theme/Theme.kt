@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.Density
 import android.content.Context
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.SpanStyle
@@ -207,18 +208,24 @@ val ColorScheme.wordmarkAccent: Color
 
 @Composable
 fun AniCeWordmark(
+    modifier: Modifier = Modifier,
     style: TextStyle = MaterialTheme.typography.titleMedium,
-    modifier: Modifier = Modifier
+    prefix: String = "",
+    suffix: String = "",
+    textAlign: TextAlign? = null,
 ) {
     val accent = MaterialTheme.colorScheme.wordmarkAccent
     Text(
         text = buildAnnotatedString {
+            append(prefix)
             append("ani")
             withStyle(SpanStyle(color = accent)) {
                 append("Ce")
             }
+            append(suffix)
         },
         style = style,
-        modifier = modifier
+        modifier = modifier,
+        textAlign = textAlign,
     )
 }

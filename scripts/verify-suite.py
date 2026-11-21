@@ -21,6 +21,7 @@ import platform
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -38,11 +39,11 @@ RUST = ROOT / "core" / "rust" / "pairing"
 # Floors prevent a shrunken or entirely absent suite from looking green.
 # They are inventory guards, not coverage targets.
 MINIMUMS = {
-    "android-jvm": 250,
-    "macos": 230,
-    "rust": 4,
-    "python": 18,
-    "ci-policy": 12,
+    "android-jvm": 600,
+    "macos": 650,
+    "rust": 7,
+    "python": 150,
+    "ci-policy": 30,
 }
 MINIMUM_CONNECTED = 30
 
@@ -62,6 +63,29 @@ SUITE_ORDER = (
     "android", "macos", "connected", "interchange",
 )
 
+VECTOR_CHECKS = (
+    ("Connection pause vectors", "connection-pause/generate.py", ()),
+    ("Private Listening vectors", "private-listening/generate_private_listening_vectors.py", ()),
+    ("Clipboard vectors", "clipboard/generate_clipboard_vectors.py", ()),
+    ("Transfer vectors", "transfer/generate_transfer_vectors.py", ()),
+    ("Media vectors", "media/generate.py", ()),
+    ("Find Device vectors", "find-device/generate.py", ()),
+    ("Phone-to-Mac input vectors", "phone-input/generate.py", ()),
+    ("Notification vectors", "notifications/generate_notification_vectors.py", ()),
+    ("Identity vectors", "generate_identity_vectors.py", ()),
+    ("Pairing vectors", "generate_pairing_vectors.py", ()),
+    ("SAS pairing vectors", "generate_sas_vectors.py", ()),
+    ("Session handshake vectors", "session/generate_session_vectors.py", ()),
+    ("Session control vectors", "session/generate_control_vectors.py", ()),
+    ("Session record vectors", "session/generate_record_vectors.py", ()),
+    ("LAN framing vectors", "lan/generate_lan_vectors.py", ()),
+    ("LAN rendezvous and renewal vectors", "lan/generate_lan_control_vectors.py", ()),
+    ("Bulk probe vectors", "lan/generate_bulk_probe_vectors.py", ()),
+    ("LAN transfer vectors", "lan/generate_bulk_probe_vectors.py", ("--lan-transfer",)),
+    ("LAN profile 4 vectors", "lan/generate_bulk_probe_vectors.py", ("--lan-512",)),
+    ("SMS vectors", "sms/generate_sms_vectors.py", ()),
+)
+
 # Environment-gated tests that cannot execute in every configuration.  They
 # are listed explicitly so an unexpected skip still fails the gate.  The
 # interchange harnesses run their selected tests with arguments and accept no
@@ -75,6 +99,16 @@ DOCUMENTED_ANDROID_SKIPS = {
     "PrivateListeningDeviceRegressionTests#audioWorkerUsesOneNativeAudioPriorityThreadAndReleasesIt",
     "PrivateListeningDeviceRegressionTests#platformPcmBufferQueryFitsTheBudgetWithoutOpeningAnAudioTrack",
     "PrivateListeningDeviceRegressionTests#credentialConsentAndStopFenceWorkerAdmissionWithoutNativePlayback",
+    # Synthetic approval/comparison surfaces are UI-preview emulator tests, not real-device consent.
+    "CompanionApprovalRequestTest#enrollmentAlwaysUsesSingleDeviceApprovalForThePinnedMac",
+    "CompanionSetupPresentationTest#rotationRetainsOneApprovalAndCancelFencesItsLateResult",
+    "CompanionSetupPresentationTest#aReplacementOwnerDoesNotRepeatAnInterruptedApproval",
+    "CompanionSetupPresentationTest#everyEntryPointUsesOneCredentialAndBackgroundOrDismissalCannotRestartIt",
+    "CompanionSetupPresentationTest#quietResumeIsCancelledWhenPresentationStopsWithoutShowingACard",
+    "CompanionSetupPresentationTest#unpinnedApprovalIsRejectedWithoutLaunchingIt",
+    "CompanionSetupPresentationTest#setupStaysCompactAcrossThemesWidthsAndTextScales",
+    "ComparisonPresentationTest#comparisonVisibilitySubscribesEvenWhenTheInitialMethodIsNotSas",
+    "ComparisonPresentationTest#globalAndAddDeviceSurfacesRenderTheSameLiveCodeAcrossPhaseChanges",
     "HomeVisualReviewTest#nativePresentationStates",
     "TransferPresentationTest#transferStatesKeepOneOverviewHeadingAndAccessibleActions",
     "TransferPresentationTest#sharedActionMatchesHomeSizeAndFiresOnlyOnce",
@@ -85,6 +119,11 @@ DOCUMENTED_ANDROID_SKIPS = {
     "LanNativeTest#protectedTcpInterchange",
     "SessionNativeTest#protectedKeyInterchange",
     "SessionOwnershipTest#automaticPreferenceNotifiesWithoutReadingStatus",
+    # Native permission/radio setup is not synthesized by the connected lane.
+    "SessionOwnershipTest#duplicateConnectAndAutomaticAdoptionKeepTheAttemptGeneration",
+    "ConnectionCancelRegressionTest#repeatedConnectCoalescesAndCancelRetiresAQueuedResumeWithoutChangingPreferences",
+    "ConnectionCancelRegressionTest#newerSetupSupersedesAQueuedConnectResumeBeforeItCanOverwritePolicy",
+    "FindDeviceNotificationTest#stopAndNativeDeleteReleaseAudioWithoutChangingVibrateModeOrAlarmVolume",
     "FindDeviceNotificationTest#nativeTimeoutRunsFullSixtySecondsAndDoesNotExtendForDuplicateServiceStarts",
     "LanOwnershipTest#notificationDenialDoesNotPreventApprovedTransferService",
     "CompanionSetupTest#stopWinsOverSuspendedResumeSuccessAndLookupFailure",
@@ -176,48 +215,31 @@ def parse_junit_files(paths):
                     detail = (child.get("message") or (child.text or "")).strip()
             results.append(TestResult(classname, name, outcome, detail))
 
-        # A report that declares more tests than it contains is truncated.
-        # Android has produced such reports after native crashes.
-        if root.tag == "testsuite":
-            declared = root.get("tests")
-            if declared is not None:
-                try:
-                    declared = int(declared)
-                except ValueError:
-                    raise GateError("%s has a non-numeric tests attribute" % path)
-                if declared != len(cases):
-                    raise GateError(
-                        "%s declares %d tests but contains %d test cases; "
-                        "the report is incomplete" % (path, declared, len(cases))
-                    )
-        else:
-            declared = root.get("tests")
-            if declared is not None:
-                try:
-                    declared = int(declared)
-                except ValueError:
-                    raise GateError("%s has a non-numeric tests attribute" % path)
-                if declared != len(cases):
-                    raise GateError(
-                        "%s declares %d tests but contains %d test cases; "
-                        "the report is incomplete" % (path, declared, len(cases))
-                    )
-
-        # Wrapper totals can be absent or consistent while a nested suite is still truncated.
+        # Validate wrapper and nested totals alike: missing failure details must not look green.
         for nested in root.iter():
-            if nested is root or nested.tag not in ("testsuite", "testsuites"):
+            if nested.tag not in ("testsuite", "testsuites"):
                 continue
-            declared = nested.get("tests")
-            if declared is None:
-                continue
-            try:
-                declared = int(declared)
-            except ValueError:
-                raise GateError("%s has a non-numeric nested tests attribute" % path)
-            contained = sum(1 for _ in nested.iter("testcase"))
-            if declared != contained:
-                raise GateError("%s nested suite declares %d tests but contains %d; the report is incomplete"
-                                % (path, declared, contained))
+            contained = list(nested.iter("testcase"))
+            counts = {
+                "tests": len(contained),
+                "failures": sum(any(child.tag == "failure" for child in case) for case in contained),
+                "errors": sum(any(child.tag == "error" for child in case) for case in contained),
+                "skipped": sum(any(child.tag in ("skipped", "ignored", "disabled") for child in case)
+                               for case in contained),
+            }
+            for attribute, observed in counts.items():
+                declared = nested.get(attribute)
+                if declared is None:
+                    continue
+                try:
+                    declared = int(declared)
+                except ValueError:
+                    raise GateError("%s has a non-numeric %s attribute" % (path, attribute))
+                if declared != observed:
+                    raise GateError(
+                        "%s declares %d %s but contains %d; the report is incomplete"
+                        % (path, declared, attribute, observed)
+                    )
 
         # Suite-level errors indicate the runner failed outside a test case.
         for suite in root.iter("testsuite"):
@@ -266,17 +288,17 @@ def cargo_results(log_path):
 
 def unittest_results(log_path, minimum=None, label="Python harness"):
     text = log_path.read_text(encoding="utf-8", errors="replace")
-    match = re.search(r"^Ran (\d+) tests? in ", text, re.MULTILINE)
-    if not match:
+    matches = re.findall(r"^Ran (\d+) tests? in ", text, re.MULTILINE)
+    if len(matches) != 1:
         raise GateError("%s tests did not report a test count; log: %s" % (label, log_path))
-    count = int(match.group(1))
+    count = int(matches[0])
     required = MINIMUMS["python"] if minimum is None else minimum
     if re.search(r"skipped=\d+", text):
         raise GateError("%s tests skipped at least one test; log: %s" % (label, log_path))
     if re.search(r"^FAILED", text, re.MULTILINE) or count == 0:
         raise GateError("%s tests failed or ran zero tests; log: %s" % (label, log_path))
     # A count line alone can survive a truncated run; expected failures are not passing tests.
-    if not re.search(r"^OK\s*$", text, re.MULTILINE):
+    if not re.search(r"^OK\s*\Z", text, re.MULTILINE):
         raise GateError("%s tests lack a complete, unconditional OK result; log: %s" % (label, log_path))
     if count < required:
         raise GateError(
@@ -405,6 +427,11 @@ def _matches(result, patterns):
 
 
 def validate_results(results, label, minimum, documented=(), extra=()):
+    identifiers = [result.identifier for result in results]
+    if len(set(identifiers)) != len(identifiers):
+        raise GateError("%s contains duplicate test results; counts cannot be trusted" % label)
+    if any(result.outcome not in ("passed", "failed", "error", "skipped") for result in results):
+        raise GateError("%s contains an unknown test outcome" % label)
     if len(results) < minimum:
         raise GateError(
             "%s executed %d tests, below the required floor of %d; "
@@ -432,6 +459,11 @@ def validate_results(results, label, minimum, documented=(), extra=()):
         raise GateError("\n".join(lines))
     if not passed:
         raise GateError("%s executed no passing tests" % label)
+    if len(passed) < minimum:
+        raise GateError(
+            "%s passed %d tests, below the required floor of %d; skipped tests do not count"
+            % (label, len(passed), minimum)
+        )
 
     print(
         "%s: %d passed, %d failed, %d documented skip(s) (floor %d)"
@@ -471,7 +503,7 @@ def markdown_summary(summary):
             continue
         evidence = []
         for key in ("passed", "failed", "documented_skips", "checks",
-                    "policy_tests", "harnesses", "actionlint", "xcode",
+                    "oracle_tests", "policy_tests", "harnesses", "actionlint", "xcode",
                     "arch", "ble_verified", "manual_acceptance"):
             if key in row:
                 evidence.append("%s %s" % (key.replace("_", " "), row[key]))
@@ -527,21 +559,51 @@ def run_step(label, command, artifacts, cwd=ROOT, env=None, timeout=1800):
     # Persist intent before launch so an interrupted run still identifies its active command.
     write_json(metadata, record)
     failure = None
+    process = None
     try:
         with log.open("w", encoding="utf-8") as stream:
-            completed = subprocess.run(
+            process = subprocess.Popen(
                 [str(part) for part in command], cwd=str(cwd), env=env,
-                stdout=stream, stderr=subprocess.STDOUT, timeout=timeout,
+                stdout=stream, stderr=subprocess.STDOUT, start_new_session=True,
             )
-        record["exit_code"] = completed.returncode
-        if completed.returncode:
-            failure = GateError("%s failed with exit %d; log: %s" % (label, completed.returncode, log))
+            process.wait(timeout=timeout)
+        record["exit_code"] = process.returncode
+        if process.returncode:
+            failure = GateError("%s failed with exit %d; log: %s" % (label, process.returncode, log))
     except OSError as error:
         failure = GateError("%s could not run: %s; log: %s" % (label, error, log))
     except subprocess.TimeoutExpired:
         failure = GateError("%s timed out after %s seconds; log: %s" % (label, timeout, log))
     except KeyboardInterrupt:
         failure = GateError("%s interrupted; log: %s" % (label, log))
+    finally:
+        if failure and process is not None:
+            # Native compilers and runners spawn descendants. Killing only their launcher
+            # leaves orphaned test work holding build products after the gate has failed.
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            except OSError as error:
+                record.setdefault("cleanup_errors", []).append(str(error))
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+            finally:
+                # Reap even a descendant whose launcher already exited on SIGTERM.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except OSError as error:
+                    record.setdefault("cleanup_errors", []).append(str(error))
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired as error:
+                    record.setdefault("cleanup_errors", []).append(str(error))
+            if record.get("cleanup_errors"):
+                failure = GateError(str(failure) + "; child cleanup: " + "; ".join(record["cleanup_errors"]))
     elapsed = time.monotonic() - started
     # Command completion is separate from acceptance: the caller still validates test evidence.
     record.update(status="failed" if failure else "completed", elapsed_seconds=round(elapsed, 3))
@@ -688,34 +750,25 @@ def run_structure(artifacts):
 
 
 def run_vector_checks(interpreter, artifacts):
-    checks = [
-        ("Connection pause vectors", ROOT / "protocol/test-vectors/connection-pause/generate.py", ["--check"]),
-        ("Private Listening vectors", ROOT / "protocol/test-vectors/private-listening/generate_private_listening_vectors.py", ["--check"]),
-        ("Clipboard vectors", ROOT / "protocol/test-vectors/clipboard/generate_clipboard_vectors.py", ["--check"]),
-        ("Transfer vectors", ROOT / "protocol/test-vectors/transfer/generate_transfer_vectors.py", ["--check"]),
-        ("Media vectors", ROOT / "protocol/test-vectors/media/generate.py", ["--check"]),
-        ("Find Device vectors", ROOT / "protocol/test-vectors/find-device/generate.py", ["--check"]),
-        ("Identity vectors", ROOT / "protocol/test-vectors/generate_identity_vectors.py", ["--check"]),
-        ("Pairing vectors", ROOT / "protocol/test-vectors/generate_pairing_vectors.py", ["--check"]),
-        ("Session handshake vectors", ROOT / "protocol/test-vectors/session/generate_session_vectors.py", ["--check"]),
-        ("Session control vectors", ROOT / "protocol/test-vectors/session/generate_control_vectors.py", ["--check"]),
-        ("Session record vectors", ROOT / "protocol/test-vectors/session/generate_record_vectors.py", ["--check"]),
-        ("LAN framing vectors", ROOT / "protocol/test-vectors/lan/generate_lan_vectors.py", ["--check"]),
-        ("LAN rendezvous and renewal vectors", ROOT / "protocol/test-vectors/lan/generate_lan_control_vectors.py", ["--check"]),
-        ("Bulk probe vectors", ROOT / "protocol/test-vectors/lan/generate_bulk_probe_vectors.py", ["--check"]),
-        ("LAN transfer vectors", ROOT / "protocol/test-vectors/lan/generate_bulk_probe_vectors.py", ["--check", "--lan-transfer"]),
-        ("SMS vectors", ROOT / "protocol/test-vectors/sms/generate_sms_vectors.py", ["--check"]),
-    ]
-    for label, script, extra in checks:
-        run_step(label, [interpreter, script] + extra, artifacts, cwd=script.parent)
-    print("Vector oracles: %d independent fixture checks passed" % len(checks))
-    return len(checks)
+    vectors = ROOT / "protocol/test-vectors"
+    for label, relative, extra in VECTOR_CHECKS:
+        script = vectors / relative
+        run_step(label, [interpreter, script, "--check", *extra], artifacts, cwd=script.parent)
+    log = run_step(
+        "Session crypto oracle tests",
+        [interpreter, "-u", "-m", "unittest", "discover", "-s", str(vectors / "session"),
+         "-p", "test_*oracle.py", "-v"],
+        artifacts,
+    )
+    oracle_tests = unittest_results(log, minimum=5, label="Session crypto oracle")
+    print("Vector oracles: %d independent fixture checks passed" % len(VECTOR_CHECKS))
+    return {"checks": len(VECTOR_CHECKS), "oracle_tests": oracle_tests}
 
 
 def run_python_meta_tests(env, artifacts):
     log = run_step(
         "Python harness meta-tests",
-        [sys.executable, "-m", "unittest", "discover", "-s", str(SCRIPTS), "-p", "test_*.py", "-v"],
+        [sys.executable, "-u", "-m", "unittest", "discover", "-s", str(SCRIPTS), "-p", "test_*.py", "-v"],
         artifacts, env=env,
     )
     return unittest_results(log)
@@ -731,7 +784,7 @@ def run_ci_integrity(env, artifacts):
     run_step("Workflow syntax", [actionlint, "-no-color"], artifacts, env=env)
     log = run_step(
         "Workflow policy tests",
-        [sys.executable, "-m", "unittest", "discover", "-s", str(SCRIPTS),
+        [sys.executable, "-u", "-m", "unittest", "discover", "-s", str(SCRIPTS),
          "-p", "test_ci_workflow.py", "-v"],
         artifacts, env=env,
     )
@@ -742,6 +795,13 @@ def run_ci_integrity(env, artifacts):
 
 
 def run_rust(env, artifacts):
+    run_step(
+        "Rust formatting", ["cargo", "fmt", "--check"], artifacts, cwd=RUST, env=env,
+    )
+    run_step(
+        "Rust Clippy", ["cargo", "clippy", "--locked", "--all-targets", "--", "-D", "warnings"],
+        artifacts, cwd=RUST, env=env, timeout=900,
+    )
     log = run_step(
         "Rust pairing tests",
         ["cargo", "test", "--locked"],
@@ -874,7 +934,7 @@ def run_connected_checks(args, env, artifacts, documented_android):
     # Capture runtime evidence here, not in a later workflow step.
     failed = False
     try:
-        return run_connected_android(isolated, artifacts, documented_android)
+        return run_connected_android(isolated, artifacts, documented_android, preview=True)
     except BaseException:
         failed = True
         raise
@@ -892,7 +952,7 @@ def run_connected_checks(args, env, artifacts, documented_android):
             print("\n".join("| " + line for line in str(error).splitlines()), file=sys.stderr)
 
 
-def run_connected_android(env, artifacts, documented):
+def run_connected_android(env, artifacts, documented, preview=False):
     # Connected tests need fresh reports for the same reason as the host JVM suite.
     for folder in (
         ANDROID / "app/build/outputs/androidTest-results/connected",
@@ -903,7 +963,8 @@ def run_connected_android(env, artifacts, documented):
             shutil.rmtree(folder)
     run_step(
         "Android connected tests",
-        [ANDROID / "gradlew", "--console=plain", "--no-build-cache", "connectedDebugAndroidTest"],
+        [ANDROID / "gradlew", "--console=plain", "--no-build-cache",
+         *(["-PanicePreview=true"] if preview else []), "connectedDebugAndroidTest"],
         artifacts, cwd=ANDROID, env=env, timeout=3600,
     )
     paths = collect_junit_reports([
@@ -1021,6 +1082,10 @@ def main(argv=None):
     started = time.monotonic()
     documented_android = () if args.strict_skips else DOCUMENTED_ANDROID_SKIPS
     documented_macos = () if args.strict_skips else DOCUMENTED_MACOS_SKIPS
+    previous_termination_handler = signal.getsignal(signal.SIGTERM)
+    def interrupt_verification(signum, frame):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, interrupt_verification)
 
     try:
         args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -1031,7 +1096,7 @@ def main(argv=None):
         if (selected["macos"] or selected["interchange"]) and platform.system() != "Darwin":
             raise GateError("macOS hosted and interchange checks require macOS; "
                             "use --only android or --only contracts on Linux")
-        env = toolchain_env(android=selected["android"] or selected["connected"],
+        env = toolchain_env(android=selected["android"] or selected["connected"] or selected["interchange"],
                             macos=selected["macos"] or selected["interchange"],
                             require_xcode=selected["macos"])
 
@@ -1095,6 +1160,7 @@ def main(argv=None):
         if active:
             summary["suites"][active]["status"] = "failed"
     finally:
+        signal.signal(signal.SIGTERM, previous_termination_handler)
         summary["elapsed_seconds"] = round(time.monotonic() - started, 3)
         # Fail-fast execution leaves later suites unexecuted, not implicitly successful.
         for row in summary["suites"].values():

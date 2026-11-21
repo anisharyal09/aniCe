@@ -34,10 +34,13 @@ import java.util.concurrent.TimeUnit
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
+import org.junit.Rule
+import io.github.anisharyal09.anice.ui.EmulatorPresentationRule
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ClipboardSurfaceTests {
+    @get:Rule val presentation: org.junit.rules.TestRule = EmulatorPresentationRule()
     @Suppress("DEPRECATION") // The flags overload remains available on the minimum API level.
     @Test fun tileIsSystemBoundAndLaunchesOnlyExplicitClipboardMode() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

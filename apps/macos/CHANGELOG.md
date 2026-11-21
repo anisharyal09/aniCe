@@ -9,10 +9,75 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Add explicit Private Listening capture preparation, Start/Stop and companion status with LAN-maintenance-aware audio ownership.
 - Add private Core Audio tap capture, a lock-free bounded audio handoff and fixed stereo PCM packetization on macOS 14.2+.
 - Add the Private Listening v1 CBOR codec with strict UUIDv4, PCM packet and source-timeline validation.
+
+### Changed
+
+- Restore tap output before native teardown and report restoration in progress; recover transfer credit from advancing healthy headphone status.
+- Trim stalled Private Listening capture to a newest 60-ms interval and reduce unsealed audio buildup without discarding sealed records.
+- Raise the Mac deployment target to 14.2 for private Core Audio process taps.
+
+### Fixed
+
+- Do not wait on terminal/dismissed transfer counters before Private Listening;
+  an owned outgoing file still enforces the same drain bound.
+- Keep healthy Balanced listening buffers eligible for transfer-credit recovery
+  instead of rejecting every backlog above 200 ms.
+
+## [v0.9.0-beta.4]
+
+Application release v0.9.0-beta.4, build 90024.
+
+### Added
+
+- Add a native About Email link beside the GitHub issue form, with independent click targets and a fixed-subject draft containing no diagnostics or attachments.
+- Add a collapsed update-check preference that stops the deadline timer, native catch-up observers and automatic metadata work when off; retain manual checks and verify monitoring restarts from the saved preference.
+- Add own-name editing to the pairing screen and private saved-device nicknames with an explicit Use nickname choice; leave trust credentials unchanged.
+- Add authenticated live/reconnect device-name snapshots, revisioned no-backup display storage and shared label resolution for current device/companion and feature surfaces without recreating secure sessions.
+- Add awake/unlocked first-pair availability, globally bounded request admission, six-digit verification in a non-activating floating or centered native card, deferred identity disclosure, trust receipts and existing session handoff.
+- Add first-setup Find nearby/Pause controls on known-empty trust, using deadline-driven anonymous availability without opening pairing writes.
+- Add opt-in non-expiring anonymous discovery lifetime and next-deadline scheduling support while preserving ordinary discovery bounds.
 - Mirror authenticated phone pause notices in Overview, Devices and the companion without changing local automatic preferences.
 - Publish authenticated BLE IPv4 locators as soon as TCP admission is ready and negotiate fresh EDHOC renewal on the retained LAN socket.
+
+### Changed
+
+- Set Debug and Release versions to `0.9.0-beta.4` / `90024`.
+- Center About support with a quiet branded repository-star link beneath it; retain native link focus/hover behavior and scaled text.
+- Move orphaned playback adapter parsing, selection and scheduling checks into hosted XCTest; consume the current LAN profile-4 resource in the native oracle.
+- Use native Liquid Glass for the floating comparison card on macOS 26+, native material on older systems and a solid Reduce Transparency fallback; preserve legible code, same-attempt actions and non-activating focus.
+- Compact the non-activating comparison card and remove an unused text-scale mapper; retain native focus, scaling and same-attempt approval.
+- Open shared-name/private-nickname editors directly from held Devices names or native context menus, preserving normal click-to-details and save failures.
+- Advertise the existing generic BLE service for bounded authenticated Android companion enrollment without reopening occupied session admission.
+- Fence delayed native unsubscribe callbacks against the current characteristic and live subscription; report profile/read/write outcomes without peer payloads.
+- Keep Overview transfer headings at one size across states and center native send confirmations on the initiating display.
+- Match transfer actions to Overview controls, reflow narrow action groups and remove duplicate navigation and feature settings from Overview panels.
+- Bound LAN loss checks to their socket generation, shorten native TCP detection and allow new file sends to request enabled LAN after transport Disconnect.
+- Explain slower Bluetooth fallback with a LAN action, and keep the active BLE receive envelope separate from queued-envelope accounting.
+- Close unfinished BLE/LAN admission immediately on Pause while retaining secured notice delivery, and emit one Resume notice per explicit paused Connect.
+- Make Resume one-click with a play icon, show the armed automatic state and group the existing native pause-menu options.
+- Keep transfer channels and transport-dependent waits intact across bounded LAN maintenance; retain cryptographic, frame and recovery deadlines.
+
+### Fixed
+
+- Keep Bluetooth-off nearby setup guidance and its settings action after cleanup; identify this Mac and direct explicit Find nearby retry.
+- Recheck pairing ownership after invitation reads before publishing QR/PIN or starting discovery; cover Stop, sleep and replacement without real radio work.
+- Keep mocked LAN listener regressions independent of live host-network events and wait for endpoint publication instead of assuming a 20-ms callback turn.
+- Prevent a cancelled companion-window expiry from retiring a newer window on the same authenticated channel.
+- Keep Settings animation completion and notification cleanup on the main actor; bound window-render owners and native window/screenshot lifetimes.
+- Use a typed Core Audio UID output pointer, matching the Desk Deck adapter.
+- Retain a capacity event arriving during a refused companion capability send so first enrollment does not wait for an unrelated later retry.
+- Keep floating-card Confirm on the same attempt in normal Devices navigation; avoid competing sheet cancellation shortcuts and verify approval versus dismissal.
+- Stop pairing advertising while its slot is occupied or admission is cooling down; resume eligible availability at the existing global deadline.
+- Fence LAN deadline checks and renewal triggers to the current cryptographic session.
+
+## [v0.9.0-beta.3]
+
+Application release v0.9.0-beta.3, build 90023.
+
+### Added
+
 - **Control Android (Keyboard & Trackpad):** Added system-wide global hotkey (`⌥⌘K`) to toggle the floating controller; restored smooth pointer motion during trackpad gesture momentum.
-- **In-App Auto-Updates:** Lightweight, zero-dependency update engine (`MacUpdate*`, `UpdateHelper`) using pure Swift, ephemeral signing keychains, detached helper bundle swap and rollback.
+- **In-App Auto-Updates:** Native Swift update engine (`MacUpdate*`, `UpdateHelper`) with pinned-certificate verification, detached helper bundle swap and rollback.
 - Add 19:30 Nepal-time update deadlines with network/wake catch-up and passive once-per-version release notifications respecting beta preferences.
 - **Timed Connection Pauses:** Temporarily silence background auto-reconnects for 1h, 3h, 6h, a custom interval, or until manually resumed, with real-time countdowns on menu bar companion and main window.
 - **Live Phone Power:** Inline peer battery percentage and charging indicator beside connection status on menu bar companion and main window.
@@ -40,16 +105,6 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
-- Restore tap output before native teardown and report restoration in progress; recover transfer credit from advancing healthy headphone status.
-- Trim stalled Private Listening capture to a newest 60-ms interval and reduce unsealed audio buildup without discarding sealed records.
-- Raise the Mac deployment target to 14.2 for private Core Audio process taps.
-- Keep Overview transfer headings at one size across states and center native send confirmations on the initiating display.
-- Match transfer actions to Overview controls, reflow narrow action groups and remove duplicate navigation and feature settings from Overview panels.
-- Bound LAN loss checks to their socket generation, shorten native TCP detection and allow new file sends to request enabled LAN after transport Disconnect.
-- Explain slower Bluetooth fallback with a LAN action, and keep the active BLE receive envelope separate from queued-envelope accounting.
-- Close unfinished BLE/LAN admission immediately on Pause while retaining secured notice delivery, and emit one Resume notice per explicit paused Connect.
-- Make Resume one-click with a play icon, show the armed automatic state and group the existing native pause-menu options.
-- Keep transfer channels and transport-dependent waits intact across bounded LAN maintenance; retain cryptographic, frame and recovery deadlines.
 - Set Debug and Release marketing versions to `0.9.0-beta.3` and build numbers to `90023`.
 - Render release notes as native headings, attributed text and list rows with rectangular themed review actions; hide source metadata only for display and retain the reviewed version during automatic refreshes.
 - Reuse the near-black dark Dock icon for Finder and downloaded ZIPs; retain system Light/Dark Dock variants.
@@ -59,7 +114,6 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Clarify aniCe trust versus system Bluetooth pairing in Control Android setup and device selection.
 - Add isolated UI and transfer-preview bundles with separate identity/runtime storage and native feature/lifecycle controls; the transfer preview keeps notification permissions realistic without touching production updates.
 - Separate Desk Deck wire validation, native system access, Shortcut execution and device-power reporting from its session model without changing behavior.
-
 - Restore Mac companion, input, clipboard, file-transfer and setup entry points in the platform README, with links to their detailed limits.
 - **Menu Bar Companion & Quick Paste Tray:** Reorganized into a clean 2x2 grid with instant access to Clipboard Tray (`⌥⌘V`), Control Android, and transport status.
 - **Branding & Visuals:** Adaptive light/dark SVG vector wordmarks with warm terracotta accent (`#D26458`) for GitHub.
@@ -103,11 +157,6 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
-- Do not wait on terminal/dismissed transfer counters before Private Listening;
-  an owned outgoing file still enforces the same drain bound.
-- Keep healthy Balanced listening buffers eligible for transfer-credit recovery
-  instead of rejecting every backlog above 200 ms.
-- Fence LAN deadline checks and renewal triggers to the current cryptographic session.
 - Cancel queued automatic clipboard work when paused without cancelling explicit manual sends or replaying paused copies on resume.
 - Reject oversized SMS sends and preserve full notification replies in the Messages draft instead of truncating them.
 - Bind transfer status waiters to their issuing channel and job epoch; retain publication checkpoints after a verified file fails to save.

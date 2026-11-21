@@ -11,8 +11,86 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Add credential-scoped Private Listening consent, headphone confirmation and foreground playback with focus, notification Stop and native work leases.
 - Add bounded headphone-route playback, silent priming and worker-side stereo clock-drift resampling for Private Listening.
 - Add the Private Listening v1 CBOR codec with strict UUIDv4, PCM packet and source-timeline validation.
+
+### Changed
+
+- Probe elevated listening buffer floors down only after sustained healthy audio
+  and promptly trim obsolete software backlog when the target decreases.
+- Use a dedicated audio worker and authenticated worker-side PCM admission; lower adaptive buffering floors and avoid repeated silent priming on ordinary audio gaps.
+- Recover listening-mode file credit cautiously from fresh playback health while retaining negotiated chunk-count and delayed-path bounds.
+- Add Balanced/Lower delay adaptive listening profiles, combined-backlog trimming and platform-aware AudioTrack write/startup limits.
+- Route phone media volume locally while listening and pace future file-transfer chunks without replaying or discarding submitted data.
+
+### Fixed
+
+- Ignore terminal transfer counters in listening startup when no outgoing file
+  remains owned; preserve live-file backlog admission.
+- Reject impossible post-flush playback-head progress and bound silent top-ups
+  when headphone routing changes Android's startup threshold.
+
+## [v0.9.0-beta.4]
+
+Application release v0.9.0-beta.4, build 90024.
+
+### Added
+
+- Add a separate 48 dp About Email action beside the GitHub issue form, with narrow/large-text reflow and a visible fallback when no email app is available.
+- Add a collapsed update-check preference that cancels automatic checks and persisted jobs when off, preserves manual checking and saves the choice across restarts; cover real scheduler re-arming, cancelled redirects/body reads and cached-check ownership.
+- Add credential-scoped private nicknames and an explicit Use nickname choice in saved-device details without modifying authenticated peer identity.
+- Sync device-owned names over capable existing BLE/LAN channels, retain revision floors and local aliases separately from trust, and resolve current peer labels across Home, Devices, feature selectors and destination controls.
+- Add selected-candidate nearby Pair, a native attempt-bound six-digit comparison sheet, deferred identity verification and trust receipts, fresh foreground connection and a post-connection background setup offer.
+- Scan for anonymous nearby Macs on unpaired Home while foreground/unlocked; present qualified signals in a dismissible Material bottom sheet with manual-pair fallback and explicit permission/retry actions.
+- Add a memory-only proximity signal filter with median smoothing, sustained qualification, hysteresis, expiry and deterministic tests.
 - Mirror authenticated Mac pause notices on device surfaces without changing local automatic setup.
 - Dial authenticated BLE LAN locators before bounded NSD fallback and negotiate fresh EDHOC renewal without replacing the socket or active feature channel.
+
+### Changed
+
+- Set `versionName` to `0.9.0-beta.4` and `versionCode` to `90024`; retain release-workflow overrides.
+- Center About support and repository-star text links, preserve inline `Ce` branding, and keep accessible touch targets and narrow/large-text reflow.
+- Align Updates → More options beside the manual check action, remove the extra disclosure row and shorten the schedule label to 7:30 PM NPT.
+- Use the UI-preview package for emulator instrumentation and inject typed comparison presentation without reflecting compiler-generated fields or exposing writable live authentication state.
+- Test candidate handoff, changed-key rejection and reported fixture skips without treating emulator layouts as physical native approval.
+- Update Kotlin/Compose to 2.4.20 for the build-cache metadata security fix; consume current LAN profile-4 fixtures and remove redundant notification checks and unused strings.
+- Unify nearby, QR/PIN and Devices Auto connect around one authenticated Mac approval; remove the separate Connection settings activity and broad association chooser. Keep a short reconnection note and resume valid saved setup without asking again.
+- Re-enable saved Auto connect without flashing the setup notice; the inline card appears only when Android must ask again or a retry needs attention.
+- Remove unused device-list/setup scaffolding; retain regression coverage and distinguish reconnection consent from feature permissions.
+- Retain already-secured manual Bluetooth through brief Home/Recents and activity handoffs with a fifteen-second monotonic grace, without enabling auto-connect; lock, explicit Disconnect and trust/radio loss still stop access.
+- Start discovery with a bounded fast foreground scan, retry pre-auth transport failures twice and try three foreground trusted reconnects while preserving cancellation, permission and authentication boundaries.
+- Prepare comparison automatically once for a single qualified Mac; preserve multiple-candidate selection, explicit retry and mutual approval.
+- Show default-on Reconnect automatically during comparison, then open native approval for the authenticated Mac without a connection-settings detour.
+- Long-press Devices names to edit this phone's shared name or a paired Mac's private nickname directly, retaining explicit details actions.
+- Ask for Nearby Devices access automatically once on unpaired Home, start discovery on grant and keep an obvious permission/settings action after denial.
+- Reconnect after SAS using a one-use credential-pinned native locator, wait briefly for pairing availability to retire and preserve saved trust on GATT failure.
+- Unify transfer and Share actions with Home, wrap long action groups and tighten Settings card/helper spacing with shorter LAN and DND copy.
+- Retain background LAN idle deadlines through replacement, enforce elapsed time on return/unlock, and show the active work retaining LAN.
+- Let new file actions request enabled automatic LAN after transport Disconnect; retain Bluetooth through picker return, bound ingress separately from its active envelope and honor late successful MTU callbacks.
+- Fence pending Resume lookups on Cancel; restore a retained companion monitor on foreground return without rearming from duplicate presence callbacks.
+- Make Resume one-click, show the armed automatic state and group the existing pause-menu options.
+- Reference-count job work under eligible native owners; preserve leases through renewal and restore the configured idle interval after final background/locked work release.
+
+### Fixed
+
+- Launch ready native auto-connect approval without an extra rendered preparation frame; stop duplicate app progress while Android's scan/approval UI owns it.
+- Align Home fixtures with current device-detail and unpaired navigation, await coalesced media retirement, and keep the opt-in physical benchmark JUnit method void; retain SDK and native-eligibility gates.
+- Keep unrelated first-launch permission prompts out of emulator presentation fixtures and restore the prior preference without granting native permissions.
+- Retire unowned BLE immediately when the last approved-work/picker lease ends after screen-off, including before Activity stop; do not grant unlocked handoff grace while locked.
+- Cancel pending LAN discovery/authentication synchronously on Disconnect; reserve the best-effort encrypted close only for an already-secured channel.
+- Prepare first post-pair auto-reconnect approval inline on Home instead of opening a second aniCe activity; explain native approval, background reconnection and Pause. Preserve setup capability/request capacity events and give acknowledgment its own bounded wait without replaying submitted messages.
+- Keep first auto-reconnect setup in a stable floating panel without a full-screen launch flash or transient retry controls; retain one native request across rotation and reject late cancelled, expired or process-restored results.
+- Make nearby comparison method observable so the phone opens its prompt from idle/QR state; show the same code and attempt-bound actions inside Add device.
+- Show search progress immediately and separate presentation changes from explicit comparison dismissal.
+- Fence LAN deadline checks to the current cryptographic session during retained-socket renewal.
+- Route automatic setup through the compiled activity class in normal and isolated preview packages.
+- Preserve paused setup and release synthetic work leases in native tests.
+- Correct LAN background-timeout and approved-work diagnostics.
+
+## [v0.9.0-beta.3]
+
+Application release v0.9.0-beta.3, build 90023.
+
+### Added
+
 - **In-App Auto-Updates:** Native auto-update manager (`AndroidUpdateManager.kt`, `UpdateUI.kt`) supporting GitHub Releases API and Atom feed fallback with live streaming progress and PackageInstaller handover.
 - Add persisted, network-constrained update checks at 19:30 Nepal time, overdue retry catch-up and silent once-per-version notifications respecting beta preferences.
 - **Timed Connection Pauses:** Silence background auto-reconnects for 1h, 3h, 6h, custom duration, or until manually resumed, with real-time countdowns on Home and Devices.
@@ -39,18 +117,6 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
-- Probe elevated listening buffer floors down only after sustained healthy audio
-  and promptly trim obsolete software backlog when the target decreases.
-- Use a dedicated audio worker and authenticated worker-side PCM admission; lower adaptive buffering floors and avoid repeated silent priming on ordinary audio gaps.
-- Recover listening-mode file credit cautiously from fresh playback health while retaining negotiated chunk-count and delayed-path bounds.
-- Add Balanced/Lower delay adaptive listening profiles, combined-backlog trimming and platform-aware AudioTrack write/startup limits.
-- Route phone media volume locally while listening and pace future file-transfer chunks without replaying or discarding submitted data.
-- Unify transfer and Share actions with Home, wrap long action groups and tighten Settings card/helper spacing with shorter LAN and DND copy.
-- Retain background LAN idle deadlines through replacement, enforce elapsed time on return/unlock, and show the active work retaining LAN.
-- Let new file actions request enabled automatic LAN after transport Disconnect; retain Bluetooth through picker return, bound ingress separately from its active envelope and honor late successful MTU callbacks.
-- Fence pending Resume lookups on Cancel; restore a retained companion monitor on foreground return without rearming from duplicate presence callbacks.
-- Make Resume one-click, show the armed automatic state and group the existing pause-menu options.
-- Reference-count job work under eligible native owners; preserve leases through renewal and restore the configured idle interval after final background/locked work release.
 - Set `versionName` to `0.9.0-beta.3` and `versionCode` to `90023`.
 - Reuse the opaque near-black Dock background for the default/Dark launcher; retain native adaptive sizing and the explicit system Light tile.
 - Present update review in a dismissible bottom sheet with scalable native Markdown, rectangular themed actions, sticky progress and secondary actions under More; retain the reviewed version during automatic refreshes.
@@ -105,14 +171,6 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
-- Ignore terminal transfer counters in listening startup when no outgoing file
-  remains owned; preserve live-file backlog admission.
-- Reject impossible post-flush playback-head progress and bound silent top-ups
-  when headphone routing changes Android's startup threshold.
-- Fence LAN deadline checks to the current cryptographic session during retained-socket renewal.
-- Route automatic setup through the compiled activity class in normal and isolated preview packages.
-- Preserve paused setup and release synthetic work leases in native tests.
-- Correct LAN background-timeout and approved-work diagnostics.
 - Commit identity and trust journals with checked file sync, atomic replacement and directory sync; restore legacy backup-only journals without resetting trust.
 - Bind transfer status waiters to their channel and job epoch; retain verified partial checkpoints and destination grants after publication failure.
 - Resynchronize notifications on capacity restoration, retain bounded capability/action-result retries, and leave incomplete snapshots open rather than dropping current state.

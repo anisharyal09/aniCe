@@ -59,7 +59,8 @@ def generate():
                 "openssl", "ec", "-inform", "DER", "-in", str(private_file), "-pubout", "-outform", "DER"
             )
             point = subject_public_key_info[-65:]
-            assert len(subject_public_key_info) == 91 and point[0] == 4
+            if len(subject_public_key_info) != 91 or point[0] != 4:
+                raise ValueError("OpenSSL produced an invalid P-256 public point")
             public_file = directory / "public-test-key.pub.pem"
             public_file.write_bytes(run("openssl", "ec", "-in", str(pem_file), "-pubout"))
             message_file = directory / "message.bin"
@@ -166,7 +167,8 @@ def generate():
 
 def public_key_der(point):
     """Wraps an uncompressed P-256 point in a SubjectPublicKeyInfo structure."""
-    assert len(point) == 65 and point[0] == 4
+    if len(point) != 65 or point[0] != 4:
+        raise ValueError("Invalid P-256 public point")
     return bytes.fromhex("3059301306072a8648ce3d020106082a8648ce3d030107034200") + point
 
 

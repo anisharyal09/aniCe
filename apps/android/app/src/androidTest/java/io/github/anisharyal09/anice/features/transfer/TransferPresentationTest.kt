@@ -39,10 +39,13 @@ import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
+import org.junit.Rule
+import io.github.anisharyal09.anice.ui.EmulatorPresentationRule
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class TransferPresentationTest {
+    @get:Rule val presentation: org.junit.rules.TestRule = EmulatorPresentationRule()
     private data class Layout(val dark: Boolean, val scale: Float, val width: Int)
     private val layouts = listOf(
         Layout(false, 0.8f, 280), Layout(true, 1.2f, 280),
@@ -71,7 +74,7 @@ class TransferPresentationTest {
                     owner.peerConnected = true
                     owner.peerCompatible = true
                     activity.setContent {
-                        fixture(layout) {
+                        Fixture(layout) {
                             key(revision.intValue) { TransferView(owner, open = {}, overview = true) }
                         }
                     }
@@ -134,7 +137,7 @@ class TransferPresentationTest {
             try {
                 runner.runOnMainSync {
                     activity.setContent {
-                        fixture(layout) {
+                        Fixture(layout) {
                             OutlinedButton(onClick = {}, shape = MaterialTheme.shapes.small,
                                 colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
@@ -171,13 +174,13 @@ class TransferPresentationTest {
             try {
                 runner.runOnMainSync {
                     activity.setContent {
-                        fixture(layout) {
+                        Fixture(layout) {
                             Column(Modifier.verticalScroll(rememberScrollState()),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text("Updates")
                                 Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainer) {
                                     Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
-                                        UpdateSettingsContent(false, UpdateStatus.Idle, null, {}, {})
+                                        UpdateSettingsContent(false, true, UpdateStatus.Idle, null, {}, {}, {})
                                     }
                                 }
                                 Text("Clipboard")
@@ -215,7 +218,7 @@ class TransferPresentationTest {
         }
     }
 
-    @Composable private fun fixture(layout: Layout, content: @Composable ColumnScope.() -> Unit) {
+    @Composable private fun Fixture(layout: Layout, content: @Composable ColumnScope.() -> Unit) {
         val configuration = Configuration(LocalConfiguration.current).apply {
             uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
                 if (layout.dark) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO

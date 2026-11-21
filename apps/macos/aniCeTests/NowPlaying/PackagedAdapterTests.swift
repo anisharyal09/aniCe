@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Verifies native session security and presentation readiness against fixtures and adversarial transitions.
+// Verifies packaged playback-adapter bounds, stale-command rejection and EOF shutdown.
 import CryptoKit
 import AppKit
 import Foundation
@@ -84,4 +84,3 @@ private final class GateBuffer: @unchecked Sendable {
   var firstReceived = false
   var rejectionCount = 0
 }
-

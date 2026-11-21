@@ -29,7 +29,7 @@ struct MacPhoneInputView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       if let phone = connectedPhone {
-        Label(phone.deviceName, systemImage: "iphone")
+        Label(phone.displayName, systemImage: "iphone")
           .font(.system(size: 13 * fontScale, weight: .medium))
           .foregroundStyle(AniCePalette.primaryText(colorScheme))
       }

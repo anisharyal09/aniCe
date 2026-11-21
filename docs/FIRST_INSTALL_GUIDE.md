@@ -99,8 +99,9 @@ Playback scripting controls can require separate Automation permission from an e
 ## Pair the devices
 
 1. Enable Bluetooth on both devices. Use a shared local network for LAN.
-2. On Mac, choose **Add device** and show a QR invitation or six-digit code.
-3. On Android, choose **Add device** and scan or enter that invitation.
-4. Review the peer details and approve on both devices.
+2. For first-time setup, keep both devices unlocked and aniCe open. Allow Android's Nearby Devices request and bring the phone close to the Mac.
+3. Compare all six digits shown on both screens and choose **Confirm** on both only if they match. These comparison digits are not entered. The nearby profile remains provisional, with physical acceptance and independent review pending.
+4. For older peers or additional devices, use **Manual pair** / **Add device**: show a QR invitation or six-digit PIN on Mac, scan or enter it on Android, then review the peer details and approve on both.
+5. After fresh secured Bluetooth readiness, approve Android's optional native auto-connect setup for that verified Mac. Declining preserves pairing and does not grant feature permissions.
 
 Pairing establishes trust. Automatic connection depends on the saved choices and Android companion setup; manual connection remains available. See [Getting started](GETTING_STARTED.md).
