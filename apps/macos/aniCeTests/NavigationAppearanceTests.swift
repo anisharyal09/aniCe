@@ -74,6 +74,14 @@ extension SessionTests {
     }
   }
 
+  func testEmailLinkContainsOnlyThePublicAddressAndFixedSubject() throws {
+    let components = try XCTUnwrap(URLComponents(url: IssueReport.emailURL, resolvingAgainstBaseURL: false))
+    XCTAssertEqual(components.scheme, "mailto")
+    XCTAssertEqual(components.path, "anish.creations.hq@gmail.com")
+    XCTAssertNil(components.fragment)
+    XCTAssertEqual(components.queryItems, [URLQueryItem(name: "subject", value: "[aniCe] Feedback & Support")])
+  }
+
   @MainActor func testDockReopenRestoresMainWindowWhenOtherWindowsAreVisible() {
     let delegate = AppDelegate()
     var requests = 0
@@ -487,6 +495,90 @@ final class BetaUpdatePreferenceTests: XCTestCase {
     XCTAssertFalse(consent.confirming)
     XCTAssertEqual(consent.request(false, current: false), false)
     XCTAssertFalse(consent.confirming)
+  }
+}
+
+@MainActor final class AboutFeedbackLinksTests: XCTestCase {
+  func testIssueAndEmailActionsOpenIndependentDestinationsWithoutSendingData() async throws {
+    let report = IssueReport.url(appVersion: "0.9.0-beta.4", osVersion: "macOS fixture")
+    for scheme in [ColorScheme.light, .dark] {
+      for scale in [0.8, 1.0, 1.2] {
+        for width in [220.0, 600.0] {
+          var opened = [URL]()
+          let content = AboutFeedbackLinks(reportURL: report, fontScale: scale)
+            .environment(\.colorScheme, scheme)
+            .environment(\.openURL, OpenURLAction { url in opened.append(url); return .handled })
+            .frame(width: width)
+          let host = NSHostingView(rootView: content)
+          let size = host.fittingSize
+          let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: 100, y: 100), size: size),
+            styleMask: [.titled], backing: .buffered, defer: false)
+          window.isReleasedWhenClosed = false
+          window.contentView = host
+          window.orderFront(nil)
+          defer { window.contentView = nil; window.close() }
+          try await Task.sleep(for: .milliseconds(80))
+          host.layoutSubtreeIfNeeded()
+          XCTAssertEqual(host.fittingSize.width, width, accuracy: 1)
+          XCTAssertTrue(opened.isEmpty, "Rendering About must not open a mail composer or issue form")
+          XCTAssertNil(window.firstResponder as? NSTextView)
+          for point in [NSPoint(x: 45, y: 18), NSPoint(x: width - 16, y: size.height - 18)] {
+            let location = host.convert(point, to: nil)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+              let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+              window.sendEvent(event)
+            }
+            try await Task.sleep(for: .milliseconds(80))
+          }
+          XCTAssertEqual(opened, [report, IssueReport.emailURL])
+        }
+      }
+    }
+  }
+}
+
+@MainActor final class AboutSupportLinksTests: XCTestCase {
+  func testCenteredNativeLinksOpenOnlyTheirDestinationAcrossThemesAndTextSizes() async throws {
+    for scheme in [ColorScheme.light, .dark] {
+      for scale in [0.8, 1.0, 1.2] {
+        for width in [300.0, 600.0] {
+          var opened = [URL]()
+          let content = AboutSupportLinks(fontScale: scale)
+            .environment(\.colorScheme, scheme)
+            .environment(\.openURL, OpenURLAction { url in opened.append(url); return .handled })
+            .frame(width: width, height: 64, alignment: .top)
+          let host = NSHostingView(rootView: content)
+          let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: width, height: 64),
+            styleMask: [.titled], backing: .buffered, defer: false)
+          window.isReleasedWhenClosed = false
+          window.contentView = host
+          window.orderFront(nil)
+          defer { window.contentView = nil; window.close() }
+          try await Task.sleep(for: .milliseconds(80))
+          host.layoutSubtreeIfNeeded()
+          XCTAssertEqual(host.fittingSize.width, width, accuracy: 1)
+          XCTAssertTrue(opened.isEmpty, "Rendering a reminder must not open any URL")
+          XCTAssertNil(window.firstResponder as? NSTextView, "About must not acquire typing focus")
+          // Both native targets are centered, with separate 32 pt rows.
+          for y in [16.0, 48.0] {
+            let location = host.convert(NSPoint(x: width / 2, y: y), to: nil)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+              let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+              window.sendEvent(event)
+            }
+            try await Task.sleep(for: .milliseconds(80))
+          }
+          XCTAssertEqual(opened.map(\.absoluteString), [
+            "https://anisharyal09.com.np/support?from=anice",
+            "https://github.com/anisharyal09/aniCe",
+          ])
+        }
+      }
+    }
   }
 }
 

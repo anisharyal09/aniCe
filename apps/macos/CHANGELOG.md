@@ -4,8 +4,13 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
+## [v0.9.0-beta.4] — unreleased candidate
+
+Version `0.9.0-beta.4`, build `90024`. Not published.
+
 ### Added
 
+- Add a native About Email link beside the GitHub issue form, with independent click targets and a fixed-subject draft containing no diagnostics or attachments.
 - Add a collapsed update-check preference that stops the deadline timer, native catch-up observers and automatic metadata work when off; retain manual checks and verify monitoring restarts from the saved preference.
 - Add own-name editing to the pairing screen and private saved-device nicknames with an explicit Use nickname choice; leave trust credentials unchanged.
 - Add authenticated live/reconnect device-name snapshots, revisioned no-backup display storage and shared label resolution for current device/companion and feature surfaces without recreating secure sessions.
@@ -17,10 +22,11 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Set Debug and Release versions to `0.9.0-beta.4` / `90024`.
+- Center About support with a quiet branded repository-star link beneath it; retain native link focus/hover behavior and scaled text.
 - Move orphaned playback adapter parsing, selection and scheduling checks into hosted XCTest; consume the current LAN profile-4 resource in the native oracle.
 - Use native Liquid Glass for the floating comparison card on macOS 26+, native material on older systems and a solid Reduce Transparency fallback; preserve legible code, same-attempt actions and non-activating focus.
-- Remove an unused window text-scale mapper; keep actual font-scale behavior.
-- Compact the non-activating comparison card with a native smartphone symbol, shorter copy and unchanged same-attempt approval/focus behavior.
+- Compact the non-activating comparison card and remove an unused text-scale mapper; retain native focus, scaling and same-attempt approval.
 - Open shared-name/private-nickname editors directly from held Devices names or native context menus, preserving normal click-to-details and save failures.
 - Advertise the existing generic BLE service for bounded authenticated Android companion enrollment without reopening occupied session admission.
 - Fence delayed native unsubscribe callbacks against the current characteristic and live subscription; report profile/read/write outcomes without peer payloads.

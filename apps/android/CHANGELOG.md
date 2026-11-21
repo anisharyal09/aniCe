@@ -4,8 +4,13 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+## [v0.9.0-beta.4] — unreleased candidate
+
+Version `0.9.0-beta.4`, build `90024`. Not published.
+
 ### Added
 
+- Add a separate 48 dp About Email action beside the GitHub issue form, with narrow/large-text reflow and a visible fallback when no email app is available.
 - Add a collapsed update-check preference that cancels automatic checks and persisted jobs when off, preserves manual checking and saves the choice across restarts; cover real scheduler re-arming, cancelled redirects/body reads and cached-check ownership.
 - Add credential-scoped private nicknames and an explicit Use nickname choice in saved-device details without modifying authenticated peer identity.
 - Sync device-owned names over capable existing BLE/LAN channels, retain revision floors and local aliases separately from trust, and resolve current peer labels across Home, Devices, feature selectors and destination controls.
@@ -17,14 +22,15 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Set `versionName` to `0.9.0-beta.4` and `versionCode` to `90024`; retain release-workflow overrides.
+- Center About support and repository-star text links, preserve inline `Ce` branding, and keep accessible touch targets and narrow/large-text reflow.
 - Align Updates → More options beside the manual check action, remove the extra disclosure row and shorten the schedule label to 7:30 PM NPT.
 - Use the UI-preview package for emulator instrumentation and inject typed comparison presentation without reflecting compiler-generated fields or exposing writable live authentication state.
 - Test candidate handoff, changed-key rejection and reported fixture skips without treating emulator layouts as physical native approval.
 - Update Kotlin/Compose to 2.4.20 for the build-cache metadata security fix; consume current LAN profile-4 fixtures and remove redundant notification checks and unused strings.
 - Unify nearby, QR/PIN and Devices Auto connect around one authenticated Mac approval; remove the separate Connection settings activity and broad association chooser. Keep a short reconnection note and resume valid saved setup without asking again.
 - Re-enable saved Auto connect without flashing the setup notice; the inline card appears only when Android must ask again or a retry needs attention.
-- Remove unused device-list text resources and obsolete setup-intent scaffolding; retain approval, lifecycle, credential and presentation regression tests.
-- Explain general device reconnection during native auto-connect setup, keeping feature permissions separate from companion approval.
+- Remove unused device-list/setup scaffolding; retain regression coverage and distinguish reconnection consent from feature permissions.
 - Retain already-secured manual Bluetooth through brief Home/Recents and activity handoffs with a fifteen-second monotonic grace, without enabling auto-connect; lock, explicit Disconnect and trust/radio loss still stop access.
 - Start discovery with a bounded fast foreground scan, retry pre-auth transport failures twice and try three foreground trusted reconnects while preserving cancellation, permission and authentication boundaries.
 - Prepare comparison automatically once for a single qualified Mac; preserve multiple-candidate selection, explicit retry and mutual approval.

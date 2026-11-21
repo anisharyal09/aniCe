@@ -8,8 +8,13 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+## [v0.9.0-beta.4] — unreleased candidate
+
+Version `0.9.0-beta.4`, build `90024`. Not published.
+
 ### Added
 
+- Add Email beside the About GitHub issue form and center support above a quiet repository-star link. All actions are user-initiated; email includes only the public address and fixed subject.
 - Add a saved automatic update-check opt-out under Updates → More options on phone and Mac, keeping manual checks available.
 - Add authenticated live/reconnect device-name sync and private credential-scoped nicknames with default-off display override across current device surfaces; preserve pairing evidence and secure sessions during metadata changes.
 - Add seamless first-time nearby pairing with matching six-digit comparison, mutual confirmation, a native Mac floating/in-app card and immediate authenticated connection; keep QR/PIN fallback and offer Android background setup afterward.
@@ -18,13 +23,12 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Set both apps to `0.9.0-beta.4` / `90024` and test shared version ordering. Public downloads remain on published beta 3.
 - Join wrapped documentation prose and list entries without changing contracts; clarify that verification timeouts are upper bounds, not required waits.
 - Replace pairing fixture reflection with typed injected presentation and hardware-free handoff regressions; document credential matching and separate visible emulator skips from physical nearby-pairing acceptance.
 - Refresh the host CBOR oracle and Kotlin/Compose build plugin for reviewed security fixes; move CodeQL off its discontinued bundled toolchain and extend code-owner review to shared contracts and native authentication foundations.
 - Remove superseded Core Graphics feasibility probes, retain the focused IME diagnostic, and document each verification lane and its acceptance limits.
-- Simplify all Android auto-connect entry points to one verified-device approval and short note, preserving Android consent while removing device-management detours and unused setup-screen code.
-- Remove the intermediate Android auto-reconnect setup popup, clarify its background/pause purpose and use native Mac glass for floating code comparison.
-- Stabilize Android's first auto-reconnect approval and clarify general device reconnection; remove superseded edge-drop prototype code and stale nearby-setup descriptions while retaining native/product regression coverage.
+- Unify Android auto-connect entry points around one verified-device native approval; remove intermediate setup screens and unused scaffolding. Use native Mac glass for floating comparison.
 - Speed up foreground nearby discovery and add bounded trusted reconnect attempts; retain explicit stop/verification boundaries and wait through Mac pairing handoff.
 - Open first-pair comparison directly for one nearby Mac, make native auto-reconnect approval device-specific, and add direct Devices name editors with a smaller native Mac comparison card.
 - Request Android discovery permission once on first unpaired launch, retain clear denial recovery on Home, and pin immediate Bluetooth handoff to the just-verified Mac.
@@ -35,12 +39,12 @@ Shared product changes, repository structure, documentation and development conv
 - Make Cancel invalidate pending Connect-to-Resume work, retain event-scoped recovery and close unfinished admission immediately on Pause.
 - Make Resume immediate and group pause durations, indefinite pause and custom duration in the native menus.
 - Restore the first-install Play Protect alternatives, including temporary scanning disablement and re-enablement afterward.
-- Document direct-first LAN discovery, retained-socket renewal and native background work.
-- Separate behavior guides, wire contracts and developer instructions; remove public test-run diaries.
+- Update LAN discovery/renewal and native background-work guides; separate behavior, contracts and developer instructions and remove public test diaries.
 - Streamline README introduction with direct download badges, Homebrew instructions, and consolidated setup guide links.
 
 ### Fixed
 
+- Avoid duplicate feature-branch push and PR CI builds while preserving main-push release evidence; isolate manual-run concurrency and document the required GitHub merge-gate setting.
 - Preserve actionable Mac Bluetooth-off setup guidance after cleanup and remove an extra Android preparation frame before native auto-connect approval.
 - Fence Mac invitation publication and discovery startup after suspended actor reads so Stop, sleep and replacement cannot revive a retired pairing owner.
 - Isolate mocked Mac LAN lifecycle verification from host-network events while preserving production path gates and bounded admission deadlines.

@@ -66,3 +66,9 @@ An update changes the application, not the permissions granted by another comput
 ## Report a problem
 
 Open **About → Report an issue** to open the GitHub bug-report form. aniCe fills in only its app version and your OS version. It does not automatically attach logs, messages, device identities or files. Review the report and redact personal information before submitting; a GitHub account is required. Use [security reporting](../SECURITY.md) for vulnerabilities instead of a public issue.
+
+Choose **Email** beside **GitHub form** to open [anish.creations.hq@gmail.com](mailto:anish.creations.hq@gmail.com?subject=%5BaniCe%5D%20Feedback%20%26%20Support) in your email app with the subject `[aniCe] Feedback & Support`. aniCe adds no body or attachments; you write, review and send it.
+
+## Support aniCe
+
+About shows **Support aniCe :)** above **☆ Star aniCe on GitHub**. The star link opens the repository, where you can choose Star. Both actions are optional, with no automatic starring, tracking or recurring prompts.

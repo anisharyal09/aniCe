@@ -43,8 +43,8 @@ android {
         manifestPlaceholders["aniceAppLabel"] = "@string/app_name"
         minSdk = 29
         targetSdk = 36
-        versionCode = providers.gradleProperty("aniceVersionCode").orNull?.toInt() ?: 90023
-        versionName = providers.gradleProperty("aniceVersionName").orNull ?: "0.9.0-beta.3"
+        versionCode = providers.gradleProperty("aniceVersionCode").orNull?.toInt() ?: 90024
+        versionName = providers.gradleProperty("aniceVersionName").orNull ?: "0.9.0-beta.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {

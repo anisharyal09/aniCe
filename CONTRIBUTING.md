@@ -32,6 +32,8 @@ For platform-specific testing:
 
 The `ci-integrity` lane also requires actionlint 1.7.12 on `PATH`; it is not installed by pip.
 
+GitHub CI runs on PRs targeting `main`, merge-queue candidates, `main` pushes and manual dispatch. Feature branches use PR checks, or manual dispatch before a PR, rather than duplicate push builds. Configure `verify-required` as a required status check in the repository's `main` ruleset and require workflow code-owner review; YAML does not enable those GitHub settings. Release signing still requires successful main-push CI for the exact release commit.
+
 ### What each lane verifies
 
 | Lane | Evidence |
@@ -61,7 +63,7 @@ Physical BLE, minimum-OS behavior, real-player controls, permission persistence 
 - Describe the problem, resulting behavior and the checks performed.
 - Add regression tests for changed logic and update the relevant guide or contract. UI changes should include before/after captures.
 - Use cohesive commits with descriptive subjects; Conventional Commits are welcome.
-- Record shared changes in the root changelog and platform/contract details in their component changelogs. Keep entries under Unreleased until publication, ordered Added, Changed, Fixed. Earlier versions marked as development milestones are not published releases.
+- Record shared changes in the root changelog and platform/contract details in their component changelogs, ordered Added, Changed and Fixed. Keep work under Unreleased or a named unreleased-candidate section until publication; do not add a publication date before release. Development milestones are not published releases.
 - Do not include private signing credentials, local audit logs or maintainer checklists.
 
 ## Code Style & Conventions

@@ -873,13 +873,24 @@ class SettingsRefinementTests {
                     }
                     assertTrue(drawn.await(10, TimeUnit.SECONDS))
                     idle()
+                    reveal("Reach out")
                     assertNotNull(find(root(), "Reach out"))
                     assertNull(find(root(), "Developer"))
                     val contact = bounds(find(root(), "Reach out"))
                     val profile = bounds(clickable(find(root(), "@anisharyal09")))
                     val x = bounds(clickable(find(root(), "X profile")))
                     val linkedIn = bounds(clickable(find(root(), "LinkedIn profile")))
-                    val row = bounds(clickable(find(root(), "Report an issue")))
+                    val row = bounds(clickable(find(root(), "License")))
+                    val email = bounds(clickable(find(root(), "Email")))
+                    val github = bounds(clickable(find(root(), "GitHub form")))
+                    assertTrue("GitHub and Email have independent targets", github.right <= email.left)
+                    assertEquals("Email stays beside the issue form",
+                        github.centerY().toFloat(), email.centerY().toFloat(), 3 * activity.resources.displayMetrics.density)
+                    assertTrue(email.height() >= (48 * activity.resources.displayMetrics.density).toInt())
+                    assertEquals("Email keeps one readable line even when GitHub form wraps",
+                        48 * activity.resources.displayMetrics.density, email.height().toFloat(), 1f)
+                    assertEquals("The Email action remains trailing", row.right.toFloat(),
+                        email.right.toFloat(), 4 * activity.resources.displayMetrics.density)
                     if (scale <= 1.2f) {
                         assertEquals("Contact name and socials must share one row when they fit",
                             profile.centerY().toFloat(), x.centerY().toFloat(), 3 * activity.resources.displayMetrics.density)
@@ -915,6 +926,31 @@ class SettingsRefinementTests {
                     assertEquals("bug_report.yml", fields["template"])
                     assertFalse(fields["app-version"].isNullOrBlank())
                     assertTrue(fields["os-version"]!!.startsWith("Android "))
+                    opened.clear()
+                    click("Email")
+                    assertEquals(listOf(IssueReport.emailUrl), opened)
+                    opened.clear()
+                    reveal("Star aniCe on GitHub")
+                    val support = bounds(clickable(find(root(), "Support aniCe")))
+                    val star = bounds(clickable(find(root(), "Star aniCe on GitHub")))
+                    val density = activity.resources.displayMetrics.density
+                    assertTrue(support.height() >= (48 * density).toInt())
+                    assertTrue(star.height() >= (48 * density).toInt())
+                    assertEquals("Support and star links share the About content center",
+                        row.centerX().toFloat(), support.centerX().toFloat(), 3 * density)
+                    assertEquals(support.centerX().toFloat(), star.centerX().toFloat(), 3 * density)
+                    assertTrue("The quiet reminder stays below support without overlapping its target",
+                        support.bottom <= star.top)
+                    assertTrue("The complete star text remains inside the viewport",
+                        star.left >= bounds(root()).left && star.right <= bounds(root()).right &&
+                            star.bottom <= bounds(root()).bottom)
+                    assertTrue("Rendering About never opens support or GitHub automatically", opened.isEmpty())
+                    capture("about-footer-${if (dark) "dark" else "light"}-${(scale * 100).toInt()}-${width.value.toInt()}")
+                    click("Star aniCe on GitHub")
+                    assertEquals(listOf("https://github.com/anisharyal09/aniCe"), opened)
+                    opened.clear()
+                    click("Support aniCe")
+                    assertEquals(listOf("https://anisharyal09.com.np/support?from=anice"), opened)
                 } finally {
                     runner.runOnMainSync { activity.finish() }
                     runner.waitForIdleSync()
@@ -980,6 +1016,24 @@ class SettingsRefinementTests {
         assertNotNull("Missing action: $label", action)
         assertTrue(action!!.performAction(AccessibilityNodeInfo.ACTION_CLICK))
         idle()
+    }
+    private fun reveal(label: String) {
+        repeat(6) {
+            val node = find(root(), label)
+            if (node != null && node.isVisibleToUser && !bounds(node).isEmpty) return
+            val scroll = scrollable(root())
+            assertNotNull("Missing About scroll container", scroll)
+            val area = bounds(scroll)
+            val startY = area.top + area.height() * 3 / 4
+            val endY = area.top + area.height() / 4
+            val command = "input swipe ${area.centerX()} $startY ${area.centerX()} $endY 300"
+            ParcelFileDescriptor.AutoCloseInputStream(
+                InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
+            ).use { it.readBytes() }
+            idle()
+        }
+        capture("about-footer-reveal-failure")
+        fail("Could not reveal $label: target=${find(root(), label)?.let { bounds(it) }}, viewport=${bounds(root())}")
     }
     private fun pressBack() {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation

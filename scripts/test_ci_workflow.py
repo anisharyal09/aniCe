@@ -270,6 +270,22 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("merge_group", events)
         self.assertIn("workflow_dispatch", events)
 
+    def test_ci_runs_once_per_pr_update_and_keeps_main_push_release_evidence(self):
+        document = workflow_documents()["ci.yml"]
+        self.assertEqual(triggers(document), {"push", "pull_request", "merge_group", "workflow_dispatch"})
+        # No feature-branch pushes or path filters that can leave a required check pending.
+        self.assertEqual(document["on"]["push"], {"branches": ["main"]})
+        self.assertEqual(document["on"]["pull_request"], {"branches": ["main"]})
+        self.assertIsNone(document["on"]["merge_group"])
+        self.assertIsNone(document["on"]["workflow_dispatch"])
+
+    def test_ci_concurrency_separates_manual_runs_from_release_push_evidence(self):
+        document = workflow_documents()["ci.yml"]
+        self.assertEqual(document.get("concurrency"), {
+            "group": "${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}",
+            "cancel-in-progress": True,
+        })
+
     def test_pull_request_workflows_never_download_or_run_pr_artifacts(self):
         for name, document in workflow_documents().items():
             if not (triggers(document) & PR_EVENTS):

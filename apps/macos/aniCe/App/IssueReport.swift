@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Builds a user-reviewed GitHub issue link containing only app and OS versions.
+// Builds user-reviewed GitHub and email links without private diagnostics.
 import Foundation
 
 enum IssueReport {
+  static let emailURL = URL(string: "mailto:anish.creations.hq@gmail.com?subject=%5BaniCe%5D%20Feedback%20%26%20Support")!
+
   static func url(appVersion: String, osVersion: String) -> URL {
     var components = URLComponents()
     components.scheme = "https"

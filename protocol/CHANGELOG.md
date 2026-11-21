@@ -1,8 +1,12 @@
 # Protocol changelog
 
-Records shared communication-contract changes and compatibility implications. Protocol contracts remain independently versioned; entries are grouped by application development milestone until the first public release. Repository-wide changes are recorded in the [root changelog](../CHANGELOG.md).
+Shared contract changes and compatibility implications, grouped by application version. Protocol contracts remain independently versioned. See the [root changelog](../CHANGELOG.md) for product changes.
 
 ## [Unreleased]
+
+## [v0.9.0-beta.4] — unreleased candidate
+
+Protocol updates for `0.9.0-beta.4`. Not published.
 
 ### Added
 

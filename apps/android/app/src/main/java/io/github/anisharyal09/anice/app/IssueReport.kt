@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Builds a user-reviewed GitHub issue link containing only app and OS versions.
+// Builds user-reviewed GitHub and email links without private diagnostics.
 package io.github.anisharyal09.anice.app
 
 import java.net.URLEncoder
 
 internal object IssueReport {
+    const val emailAddress = "anish.creations.hq@gmail.com"
+    const val emailUrl = "mailto:$emailAddress?subject=%5BaniCe%5D%20Feedback%20%26%20Support"
+
     fun url(appVersion: String, osVersion: String): String {
         val fields = listOf(
             "template" to "bug_report.yml",

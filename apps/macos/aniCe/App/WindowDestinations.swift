@@ -3,6 +3,99 @@
 import SwiftUI
 import AppKit
 
+struct AboutFeedbackLinks: View {
+  var reportURL: URL
+  var fontScale: Double = 1.0
+  @Environment(\.colorScheme) private var colorScheme
+
+  var body: some View {
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: 12) {
+        reportTitle
+        Spacer(minLength: 12)
+        actions
+      }
+      VStack(alignment: .leading, spacing: 0) {
+        reportTitle
+        actions.frame(maxWidth: .infinity, alignment: .trailing)
+      }
+    }
+    .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+    .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
+  }
+
+  private var reportTitle: some View {
+    Link(destination: reportURL) {
+      Text("Report an issue").font(.system(size: 13 * fontScale))
+        .foregroundStyle(AniCePalette.primaryText(colorScheme)).fixedSize()
+        .frame(minHeight: 36).contentShape(Rectangle())
+    }
+    .buttonStyle(AniCeHoverButtonStyle())
+    .accessibilityLabel("Report an issue")
+  }
+
+  private var actions: some View {
+    HStack(spacing: 8) {
+      Link(destination: reportURL) {
+        Label("GitHub form", systemImage: "arrow.up.right")
+          .font(.system(size: 12 * fontScale)).fixedSize()
+          .padding(.horizontal, 4).frame(minHeight: 36).contentShape(Rectangle())
+      }
+      .buttonStyle(AniCeHoverButtonStyle())
+      .accessibilityLabel("GitHub issue form")
+      Link(destination: IssueReport.emailURL) {
+        Label("Email", systemImage: "envelope")
+          .font(.system(size: 12 * fontScale)).fixedSize()
+          .padding(.horizontal, 4).frame(minHeight: 36).contentShape(Rectangle())
+      }
+      .buttonStyle(AniCeHoverButtonStyle())
+      .accessibilityLabel("Email aniCe")
+      .help("Email anish.creations.hq@gmail.com")
+    }
+    .foregroundStyle(AniCePalette.secondaryText(colorScheme)).fixedSize()
+  }
+}
+
+struct AboutSupportLinks: View {
+  var fontScale: Double = 1.0
+  @Environment(\.colorScheme) private var colorScheme
+
+  var body: some View {
+    VStack(spacing: 0) {
+      Link(destination: URL(string: "https://anisharyal09.com.np/support?from=anice")!) {
+        HStack(spacing: 6) {
+          Image(systemName: "heart").font(.system(size: 13 * fontScale)).accessibilityHidden(true)
+          AniCeWordmark(size: 13 * fontScale, weight: .regular, prefix: "Support ", suffix: " :)")
+            .multilineTextAlignment(.center)
+        }
+        .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .frame(minHeight: 32)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(AniCeHoverButtonStyle())
+      .accessibilityIdentifier("about.support")
+      .accessibilityLabel("Support aniCe")
+      .help("Support aniCe")
+
+      Link(destination: URL(string: "https://github.com/anisharyal09/aniCe")!) {
+        AniCeWordmark(size: 12 * fontScale, weight: .regular, prefix: "☆ Star ", suffix: " on GitHub")
+          .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
+          .padding(.horizontal, 8).padding(.vertical, 4)
+          .frame(minHeight: 32)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(AniCeHoverButtonStyle())
+      .accessibilityIdentifier("about.star")
+      .accessibilityLabel("Star aniCe on GitHub")
+      .help("Open aniCe on GitHub to star the repository")
+    }
+    .frame(maxWidth: .infinity)
+  }
+}
+
 extension MainWindowView {
   @ViewBuilder var homeContent: some View {
     GeometryReader { geometry in
@@ -224,7 +317,7 @@ extension MainWindowView {
           .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
           aboutLink("Source code", detail: "GitHub", destination: "https://github.com/anisharyal09/aniCe")
           aboutLink("License", detail: "GPL-3.0-or-later", destination: "https://github.com/anisharyal09/aniCe/blob/main/LICENSE")
-          aboutLink("Report an issue", detail: "GitHub form", destination: IssueReport.currentURL.absoluteString)
+          AboutFeedbackLinks(reportURL: IssueReport.currentURL, fontScale: fontScale)
           ViewThatFits(in: .horizontal) {
             HStack(spacing: 12) {
               Text("Reach out").font(.system(size: 13 * fontScale)).fixedSize()
@@ -248,18 +341,7 @@ extension MainWindowView {
             .foregroundStyle(AniCePalette.secondaryText(colorScheme))
             .fixedSize(horizontal: false, vertical: true)
 
-          Link(destination: URL(string: "https://anisharyal09.com.np/support?from=anice")!) {
-            HStack(spacing: 6) {
-              Image(systemName: "heart").font(.system(size: 13 * fontScale))
-              Text("Support aniCe :)").font(.system(size: 13 * fontScale))
-            }
-            .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
-          }
-          .buttonStyle(AniCeHoverButtonStyle())
-          .accessibilityLabel("Support aniCe")
-          .help("Support aniCe")
+          AboutSupportLinks(fontScale: fontScale)
         }
         .padding(.top, 4)
         .frame(maxWidth: 660, alignment: .leading)

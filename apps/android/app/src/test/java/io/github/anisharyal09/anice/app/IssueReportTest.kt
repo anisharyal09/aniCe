@@ -8,6 +8,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class IssueReportTest {
+    @Test fun emailLinkUsesThePublicAddressAndOnlyAFixedSubject() {
+        val url = URI(IssueReport.emailUrl)
+        assertEquals("mailto", url.scheme)
+        assertEquals("anish.creations.hq@gmail.com", url.rawSchemeSpecificPart.substringBefore("?"))
+        assertNull(url.fragment)
+        val fields = url.rawSchemeSpecificPart.substringAfter("?").split("&").associate {
+            val pair = it.split("=", limit = 2)
+            pair[0] to URLDecoder.decode(pair[1], "UTF-8")
+        }
+        assertEquals(mapOf("subject" to "[aniCe] Feedback & Support"), fields)
+    }
+
     @Test fun versionFieldsAreEncodedAndAreTheOnlyPrefilledInformation() {
         val cases = listOf(
             "0.9.0-beta.1" to "Android 16 (API 36)",
