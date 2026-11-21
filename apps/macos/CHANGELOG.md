@@ -4,9 +4,9 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ## [Unreleased]
 
-## [v0.9.0-beta.4] — unreleased candidate
+## [v0.9.0-beta.4]
 
-Version `0.9.0-beta.4`, build `90024`. Not published.
+Application release v0.9.0-beta.4, build 90024.
 
 ### Added
 

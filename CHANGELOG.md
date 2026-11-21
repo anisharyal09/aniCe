@@ -8,9 +8,9 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
-## [v0.9.0-beta.4] — unreleased candidate
+## [v0.9.0-beta.4]
 
-Version `0.9.0-beta.4`, build `90024`. Not published.
+Application release v0.9.0-beta.4, build 90024.
 
 ### Added
 
@@ -23,7 +23,8 @@ Version `0.9.0-beta.4`, build `90024`. Not published.
 
 ### Changed
 
-- Set both apps to `0.9.0-beta.4` / `90024` and test shared version ordering. Public downloads remain on published beta 3.
+- Set both apps to `0.9.0-beta.4` / `90024` and test shared version ordering.
+  Update public download badges and Homebrew tap.
 - Join wrapped documentation prose and list entries without changing contracts; clarify that verification timeouts are upper bounds, not required waits.
 - Replace pairing fixture reflection with typed injected presentation and hardware-free handoff regressions; document credential matching and separate visible emulator skips from physical nearby-pairing acceptance.
 - Refresh the host CBOR oracle and Kotlin/Compose build plugin for reviewed security fixes; move CodeQL off its discontinued bundled toolchain and extend code-owner review to shared contracts and native authentication foundations.

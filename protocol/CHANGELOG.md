@@ -4,9 +4,9 @@ Shared contract changes and compatibility implications, grouped by application v
 
 ## [Unreleased]
 
-## [v0.9.0-beta.4] — unreleased candidate
+## [v0.9.0-beta.4]
 
-Protocol updates for `0.9.0-beta.4`. Not published.
+Protocol updates for `0.9.0-beta.4`.
 
 ### Added
 
