@@ -403,13 +403,14 @@ private struct FloatingKeyboardPanelView: View {
       height: controller.isExpanded ? controller.expandedSize.height : 48)
     .onChange(of: model.pairedDevicesChecked) { _, _ in controller.pairingCheckChanged() }
     .onChange(of: model.phase) { _, _ in controller.connectionPhaseChanged() }
+    .aniCeAppearance()
   }
 
   private var compactControl: some View {
     let isActive = model.isControlling(owner: controller.captureOwner)
     return ZStack {
       RoundedRectangle(cornerRadius: 15)
-        .fill(isActive ? AniCePalette.accent(scheme) : AniCePalette.surface(scheme))
+        .fill(isActive ? AniCePalette.accent(scheme) : Color.clear)
       FloatingKeyboardInputSurface(controller: controller, model: model)
         .padding(3)
       Image(systemName: controller.symbolName)
@@ -425,6 +426,7 @@ private struct FloatingKeyboardPanelView: View {
           .allowsHitTesting(false)
       }
     }
+    .aniCeSurface(cornerRadius: 15)
     .overlay {
       RoundedRectangle(cornerRadius: 15)
         .stroke(isActive ? AniCePalette.onAccent(scheme).opacity(0.55) : AniCePalette.separator(scheme),
@@ -469,7 +471,6 @@ private struct FloatingKeyboardPanelView: View {
       .padding(.vertical, 10)
       .background {
         ZStack {
-          AniCePalette.surface(scheme)
           FloatingWindowDragHandle()
         }
       }
@@ -486,7 +487,7 @@ private struct FloatingKeyboardPanelView: View {
       .background(AniCePalette.background(scheme))
     }
     .foregroundStyle(AniCePalette.primaryText(scheme))
-    .background(AniCePalette.background(scheme))
+    .aniCeSurface(cornerRadius: 12)
     .overlay(RoundedRectangle(cornerRadius: 12).stroke(AniCePalette.separator(scheme), lineWidth: 0.75))
     .clipShape(RoundedRectangle(cornerRadius: 12))
     .shadow(color: .black.opacity(0.18), radius: 12, y: 5)

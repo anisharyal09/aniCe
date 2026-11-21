@@ -544,7 +544,7 @@ private struct EdgeDropShelfView: View {
     }
     .padding(.horizontal, 20)
     .frame(width: controller.presentationSize.width, height: controller.presentationSize.height)
-    .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 16))
+    .aniCeSurface(cornerRadius: 16)
     .overlay {
       RoundedRectangle(cornerRadius: 16).stroke(AniCePalette.separator(scheme), lineWidth: 1)
     }

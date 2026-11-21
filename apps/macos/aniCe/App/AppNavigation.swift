@@ -12,6 +12,19 @@ enum AppDestination: String, CaseIterable, Identifiable {
 }
 enum DeviceRoute: Equatable { case overview, pairing }
 enum SettingsRoute: Equatable { case overview, identity, about }
+
+enum MacSettingsCategory: String, CaseIterable {
+  case all = "All", general = "General", permissions = "Permissions", features = "Features", shortcuts = "Shortcuts"
+
+  static func category(for section: String) -> Self {
+    switch section {
+    case "appearance", "updates", "connection", "this-device": .general
+    case "permissions": .permissions
+    case "shortcuts": .shortcuts
+    default: .features
+    }
+  }
+}
 // Stable identifiers belong to local presentation preferences, never peer capabilities.
 enum AppFeature: String, CaseIterable, Identifiable {
   case keyboardTrackpad, messages, files, clipboard, findDevice, playback

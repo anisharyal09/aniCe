@@ -3,6 +3,119 @@
 import AppKit
 import SwiftUI
 
+enum NativeGlassStyle: String, CaseIterable {
+  case standard = "Standard", vibrant = "Vibrant"
+  static func stored(_ value: String) -> Self { Self(rawValue: value) ?? .standard }
+}
+
+enum NativeGlassPresentation: Equatable {
+  case solid, material, glass
+
+  static func resolve(enabled: Bool, reduceTransparency: Bool, supportsGlass: Bool) -> Self {
+    guard enabled, !reduceTransparency else { return .solid }
+    return supportsGlass ? .glass : .material
+  }
+}
+
+extension View {
+  func aniCeAppearance() -> some View {
+    modifier(AniCeHostAppearance())
+  }
+
+  func aniCeSurface(cornerRadius: CGFloat = 0, secondary: Bool = false) -> some View {
+    modifier(AniCeNativeSurface(cornerRadius: cornerRadius, secondary: secondary))
+  }
+}
+
+private struct AniCeHostAppearance: ViewModifier {
+  @AppStorage("window.appearance") private var appearance = WindowAppearance.system.rawValue
+  @State private var systemAppearance = SystemAppearance()
+
+  func body(content: Content) -> some View {
+    content.preferredColorScheme(WindowAppearance.stored(appearance)
+      .colorScheme(system: systemAppearance.colorScheme))
+  }
+}
+
+private struct AniCeNativeSurface: ViewModifier {
+  let cornerRadius: CGFloat
+  let secondary: Bool
+  @AppStorage("ui.nativeGlass") private var enabled = true
+  @AppStorage("ui.nativeGlassStyle") private var savedStyle = NativeGlassStyle.standard.rawValue
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  @Environment(\.colorScheme) private var scheme
+
+  func body(content: Content) -> some View {
+    let shape = RoundedRectangle(cornerRadius: cornerRadius)
+    let surface = secondary ? AniCePalette.secondarySurface(scheme) : AniCePalette.surface(scheme)
+    let presentation = NativeGlassPresentation.resolve(
+      enabled: enabled, reduceTransparency: reduceTransparency, supportsGlass: supportsGlass)
+    if presentation == .solid {
+      content.background(surface, in: shape)
+    } else if #available(macOS 26.0, *) {
+      if NativeGlassStyle.stored(savedStyle) == .vibrant {
+        content.glassEffect(.regular.tint(AniCePalette.subtleAccent(scheme).opacity(0.35)), in: shape)
+      } else {
+        content.glassEffect(.regular, in: shape)
+      }
+    } else {
+      content.background(.regularMaterial, in: shape)
+        .overlay {
+          if NativeGlassStyle.stored(savedStyle) == .vibrant {
+            shape.fill(AniCePalette.subtleAccent(scheme).opacity(0.15)).allowsHitTesting(false)
+          }
+        }
+    }
+  }
+
+  private var supportsGlass: Bool {
+    if #available(macOS 26.0, *) { return true }
+    return false
+  }
+}
+
+struct NativeGlassPreferencesView: View {
+  @AppStorage("ui.nativeGlass") private var enabled = true
+  @AppStorage("ui.nativeGlassStyle") private var savedStyle = NativeGlassStyle.standard.rawValue
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+  var body: some View {
+    NativeGlassPreferencesRows(enabled: $enabled, savedStyle: $savedStyle,
+      fontScale: fontScale, reduceTransparency: reduceTransparency)
+  }
+}
+
+struct NativeGlassPreferencesRows: View {
+  @Binding var enabled: Bool
+  @Binding var savedStyle: String
+  let fontScale: Double
+  let reduceTransparency: Bool
+  @Environment(\.colorScheme) private var scheme
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Toggle("Native Glass", isOn: Binding(
+        get: { enabled && !reduceTransparency },
+        set: { if !reduceTransparency { enabled = $0 } }))
+        .toggleStyle(.checkbox).aniCeControlFeedback()
+        .disabled(reduceTransparency)
+      if reduceTransparency {
+        Text("Locked to Normal by macOS System Settings")
+          .font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(scheme))
+          .fixedSize(horizontal: false, vertical: true)
+      } else if enabled {
+        Picker("Glass style", selection: Binding(
+          get: { NativeGlassStyle.stored(savedStyle) }, set: { savedStyle = $0.rawValue })) {
+          ForEach(NativeGlassStyle.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityHint("Standard is the default native treatment. Vibrant adds stronger theme tint.")
+      }
+    }.padding(.vertical, 8)
+  }
+}
+
 enum AniCePalette {
   static func background(_ scheme: ColorScheme) -> Color {
     color(light: 0xF4F3EF, dark: 0x1B1E1E, scheme: scheme)

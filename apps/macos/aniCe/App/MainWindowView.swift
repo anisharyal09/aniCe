@@ -31,6 +31,7 @@ struct MainWindowView: View {
   @Environment(\.openWindow) private var openWindow
   @State private var systemAppearance = SystemAppearance()
   @State var activeSettingsSection = "appearance"
+  @State var settingsCategory = MacSettingsCategory.all
   @State var hoveredSettingsSection: String?
   @State var hoveredAboutLink: String?
   @State var focusedSettingsSection: String?
@@ -51,6 +52,8 @@ struct MainWindowView: View {
 
   @AppStorage("window.appearance") var appearance = WindowAppearance.system.rawValue
   @AppStorage("ui.fontScale") var fontScale: Double = 1.0
+  @AppStorage("ui.nativeGlass") var nativeGlass = true
+  @Environment(\.accessibilityReduceTransparency) var reduceTransparency
 
   var body: some View {
     let sidebarMinimumWidth = MainWindowSizing.sidebarMinimumWidth(fontScale: fontScale)
@@ -74,7 +77,7 @@ struct MainWindowView: View {
         .navigationSplitViewColumnWidth(min: sidebarMinimumWidth,
           ideal: sidebarMinimumWidth + MainWindowSizing.sidebarBreathingRoom,
           max: MainWindowSizing.sidebarMaximumWidth)
-        .background(AniCePalette.secondarySurface(colorScheme))
+        .aniCeSurface(secondary: true)
         .overlay(alignment: .trailing) { AniCePalette.separator(colorScheme).frame(width: 0.5) }
         .overlay(alignment: .top) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
         .toolbar {
@@ -180,7 +183,8 @@ struct MainWindowView: View {
       destinationContent
     }
     .navigationTitle(MacAppStorage.applicationName)
-    .toolbarBackground(AniCePalette.background(colorScheme), for: .windowToolbar)
+    .toolbarBackground(nativeGlass && !reduceTransparency
+      ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(AniCePalette.background(colorScheme)), for: .windowToolbar)
     .toolbarBackground(.visible, for: .windowToolbar)
     .background(AniCePalette.background(colorScheme))
     .overlay(alignment: .top) { AniCePalette.separator(colorScheme).frame(height: 0.5) }

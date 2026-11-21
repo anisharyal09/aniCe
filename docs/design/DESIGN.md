@@ -4,7 +4,7 @@ Version 0.3. This guide defines visual direction, interaction behavior, standard
 
 ## Design principles
 
-- **Clarity over ornament**: Warm neutrals with charcoal-green action ink. No blue glows, decorative gradients, artificial glassmorphism, or skeuomorphic shadows. The Mac floating comparison overlay may use the OS's native Liquid Glass on macOS 26+, native material on older systems, and a solid Reduce Transparency fallback. This exception does not change in-app content surfaces.
+- **Clarity over ornament**: Warm neutrals with charcoal-green action ink. No blue glows, decorative gradients, artificial glassmorphism, or skeuomorphic shadows. Mac navigation and floating surfaces use optional native Liquid Glass on macOS 26+, semantic material on older systems and solid surfaces when disabled or Reduce Transparency is active. Text-heavy content panels remain solid or lightly tinted.
 - **Native behavior**: Use platform-native controls, typography, and navigation patterns (macOS AppKit/SwiftUI with SF Symbols; Android Material 3/Compose with Material Symbols).
 - **State truth**: Truthfully distinguish between trusted, connecting, secured, offline, permission-gated, and unsupported states. Never fake live state or display an invented zero.
 - **Direct feedback**: Interactive controls respond immediately with visible hover, pressed, and focus feedback. Transitions are brief (120–220 ms) and respect system reduced-motion settings.
@@ -37,6 +37,7 @@ Color communicates action and status, not decorative categorization. Always pair
 
 - **Contrast**: Minimum 4.5:1 contrast for standard text; 3:1 for large text and meaningful control graphics.
 - **Theme support**: Follow system appearance by default. Offer explicit System / Light / Dark modes in Settings.
+- **Mac Native Glass**: General → Appearance offers a default-on master toggle and Standard (default) / Vibrant styles. Off restores solid surfaces. Reduce Transparency disables the toggle and displays **Locked to Normal by macOS System Settings** without overwriting the saved choice. Apply one native treatment to sidebar/header, companion, clipboard tray/copy feedback, Floating Key, Edge Drop and floating pairing. Vibrant strengthens the semantic theme tint; it does not expose system blur or refraction controls. System menu-bar and notification appearance remain OS-owned.
 
 ## Typography and text scaling
 

@@ -443,15 +443,23 @@ extension MainWindowView {
                 ("appearance", "Appearance"), ("updates", "Updates"), ("connection", "Connection"), ("permissions", "Permissions"), ("desk-deck", "Desk Deck"),
                 ("dnd-sync", "Do Not Disturb"), ("clipboard", "Clipboard"),
                 ("messages", "Messages"), ("file-transfer", "File transfer"),
-                ("now-playing", "Now Playing"), ("this-device", "This device")
+                ("now-playing", "Now Playing"), ("this-device", "This device"), ("shortcuts", "Shortcuts")
               ]
               ViewThatFits(in: .horizontal) {
                 HStack(spacing: 6) {
-                  ForEach(jumps, id: \.0) { id, label in settingsJump(label, id: id) }
+                  ForEach(MacSettingsCategory.allCases, id: \.self) { category in settingsCategoryButton(category) }
+                }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 110 * fontScale))]) {
+                  ForEach(MacSettingsCategory.allCases, id: \.self) { category in settingsCategoryButton(category) }
+                }
+              }.padding(.bottom, 12)
+              ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) {
+                  ForEach(jumps.filter { settingsCategory == .all || MacSettingsCategory.category(for: $0.0) == settingsCategory }, id: \.0) { id, label in settingsJump(label, id: id) }
                 }
                 .fixedSize(horizontal: true, vertical: false)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 120 * fontScale), alignment: .leading)], alignment: .leading, spacing: 6) {
-                  ForEach(jumps, id: \.0) { id, label in settingsJump(label, id: id) }
+                  ForEach(jumps.filter { settingsCategory == .all || MacSettingsCategory.category(for: $0.0) == settingsCategory }, id: \.0) { id, label in settingsJump(label, id: id) }
                 }
               }
               .frame(maxWidth: .infinity, alignment: .leading)
@@ -489,6 +497,8 @@ extension MainWindowView {
                           .foregroundStyle(AniCePalette.secondaryText(colorScheme))
                       }
                     }.frame(minHeight: 40)
+                    Divider()
+                    NativeGlassPreferencesView()
                   }
                 }
                 preferenceSection("Updates", id: "updates") {
@@ -578,6 +588,13 @@ extension MainWindowView {
                     }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
                   }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("This device, identity and security")
                 }
+                preferenceSection("Shortcuts", id: "shortcuts") {
+                  VStack(alignment: .leading, spacing: 8) {
+                    Text("Global · while aniCe is running").font(.system(size: 12 * fontScale))
+                    LabeledContent("Clipboard tray", value: "⌥⌘V")
+                    LabeledContent("Floating Key", value: "⌥⌘K")
+                  }.padding(.vertical, 12)
+                }
               }
             }
             .padding(24)
@@ -601,22 +618,38 @@ extension MainWindowView {
     id: String,
     @ViewBuilder content: () -> Content
   ) -> some View {
-    let focused = focusedSettingsSection == id
-    let group = VStack(alignment: .leading, spacing: 0, content: content)
-      .font(.system(size: 13 * fontScale))
+    if settingsCategory == .all || MacSettingsCategory.category(for: id) == settingsCategory {
+      let focused = focusedSettingsSection == id
+      let group = VStack(alignment: .leading, spacing: 0, content: content)
+        .font(.system(size: 13 * fontScale))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .background(focused ? AniCePalette.subtleAccent(colorScheme) : AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 10))
+        .overlay { RoundedRectangle(cornerRadius: 10).stroke(focused ? AniCePalette.accent(colorScheme) : AniCePalette.separator(colorScheme), lineWidth: focused ? 1 : 0.5) }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: focused)
+      VStack(alignment: .leading, spacing: 8) {
+        Text(title).font(.system(size: 13 * fontScale, weight: .medium)).foregroundStyle(AniCePalette.primaryText(colorScheme))
+        group
+      }
       .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.horizontal, 14)
-      .background(focused ? AniCePalette.subtleAccent(colorScheme) : AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 10))
-      .overlay { RoundedRectangle(cornerRadius: 10).stroke(focused ? AniCePalette.accent(colorScheme) : AniCePalette.separator(colorScheme), lineWidth: focused ? 1 : 0.5) }
-      .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: focused)
-    VStack(alignment: .leading, spacing: 8) {
-      Text(title).font(.system(size: 13 * fontScale, weight: .medium)).foregroundStyle(AniCePalette.primaryText(colorScheme))
-      group
+      .padding(.bottom, 18)
+      .background(SettingsScrollAnchor(id: id, coordinator: settingsScroller))
+      .id(id)
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.bottom, 18)
-    .background(SettingsScrollAnchor(id: id, coordinator: settingsScroller))
-    .id(id)
+  }
+
+  private func settingsCategoryButton(_ category: MacSettingsCategory) -> some View {
+    Button {
+      settingsCategory = category
+      focusedSettingsSection = nil
+    } label: {
+      Text(category.rawValue)
+        .font(.system(size: 12 * fontScale, weight: settingsCategory == category ? .semibold : .regular))
+        .padding(.horizontal, 9).padding(.vertical, 8)
+        .background(settingsCategory == category ? AniCePalette.subtleAccent(colorScheme) : .clear,
+          in: RoundedRectangle(cornerRadius: 6))
+    }.buttonStyle(AniCeHoverButtonStyle())
+      .accessibilityAddTraits(settingsCategory == category ? .isSelected : [])
   }
 
   private func settingsJump(_ label: String, id: String) -> some View {

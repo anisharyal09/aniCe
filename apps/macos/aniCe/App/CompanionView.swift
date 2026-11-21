@@ -65,8 +65,9 @@ struct CompanionView: View {
     }
     .padding(16)
     .frame(width: 350)
-    .background(AniCePalette.surface(colorScheme))
+    .aniCeSurface()
     .tint(AniCePalette.primaryText(colorScheme))
+    .aniCeAppearance()
     .task {
       if !IdentityView.isTesting {
         await identity.load()

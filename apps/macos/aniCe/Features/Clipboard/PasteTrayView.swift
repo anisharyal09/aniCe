@@ -179,7 +179,7 @@ struct PasteTrayView: View {
     .padding(.horizontal, 16).padding(.vertical, width <= 540 ? 13 : 15)
     .frame(width: width, height: previewing ? previewHeight : collapsedHeight)
     .foregroundStyle(AniCePalette.primaryText(scheme))
-    .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 14))
+    .aniCeSurface(cornerRadius: 14)
     .overlay(RoundedRectangle(cornerRadius: 14).stroke(AniCePalette.separator(scheme)))
     .tint(AniCePalette.accent(scheme))
     .focusable().focusEffectDisabled().focused($focus, equals: .tray)
@@ -265,6 +265,7 @@ struct PasteTrayView: View {
       if enabled { historyConsent.cancel() }
     }
     .onDisappear { historyConsent.cancel() }
+    .aniCeAppearance()
   }
 
   private var header: some View {

@@ -10,6 +10,77 @@ import Observation
 @testable import aniCe
 
 extension SessionTests {
+  func testNativeGlassAccessibilityOverridesEveryStyleWithoutChangingPreference() {
+    XCTAssertEqual(NativeGlassStyle.stored("invalid"), .standard)
+    XCTAssertEqual(NativeGlassStyle.allCases.count, 2)
+    for enabled in [false, true] {
+      for supported in [false, true] {
+        XCTAssertEqual(NativeGlassPresentation.resolve(enabled: enabled,
+          reduceTransparency: true, supportsGlass: supported), .solid)
+        XCTAssertEqual(NativeGlassPresentation.resolve(enabled: enabled,
+          reduceTransparency: false, supportsGlass: supported),
+          enabled ? (supported ? .glass : .material) : .solid)
+      }
+    }
+  }
+
+  func testSettingsCategoriesKeepAppearanceInGeneralAndFeaturesReachable() {
+    XCTAssertEqual(MacSettingsCategory.allCases.count, 5)
+    for section in ["appearance", "updates", "connection", "this-device"] {
+      XCTAssertEqual(MacSettingsCategory.category(for: section), .general)
+    }
+    XCTAssertEqual(MacSettingsCategory.category(for: "permissions"), .permissions)
+    XCTAssertEqual(MacSettingsCategory.category(for: "shortcuts"), .shortcuts)
+    for section in ["clipboard", "messages", "desk-deck", "dnd-sync", "file-transfer", "now-playing"] {
+      XCTAssertEqual(MacSettingsCategory.category(for: section), .features)
+    }
+  }
+
+  @MainActor func testNativeGlassPreferencesRenderWithoutOverwritingAccessibilityLockedChoice() throws {
+    let name = "aniCe.NativeGlassTests.\(UUID())"
+    let preferences = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { preferences.removePersistentDomain(forName: name) }
+    let folder = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("anice-native-glass-renders", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    var renders = 0
+    for style in NativeGlassStyle.allCases {
+      for scheme in [ColorScheme.light, .dark] {
+        for reduced in [false, true] {
+          for scale in [0.8, 1.2] {
+            preferences.set(true, forKey: "ui.nativeGlass")
+            preferences.set(style.rawValue, forKey: "ui.nativeGlassStyle")
+            preferences.set(scale, forKey: "ui.fontScale")
+            let view = NativeGlassPreferencesRows(
+              enabled: Binding(get: { preferences.bool(forKey: "ui.nativeGlass") },
+                set: { preferences.set($0, forKey: "ui.nativeGlass") }),
+              savedStyle: Binding(get: { preferences.string(forKey: "ui.nativeGlassStyle") ?? "" },
+                set: { preferences.set($0, forKey: "ui.nativeGlassStyle") }),
+              fontScale: scale, reduceTransparency: reduced)
+              .padding(14).frame(width: 280)
+              .background(AniCePalette.surface(scheme))
+              .environment(\.colorScheme, scheme)
+              .defaultAppStorage(preferences)
+            let host = NSHostingView(rootView: view)
+            host.frame.size = host.fittingSize
+            host.layoutSubtreeIfNeeded()
+            XCTAssertEqual(host.bounds.width, 280)
+            XCTAssertLessThan(host.bounds.height, 220)
+            XCTAssertTrue(preferences.bool(forKey: "ui.nativeGlass"))
+            XCTAssertEqual(preferences.string(forKey: "ui.nativeGlassStyle"), style.rawValue)
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+              .write(to: folder.appendingPathComponent("glass-\(style)-\(scheme)-\(reduced)-\(Int(scale * 100)).png"))
+            renders += 1
+          }
+        }
+      }
+    }
+    XCTAssertEqual(renders, 16)
+    print("Native Glass preference renders: \(folder.path)")
+  }
+
   @MainActor func testPackagedAppIconIsDarkAndDockKeepsSystemVariants() throws {
     let packagedURL = try XCTUnwrap(Bundle.main.url(forResource: "AppIcon", withExtension: "icns"))
     let packaged = try XCTUnwrap(NSImage(contentsOf: packagedURL))
