@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -360,7 +362,7 @@ fun PhoneInputView(
         onDismissRequest = { keyboard?.hide(); fullTrackpad = false },
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Surface(Modifier.fillMaxSize()) {
+        Surface(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             PhoneInputTrackpad(
                 owner = owner,
                 enabled = owner.active && connectedPeer?.let(owner::supportsPointer) == true,

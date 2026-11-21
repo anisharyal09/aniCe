@@ -7,6 +7,26 @@ import org.junit.Test
 import io.github.anisharyal09.anice.ui.theme.Appearance
 
 class AppNavigationTest {
+    @Test fun appBarBackMatchesNestedDestinationsWithoutLeakingInactiveRoutes() {
+        for (destination in AppDestination.entries) {
+            for (route in DeviceRoute.entries) {
+                for (settings in SettingsRoute.entries) {
+                    for (feature in listOf(null, AppFeature.PhoneInput)) {
+                        val expected = destination == AppDestination.About ||
+                            (destination == AppDestination.Devices && route == DeviceRoute.Discovery) ||
+                            (destination == AppDestination.Settings && settings != SettingsRoute.Overview) ||
+                            (destination == AppDestination.Features && feature != null)
+                        assertEquals(expected, showsAppBarBack(destination, route, settings, feature))
+                    }
+                }
+            }
+        }
+        val state = AppNavigation(AppDestination.About, DeviceRoute.Discovery, "mac-a")
+        state.back()
+        assertEquals(AppDestination.Home, state.destination)
+        assertEquals("mac-a", state.focusedPeer)
+    }
+
     @org.junit.Test fun comparisonCannotBeHiddenByAnInactiveDeviceRoute() {
         for (destination in AppDestination.entries) for (route in DeviceRoute.entries) {
             org.junit.Assert.assertEquals(

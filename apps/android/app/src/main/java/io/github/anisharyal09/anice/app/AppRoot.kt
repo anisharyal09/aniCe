@@ -203,10 +203,8 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                     AniCeWordmark(style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp))
                 }
             }, navigationIcon = {
-                if ((navigation.destination == AppDestination.Devices &&
-                        navigation.route != DeviceRoute.Overview && navigation.route != DeviceRoute.Pairing) ||
-                    (navigation.destination == AppDestination.Settings && navigation.settingsRoute != SettingsRoute.Overview) ||
-                    (navigation.destination == AppDestination.Features && navigation.featurePanel != null)) {
+                if (showsAppBarBack(navigation.destination, navigation.route,
+                        navigation.settingsRoute, navigation.featurePanel)) {
                     IconButton(onClick = { back() }) {
                         Icon(painterResource(R.drawable.ic_back), contentDescription = "Back")
                     }

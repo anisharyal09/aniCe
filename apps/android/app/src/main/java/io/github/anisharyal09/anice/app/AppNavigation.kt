@@ -14,6 +14,13 @@ enum class SettingsRoute { Overview, Identity, NotificationApps, About }
 internal fun comparisonUsesDeviceSheet(destination: AppDestination, route: DeviceRoute): Boolean =
     route == DeviceRoute.Pairing && destination in listOf(AppDestination.Home, AppDestination.Devices)
 
+internal fun showsAppBarBack(destination: AppDestination, route: DeviceRoute,
+    settingsRoute: SettingsRoute, featurePanel: AppFeature?): Boolean =
+    destination == AppDestination.About ||
+        (destination == AppDestination.Devices && route !in listOf(DeviceRoute.Overview, DeviceRoute.Pairing)) ||
+        (destination == AppDestination.Settings && settingsRoute != SettingsRoute.Overview) ||
+        (destination == AppDestination.Features && featurePanel != null)
+
 // Only local presentation identifiers are persisted; feature support remains with its owner.
 enum class AppFeature(val label: String) {
     PhoneInput("Control Mac"), DeskDeck("Mac Desk Deck"), Files("Send files"), Clipboard("Clipboard"),

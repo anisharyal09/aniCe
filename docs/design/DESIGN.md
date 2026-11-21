@@ -83,6 +83,7 @@ Shared information architecture mapped into platform-native navigation:
 - Native top app bar with aniCe brand mark and About action.
 - Five bottom destinations: Home, Devices, Features, Favourites, Settings.
 - Native system Back and RTL support throughout.
+- About retains an app-bar Back action. Full-screen input controls respect safe drawing and keyboard insets so Done, Stop and the editor remain reachable.
 - Desk Deck retains standard app shell with app bar and navigation tabs.
 
 ## State truth

@@ -4,6 +4,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+### Fixed
+
+- Show native app-bar Back on About and apply safe drawing/keyboard insets to full-screen Mac control.
+
 ## [v0.9.0-beta.4]
 
 Application release v0.9.0-beta.4, build 90024.
