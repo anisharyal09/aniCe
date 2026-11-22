@@ -51,6 +51,7 @@ struct MainWindowView: View {
   @AppStorage("window.appearance") var appearance = WindowAppearance.system.rawValue
   @AppStorage("ui.fontScale") var fontScale: Double = 1.0
   @AppStorage("ui.nativeGlass") var nativeGlass = true
+  @AppStorage("ui.sidebarPinnedFeatures") private var sidebarPinnedFeatures = ""
   @Environment(\.accessibilityReduceTransparency) var reduceTransparency
 
   var body: some View {
@@ -65,9 +66,28 @@ struct MainWindowView: View {
           AniCeWordmark(size: 21 * fontScale, weight: .semibold)
         }.foregroundStyle(AniCePalette.primaryText(colorScheme))
           .padding(.horizontal, MainWindowSizing.sidebarInset).padding(.top, 28).padding(.bottom, 24)
+        ScrollView {
+        VStack(alignment: .leading, spacing: 0) {
         Text("Workspace").font(.system(size: 11 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
           .padding(.horizontal, MainWindowSizing.sidebarInset).padding(.bottom, 12)
         ForEach([AppDestination.home, .devices, .features, .favourites]) { sidebarItem($0) }
+        if !AppFeature.favourites(in: sidebarPinnedFeatures).isEmpty {
+          Text("Pinned").font(.system(size: 11 * fontScale))
+            .foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.top, 12).padding(.bottom, 8)
+          ForEach(AppFeature.favourites(in: sidebarPinnedFeatures)) { feature in
+            Button { navigation.openFeature(feature) } label: {
+              Label(feature.title, systemImage: feature.symbol)
+                .font(.system(size: 13 * fontScale)).frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 8).contentShape(Rectangle())
+            }.buttonStyle(AniCeHoverButtonStyle())
+              .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+              .contextMenu {
+                Button("Unpin from Sidebar") { sidebarPinnedFeatures = feature.toggled(in: sidebarPinnedFeatures) }
+              }
+          }
+        }
+        }
+        }
         Spacer(minLength: 24)
         sidebarItem(.settings)
         sidebarItem(.about)

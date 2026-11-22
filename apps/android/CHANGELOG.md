@@ -6,6 +6,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Wrap Home quick-access shortcuts into additional rows with native touch targets instead of horizontal scrolling.
 - Group Settings under All, General, Permissions, Features and Shortcuts with wrapped category controls and a direct Messages setup link.
 
 ### Fixed

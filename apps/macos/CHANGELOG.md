@@ -6,6 +6,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Add independent sidebar feature pins, wrapping Overview/companion shortcuts and a quiet companion support link.
 - Add configurable clipboard-tray and Floating Key global shortcuts with focused recording, Reset, collision reporting and preservation of the last working registration.
 - Show a brief recipient-bound Edge Drop preparation acknowledgment before progress continues in aniCe; retain verified completion feedback.
 - Add default-on Native Glass with Standard/Vibrant styles across navigation and floating surfaces, native-material compatibility and a solid Reduce Transparency override.
@@ -13,6 +14,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Use desktop-sampling companion vibrancy, stronger light-mode Vibrant tint and quieter secondary button faces.
 - Organize Settings into ordered category sections, remove the duplicate jump strip and route Clipboard/Messages gears to their settings.
 
 ### Fixed

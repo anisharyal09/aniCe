@@ -65,7 +65,7 @@ struct CompanionView: View {
     }
     .padding(16)
     .frame(width: 350)
-    .aniCeSurface()
+    .background(CompanionMaterialBackground())
     .tint(AniCePalette.primaryText(colorScheme))
     .aniCeAppearance()
     .task {
@@ -136,8 +136,7 @@ struct CompanionView: View {
       VStack(alignment: .leading, spacing: 4) {
         Text("Quick actions").font(.system(size: 11 * fontScale, weight: .medium))
           .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-        ScrollView(.horizontal) {
-          HStack(spacing: 6) {
+          ShortcutFlowLayout(spacing: 6) {
             ForEach(pinned) { feature in
               Button {
                 executeQuickAction(feature)
@@ -153,8 +152,6 @@ struct CompanionView: View {
               .buttonStyle(AniCeHoverButtonStyle())
             }
           }
-        }
-        .scrollIndicators(.hidden)
       }
     }
   }
@@ -233,6 +230,7 @@ struct CompanionView: View {
   private var footer: some View {
     VStack(spacing: 12) {
       Divider()
+      HStack(spacing: 12) {
       Button(action: openMain) {
         HStack(spacing: 5) {
           Text("Open")
@@ -241,7 +239,31 @@ struct CompanionView: View {
           Image(systemName: "arrow.up.right").accessibilityHidden(true)
         }.contentShape(Rectangle())
       }.buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(colorScheme))
+      Link(destination: AniCeSupport.url) {
+        Image(systemName: "heart").frame(width: 28, height: 28)
+      }.buttonStyle(AniCeHoverButtonStyle())
+        .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        .help("Support aniCe").accessibilityLabel("Support aniCe")
+      }
     }
+  }
+}
+
+/// Behind-window vibrancy allows the companion to sample the desktop rather than an opaque hosting surface.
+private struct CompanionMaterialBackground: NSViewRepresentable {
+  @AppStorage("ui.nativeGlass") private var enabled = true
+  @AppStorage("ui.nativeGlassStyle") private var style = NativeGlassStyle.standard.rawValue
+  @Environment(\.accessibilityReduceTransparency) private var reduced
+  @Environment(\.colorScheme) private var scheme
+  func makeNSView(context: Context) -> NSVisualEffectView {
+    NSVisualEffectView()
+  }
+  func updateNSView(_ view: NSVisualEffectView, context: Context) {
+    view.blendingMode = .behindWindow
+    view.material = NativeGlassStyle.stored(style) == .vibrant ? .popover : .menu
+    view.state = enabled && !reduced ? .active : .inactive
+    view.wantsLayer = true
+    view.layer?.backgroundColor = enabled && !reduced ? nil : NSColor(AniCePalette.surface(scheme)).cgColor
   }
 }
 

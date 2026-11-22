@@ -74,12 +74,14 @@ Shared information architecture mapped into platform-native navigation:
 | About | Version, license, source, developer links, and support |
 
 ### macOS layout
+- Sidebar pins are independent of Favourites and menu-bar pins, with Pin/Unpin in feature context menus. Pinned navigation scrolls vertically while Settings/About remain available. Overview and companion shortcut faces wrap in saved order. Companion uses native behind-window vibrancy and a separate quiet Support aniCe heart beside Open aniCe.
 - **Main window**: Resizable window with traffic lights and Back/Forward history navigation on the left of the split header; aniCe branding in the window titlebar. Sidebar holds navigation destinations; workspace content is centered with a maximum of two columns.
 - **Initial size and sidebar**: A new main window defaults to 960 × 640 pt; native resizing and restored window sizes remain in control. The sidebar uses a 27 pt brand mark and fits the wordmark and full destination labels at the current text size, with 12 pt of additional width. It remains resizable.
 - **Menu-bar companion**: Compact popover (max 520 pt height) showing active device state, Now Playing, file transfers, quick actions, and pinned favorite shortcuts.
 - **Quick Paste Tray**: Non-activating floating panel toggled via `⌥⌘V` with real-time clip filtering and smart previews.
 
 ### Android layout
+- Home quick-access shortcuts wrap into rows, preserving labels and 48 dp targets without horizontal scrolling.
 - Native top app bar with aniCe brand mark and About action.
 - Five bottom destinations: Home, Devices, Features, Favourites, Settings.
 - Native system Back and RTL support throughout.

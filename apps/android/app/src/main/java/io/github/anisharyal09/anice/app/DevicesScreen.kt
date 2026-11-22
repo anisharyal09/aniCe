@@ -110,14 +110,15 @@ internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewMo
                             } else {
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text("Quick access", style = MaterialTheme.typography.titleSmall)
-                                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FlowRow(Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                         favourites.forEach { feature ->
                                             OutlinedButton(onClick = { navigation.openFeature(feature) },
                                                 shape = MaterialTheme.shapes.small,
                                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-                                                modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
-                                                Text(feature.label, maxLines = 1, softWrap = false)
+                                                 modifier = Modifier.heightIn(min = 48.dp)) {
+                                                Text(feature.label)
                                             }
                                         }
                                     }

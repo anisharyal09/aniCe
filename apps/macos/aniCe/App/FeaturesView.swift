@@ -21,8 +21,7 @@ struct HomeFeatureAccess: View {
           Button("Explore features", action: onBrowse).buttonStyle(AniCeButtonStyle()).controlSize(.small)
         }
       } else {
-        ScrollView(.horizontal) {
-          HStack(spacing: 8) {
+          ShortcutFlowLayout(spacing: 8) {
             ForEach(favourites) { feature in
               Button { onOpen(feature) } label: {
                 Label(feature.title, systemImage: feature.symbol)
@@ -34,8 +33,6 @@ struct HomeFeatureAccess: View {
               .buttonStyle(AniCeHoverButtonStyle())
             }
           }
-        }
-        .scrollIndicators(.hidden)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -58,6 +55,7 @@ struct FeaturesView: View {
   @AppStorage("ui.favouriteFeatures") private var favouriteFeatures = AppFeature.defaultFavourites
   @AppStorage("ui.featureOrder") private var featureOrder = ""
   @AppStorage("ui.companionPinnedFeatures") private var companionPinnedFeatures = AppFeature.defaultPinnedToCompanion
+  @AppStorage("ui.sidebarPinnedFeatures") private var sidebarPinnedFeatures = ""
   @AppStorage("ui.fontScale") private var fontScale = 1.0
   @Environment(\.colorScheme) private var colorScheme
   private var displayedFeatures: [AppFeature] {
@@ -170,6 +168,9 @@ struct FeaturesView: View {
       let isPinned = AppFeature.isPinned(feature, in: companionPinnedFeatures)
       Button(isPinned ? "Remove from Menu Bar" : "Pin to Menu Bar") {
         companionPinnedFeatures = feature.toggledPinned(in: companionPinnedFeatures)
+      }
+      Button(AppFeature.favourites(in: sidebarPinnedFeatures).contains(feature) ? "Unpin from Sidebar" : "Pin to Sidebar") {
+        sidebarPinnedFeatures = feature.toggled(in: sidebarPinnedFeatures)
       }
     }
   }

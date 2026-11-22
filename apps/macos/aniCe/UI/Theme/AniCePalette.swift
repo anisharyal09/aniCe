@@ -54,7 +54,7 @@ private struct AniCeNativeSurface: ViewModifier {
       content.background(surface, in: shape)
     } else if #available(macOS 26.0, *) {
       if NativeGlassStyle.stored(savedStyle) == .vibrant {
-        content.glassEffect(.regular.tint(AniCePalette.subtleAccent(scheme).opacity(0.35)), in: shape)
+        content.glassEffect(.regular.tint(AniCePalette.accent(scheme).opacity(scheme == .light ? 0.22 : 0.12)), in: shape)
       } else {
         content.glassEffect(.regular, in: shape)
       }
@@ -276,7 +276,7 @@ private struct AniCeButtonFace<Label: View>: View {
       .foregroundStyle(prominent ? AniCePalette.onAccent(scheme) : AniCePalette.primaryText(scheme))
       .padding(.horizontal, quiet ? 0 : (compact ? 6 : 12)).padding(.vertical, compact ? 5 : 7)
       .frame(minWidth: compact ? 32 : nil, minHeight: (quiet || compact) ? 30 : 32)
-      .background(prominent ? AniCePalette.accent(scheme) : (quiet ? .clear : AniCePalette.surface(scheme)), in: RoundedRectangle(cornerRadius: 7))
+      .background(prominent ? AniCePalette.accent(scheme) : (quiet ? .clear : AniCePalette.secondarySurface(scheme)), in: RoundedRectangle(cornerRadius: 7))
       .overlay {
         if !quiet || focused {
           RoundedRectangle(cornerRadius: 7).stroke(focused ? AniCePalette.accent(scheme) : AniCePalette.separator(scheme), lineWidth: focused ? 2 : 1)
@@ -286,6 +286,37 @@ private struct AniCeButtonFace<Label: View>: View {
       .aniCeControlFeedback(pressed: pressed, prominent: prominent, cornerRadius: 7)
       .opacity(enabled ? 1 : 0.45)
   }
+}
+
+/// Wraps measured shortcut faces in stable order without horizontal overflow.
+struct ShortcutFlowLayout: Layout {
+  var spacing: CGFloat = 8
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    arrange(width: proposal.width ?? 680, subviews: subviews).size
+  }
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    let result = arrange(width: bounds.width, subviews: subviews)
+    for (index, point) in result.points.enumerated() {
+      subviews[index].place(at: CGPoint(x: bounds.minX + point.x, y: bounds.minY + point.y),
+        proposal: ProposedViewSize(width: min(bounds.width, subviews[index].sizeThatFits(.unspecified).width), height: nil))
+    }
+  }
+  private func arrange(width: CGFloat, subviews: Subviews) -> (size: CGSize, points: [CGPoint]) {
+    var points: [CGPoint] = []
+    var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
+    for view in subviews {
+      let size = view.sizeThatFits(ProposedViewSize(width: min(max(0, width), view.sizeThatFits(.unspecified).width), height: nil))
+      if x > 0 && x + size.width > width { x = 0; y += rowHeight + spacing; rowHeight = 0 }
+      points.append(CGPoint(x: x, y: y))
+      x += size.width + spacing
+      rowHeight = max(rowHeight, size.height)
+    }
+    return (CGSize(width: max(0, width), height: y + rowHeight), points)
+  }
+}
+
+enum AniCeSupport {
+  static let url = URL(string: "https://anisharyal09.com.np/support?from=anice")!
 }
 
 struct AniCeHoverButtonStyle: ButtonStyle {

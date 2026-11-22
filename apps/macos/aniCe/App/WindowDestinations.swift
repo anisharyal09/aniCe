@@ -62,7 +62,7 @@ struct AboutSupportLinks: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      Link(destination: URL(string: "https://anisharyal09.com.np/support?from=anice")!) {
+      Link(destination: AniCeSupport.url) {
         HStack(spacing: 6) {
           Image(systemName: "heart").font(.system(size: 13 * fontScale)).accessibilityHidden(true)
           AniCeWordmark(size: 13 * fontScale, weight: .regular, prefix: "Support ", suffix: " :)")

@@ -10,6 +10,19 @@ import Observation
 @testable import aniCe
 
 extension SessionTests {
+  func testSidebarPinsUseIndependentOrderedLocalList() {
+    let favourites = AppFeature.defaultFavourites
+    let menu = AppFeature.defaultPinnedToCompanion
+    let sidebar = AppFeature.files.toggled(in: "")
+    XCTAssertEqual(AppFeature.favourites(in: sidebar), [.files])
+    XCTAssertEqual(AppFeature.favourites(in: sidebar + ",files,unknown"), [.files])
+    XCTAssertEqual(AppFeature.files.toggled(in: sidebar), "")
+    XCTAssertEqual(favourites, AppFeature.defaultFavourites)
+    XCTAssertEqual(menu, AppFeature.defaultPinnedToCompanion)
+    XCTAssertEqual(AniCeSupport.url.scheme, "https")
+    XCTAssertEqual(AniCeSupport.url.host, "anisharyal09.com.np")
+  }
+
   @MainActor func testGlobalShortcutFailureAndCollisionPreserveSavedBinding() throws {
     let name = "aniCe.ShortcutTests.\(UUID())"
     let storage = try XCTUnwrap(UserDefaults(suiteName: name))
