@@ -10,6 +10,8 @@ Shared contract changes and compatibility implications, grouped by application v
 
 ### Changed
 
+- Document locally consented Android built-in speaker admission and same-stream
+  route recovery without changing any Private Listening wire bytes.
 - Refine local listening buffer targets and healthy-audio transfer pacing; unchanged six-message PCM, cryptographic and session contracts.
 - Clarify local lower-delay buffering profiles and native startup floors for Private Listening; all six wire messages and crypto/session bounds are unchanged.
 

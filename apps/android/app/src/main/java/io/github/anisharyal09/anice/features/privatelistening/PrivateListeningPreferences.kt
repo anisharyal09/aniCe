@@ -21,6 +21,21 @@ class PrivateListeningPreferences(private val storage: SharedPreferences? = null
     private fun key(localFingerprint: String, peer: DeviceIdentity): String =
         "receive:$localFingerprint:${peer.deviceId}:${peer.fingerprint}:${peer.publicKey}"
 
+    private val speakers = mutableMapOf<String, Boolean>()
+    internal fun speakerFallback(localFingerprint: String, peer: DeviceIdentity): Boolean =
+        speakers.getOrPut(key(localFingerprint, peer)) {
+            storage?.getBoolean("speaker:" + key(localFingerprint, peer), false) ?: false
+        }
+
+    internal fun setSpeakerFallback(localFingerprint: String, peer: DeviceIdentity, enabled: Boolean) {
+        require(localFingerprint.isNotEmpty())
+        val key = key(localFingerprint, peer)
+        check(storage?.edit()?.putBoolean("speaker:$key", enabled)?.commit() != false) {
+            "Speaker fallback preference could not be saved"
+        }
+        speakers[key] = enabled
+    }
+
     fun enabled(localFingerprint: String, peer: DeviceIdentity): Boolean =
         consent.getOrPut(key(localFingerprint, peer)) {
             storage?.getBoolean(key(localFingerprint, peer), false) ?: false
@@ -37,6 +52,7 @@ class PrivateListeningPreferences(private val storage: SharedPreferences? = null
     fun clear() {
         check(storage?.edit()?.clear()?.commit() != false) { "Listening consent could not be cleared" }
         consent.clear()
+        speakers.clear()
         profile = ListeningBufferProfile.BALANCED
     }
 }

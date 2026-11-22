@@ -36,6 +36,7 @@ internal class PrivateListeningRequest(
     val startedAt: Long,
     val maintenanceAtStart: Long,
     val bufferProfile: ListeningBufferProfile = ListeningBufferProfile.BALANCED,
+    val speakerFallback: Boolean = false,
 ) {
     var output: PrivateListeningOutput? = null
     var foregroundOwner: Any? = null
@@ -84,6 +85,8 @@ class PrivateListeningController internal constructor(
         private set
     var consentEnabled by mutableStateOf(false)
         private set
+    internal var speakerFallbackEnabled by mutableStateOf(false)
+        private set
     var peer by mutableStateOf<DeviceIdentity?>(null)
         private set
     var openWorkspaceRequest by mutableStateOf(false)
@@ -105,6 +108,26 @@ class PrivateListeningController internal constructor(
 
     fun openWorkspace() { openWorkspaceRequest = true }
     fun workspaceOpened() { openWorkspaceRequest = false }
+
+    internal fun setSpeakerFallback(enabled: Boolean) {
+        val peer = channel?.descriptor?.peer ?: return
+        val local = localFingerprint ?: return
+        if (enabled && (active || stoppingService != null)) return
+        // Revocation closes output immediately, including an in-flight routing recovery.
+        if (!enabled && active) stop(message = "Speaker fallback disabled. Listening stopped.")
+        try { preferences.setSpeakerFallback(local, peer, enabled) }
+        catch (error: IllegalStateException) { status = error.message.orEmpty(); return }
+        speakerFallbackEnabled = enabled
+    }
+
+    internal fun outputRouteChanged(request: PrivateListeningRequest) {
+        if (current !== request || !request.ready || !request.speakerFallback) return
+        audioAdmission?.pause()
+        request.output?.pause()
+        diagnostics = null
+        transferHealth(false, request.lastSequence, request.underruns)
+        if (!request.focusPaused && !request.maintenanceActive) resumeOutput(request)
+    }
 
     internal fun setBufferProfile(profile: ListeningBufferProfile) {
         if (active || stoppingService != null) return
@@ -132,6 +155,7 @@ class PrivateListeningController internal constructor(
         peer = descriptor.peer
         localFingerprint = null
         consentEnabled = false
+        speakerFallbackEnabled = false
         retiredIDs.clear()
         exhaustedIDs = false
         val token = generation
@@ -141,6 +165,7 @@ class PrivateListeningController internal constructor(
                 if (local.isEmpty() || token != generation || this@PrivateListeningController.channel !== channel) return@launch
                 localFingerprint = local
                 consentEnabled = preferences.enabled(local, descriptor.peer)
+                speakerFallbackEnabled = preferences.speakerFallback(local, descriptor.peer)
                 enqueue(PrivateListeningMessage.capability(consentEnabled))
             } catch (error: CancellationException) { throw error }
             catch (_: Exception) {
@@ -157,6 +182,7 @@ class PrivateListeningController internal constructor(
         peer = null
         localFingerprint = null
         consentEnabled = false
+        speakerFallbackEnabled = false
         outgoing.clear()
         terminal = null
     }
@@ -241,7 +267,8 @@ class PrivateListeningController internal constructor(
             reply(id, 1); return
         }
         if (!startupAllowed(descriptor.peer)) { reply(id, 4); return }
-        val request = PrivateListeningRequest(id, descriptor, now(), channel?.maintenance?.elapsedMillis ?: 0, bufferProfile)
+        val request = PrivateListeningRequest(id, descriptor, now(), channel?.maintenance?.elapsedMillis ?: 0,
+            bufferProfile, preferences.speakerFallback(requireNotNull(local), descriptor.peer))
         current = request
         diagnostics = null
         state = 1
@@ -322,7 +349,10 @@ class PrivateListeningController internal constructor(
         request.underruns = health.underruns.coerceIn(0, 4294967295L)
         if (!request.focusPaused && !request.maintenanceActive && !request.priming) {
             state = if (health.rebuffering) 5 else 2
-            status = if (health.rebuffering) "Buffering current Mac audio…" else "Listening to ${request.descriptor.peer.deviceName}."
+            status = if (health.rebuffering) "Buffering current Mac audio…"
+                else if (health.routeType == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
+                    "Playing on phone speaker — not private."
+                else "Listening to ${request.descriptor.peer.deviceName}."
         }
     }
 
@@ -494,6 +524,7 @@ class PrivateListeningController internal constructor(
         localLookup?.cancel()
         localFingerprint = null
         consentEnabled = false
+        speakerFallbackEnabled = false
         outgoing.clear()
         terminal = null
     }

@@ -29,9 +29,12 @@ internal interface ListeningNativeTrack {
     fun play()
     fun write(bytes: ByteArray, offset: Int, count: Int): Int
     fun release()
+    fun preferBuiltInSpeaker(): Boolean = false
 }
 
-internal class PrivateListeningNativeTrack private constructor(private val track: AudioTrack) : ListeningNativeTrack {
+internal class PrivateListeningNativeTrack private constructor(
+    private val track: AudioTrack, private val audio: AudioManager,
+) : ListeningNativeTrack {
     private var routing: AudioRouting.OnRoutingChangedListener? = null
     override val initialized get() = track.state == AudioTrack.STATE_INITIALIZED
     override val bufferSizeInFrames get() = track.bufferSizeInFrames
@@ -58,6 +61,11 @@ internal class PrivateListeningNativeTrack private constructor(private val track
     override fun pause() = track.pause()
     override fun flush() = track.flush()
     override fun play() = track.play()
+    override fun preferBuiltInSpeaker(): Boolean {
+        val speaker = audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER } ?: return false
+        return track.setPreferredDevice(speaker)
+    }
     override fun write(bytes: ByteArray, offset: Int, count: Int) =
         track.write(bytes, offset, count, AudioTrack.WRITE_NON_BLOCKING)
     override fun release() {
@@ -66,15 +74,17 @@ internal class PrivateListeningNativeTrack private constructor(private val track
     }
 
     companion object {
-        fun create(audio: AudioManager, confirmed: Set<String>): ListeningNativeTrack {
+        fun create(audio: AudioManager, confirmed: Set<String>, speakerFallback: Boolean = false): ListeningNativeTrack {
             val minimum = AudioTrack.getMinBufferSize(48000, AudioFormat.CHANNEL_OUT_STEREO,
                 AudioFormat.ENCODING_PCM_16BIT)
             if (minimum <= 0 || minimum / 4 > PrivateListeningNativeBufferPolicy.MAXIMUM_NATIVE_FRAMES) {
                 throw PrivateListeningPlaybackError(3, "Audio buffer unsupported")
             }
-            val candidate = audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull {
+            val outputs = audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            val candidate = outputs.firstOrNull {
                 PrivateListeningRoutes.privateOutput(it.route(), confirmed)
-            } ?: throw PrivateListeningPlaybackError(6, "Connect or confirm your headphones")
+            } ?: outputs.firstOrNull { speakerFallback && it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                ?: throw PrivateListeningPlaybackError(6, "Connect or confirm your headphones")
             fun create(mode: Int) = AudioTrack.Builder()
                 .setAudioAttributes(PrivateListeningPlayer.ATTRIBUTES)
                 .setAudioFormat(AudioFormat.Builder().setSampleRate(48000).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
@@ -88,9 +98,9 @@ internal class PrivateListeningNativeTrack private constructor(private val track
                     throw PrivateListeningPlaybackError(3, "Native audio playback unsupported")
                 }
                 if (!native.setPreferredDevice(candidate)) {
-                    throw PrivateListeningPlaybackError(6, "Headphone route unavailable")
+                    throw PrivateListeningPlaybackError(6, "Approved audio route unavailable")
                 }
-                return PrivateListeningNativeTrack(native)
+                return PrivateListeningNativeTrack(native, audio)
             } catch (error: Exception) {
                 native.release()
                 throw error

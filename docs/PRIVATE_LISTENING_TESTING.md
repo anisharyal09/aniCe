@@ -6,6 +6,16 @@ Use the isolated Transfer Previews on the Mac and phone, secured LAN and headpho
 
 ## Compare modes and interruptions
 
+Speaker fallback is deliberately audible and has separate default-off consent.
+Check that headphone loss still stops with fallback off. With it explicitly
+confirmed, test Start without headphones and headphone loss during a stream:
+current PCM should resume only after silent route verification, with a not-private
+warning in the phone panel/notification. Test disabling fallback during playback,
+unknown external-route rejection, focus interruption and notification Stop.
+Record phone-speaker delay separately from Bluetooth; neither local backlog nor
+removing Bluetooth proves imperceptible delay. Do not enable fallback as part of
+ordinary headphones-only test setup.
+
 1. Record phone model/OS, headphone model, buffering mode and app build/commit.
 2. Listen foreground for two minutes; screenshot app backlog/target, underruns, gap recoveries and rebuffer counts.
 3. Leave the app in the background for five minutes, then test screen-off for five minutes. Record audible gaps separately from the time the UI reports buffering.

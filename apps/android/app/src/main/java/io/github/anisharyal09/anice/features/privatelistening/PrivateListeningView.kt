@@ -24,6 +24,9 @@ fun PrivateListeningView(controller: PrivateListeningController) {
     val app = context.applicationContext as AniCeApplication
     var revision by remember { mutableIntStateOf(0) }
     var confirmationError by remember { mutableStateOf(false) }
+    var speakerConfirmation by remember {
+        mutableStateOf<io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity?>(null)
+    }
     val routes = remember(revision) {
         context.getSystemService(AudioManager::class.java).getDevices(AudioManager.GET_DEVICES_OUTPUTS)
             .filter { it.type in listOf(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
@@ -44,6 +47,25 @@ fun PrivateListeningView(controller: PrivateListeningController) {
         if (controller.active) {
             Button(onClick = { controller.stop() }) { Text(stringResource(R.string.listening_stop)) }
         }
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = controller.speakerFallbackEnabled,
+                enabled = controller.peer != null && (!controller.active || controller.speakerFallbackEnabled),
+                onCheckedChange = { enabled ->
+                    if (enabled) speakerConfirmation = controller.peer else controller.setSpeakerFallback(false)
+                })
+            Text(stringResource(R.string.listening_speaker_fallback), modifier = Modifier.weight(1f))
+        }
+        Text(stringResource(R.string.listening_speaker_help), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (speakerConfirmation != null) AlertDialog(onDismissRequest = { speakerConfirmation = null },
+            title = { Text(stringResource(R.string.listening_speaker_confirm_title)) },
+            text = { Text(stringResource(R.string.listening_speaker_confirm_help)) },
+            confirmButton = { TextButton(onClick = {
+                val confirmedPeer = speakerConfirmation
+                speakerConfirmation = null
+                if (confirmedPeer == controller.peer) controller.setSpeakerFallback(true)
+            }) { Text(stringResource(R.string.listening_speaker_allow)) } },
+            dismissButton = { TextButton(onClick = { speakerConfirmation = null }) { Text("Cancel") } })
         Text(stringResource(R.string.listening_buffer_mode), style = MaterialTheme.typography.titleSmall)
         Column(Modifier.selectableGroup()) {
             for (profile in ListeningBufferProfile.entries) {
@@ -79,7 +101,7 @@ fun PrivateListeningView(controller: PrivateListeningController) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        if (!controller.active && routes.isEmpty()) Text(stringResource(R.string.listening_headphone_hint),
+        if (!controller.active && routes.isEmpty() && !controller.speakerFallbackEnabled) Text(stringResource(R.string.listening_headphone_hint),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         for (route in routes) {
             val key = route.confirmationKey

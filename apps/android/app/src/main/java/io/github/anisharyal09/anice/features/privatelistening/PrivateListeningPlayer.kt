@@ -39,12 +39,14 @@ internal class PrivateListeningPlayer(
     confirmedRoutes: Set<String>,
     profile: ListeningBufferProfile = ListeningBufferProfile.BALANCED,
     now: () -> Long = { SystemClock.elapsedRealtime() },
+    private val speakerFallback: Boolean = false,
     routeLost: () -> Unit,
 ) {
     constructor(audio: AudioManager, confirmedRoutes: Set<String>,
-        profile: ListeningBufferProfile = ListeningBufferProfile.BALANCED, routeLost: () -> Unit) :
-        this({ PrivateListeningNativeTrack.create(audio, confirmedRoutes) }, confirmedRoutes, profile,
-            routeLost = routeLost)
+        profile: ListeningBufferProfile = ListeningBufferProfile.BALANCED, speakerFallback: Boolean = false,
+        routeLost: () -> Unit) :
+        this({ PrivateListeningNativeTrack.create(audio, confirmedRoutes, speakerFallback) },
+            confirmedRoutes, profile, speakerFallback = speakerFallback, routeLost = routeLost)
 
     private val makeTrack = makeTrack
     private val confirmedRoutes = confirmedRoutes
@@ -81,6 +83,7 @@ internal class PrivateListeningPlayer(
     private var lastArrivalAt = 0L
     private var maximumArrivalGapMillis = 0L
     private var fadeNext = false
+    private var preparedRoutes: List<Pair<Int, String>>? = null
     var performanceMode = AudioTrack.PERFORMANCE_MODE_NONE
         private set
     private val routing: () -> Unit = {
@@ -141,6 +144,7 @@ internal class PrivateListeningPlayer(
             track?.pause()
             track?.flush()
             resetCounters()
+            stagingFrames = 0
         }
     }
 
@@ -245,9 +249,13 @@ internal class PrivateListeningPlayer(
                     expectedOffset = null
                     synchronized(nativeLock) {
                         if (closed || paused || !queue.currentPreparation(token)) throw CancellationException()
+                        if (!PrivateListeningRoutes.permitted(native.routes, confirmedRoutes, speakerFallback)) {
+                            throw PrivateListeningPlaybackError(6, "Approved audio route lost during preparation")
+                        }
                         if (!native.setVolume(1f)) {
                             throw PrivateListeningPlaybackError(8, "Audio volume setup failed")
                         }
+                        preparedRoutes = native.routes.map { it.type to it.address }
                     }
                     if (!queue.primed(token)) throw CancellationException()
                     updateNativeFrames()
@@ -308,7 +316,11 @@ internal class PrivateListeningPlayer(
                 // Already-written native audio remains owned and is never replayed.
                 queue.trimToTarget(nativeFrames + stagingFrames + resampler.bufferedFrames)
             }
-            if (!safeRoute()) { interruptRoute(); throw PrivateListeningPlaybackError(6, "Headphone route lost") }
+            if (!safeRoute()) {
+                interruptRoute()
+                if (speakerFallback) return true
+                throw PrivateListeningPlaybackError(6, "Headphone route lost")
+            }
             val head = synchronized(nativeLock) { playbackClock.playedFrames }
             if (nativeFrames > 0 && queue.queuedFrames > 0) {
                 if (nativeProgressAt == null || head != observedHead) nativeProgressAt = time
@@ -367,7 +379,11 @@ internal class PrivateListeningPlayer(
             var previousNativeFrames = nativeFrames
             while (offset < bytes && !closed && !paused && primingToken == null && queue.permitsWrite(token)) {
                 coroutineContext.ensureActive()
-                if (!safeRoute()) { interruptRoute(); throw PrivateListeningPlaybackError(6, "Headphone route lost") }
+                if (!safeRoute()) {
+                    interruptRoute()
+                    if (speakerFallback) return true
+                    throw PrivateListeningPlaybackError(6, "Headphone route lost")
+                }
                 updateNativeFrames()
                 if (nativeFrames < previousNativeFrames) progressAt = now()
                 previousNativeFrames = nativeFrames
@@ -436,9 +452,19 @@ internal class PrivateListeningPlayer(
         if (!closed && primingToken == null && !paused && !safeRoute()) interruptRoute()
     }
 
+    fun prepareSpeakerFallback(): Boolean = synchronized(nativeLock) {
+        if (closed || !speakerFallback) return@synchronized false
+        // This per-track preference is only a routing hint. Audible writes stay
+        // closed until resume silently observes the actually routed device(s).
+        pause()
+        track?.preferBuiltInSpeaker() == true
+    }
+
     private fun safeRoute(): Boolean = synchronized(nativeLock) {
         val native = track ?: return@synchronized false
-        PrivateListeningRoutes.approved(native.routes, confirmedRoutes)
+        val routes = native.routes
+        PrivateListeningRoutes.permitted(routes, confirmedRoutes, speakerFallback) &&
+            (primingToken != null || preparedRoutes == routes.map { it.type to it.address })
     }
 
     private fun interruptRoute() {

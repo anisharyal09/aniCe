@@ -16,6 +16,41 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PrivateListeningControllerTests {
+    @Test fun speakerPermissionIsFrozenForTheTicketAndRevocationStopsOutput() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.owner.setSpeakerFallback(true)
+        h.start()
+        val ticket = requireNotNull(h.request)
+        assertTrue(ticket.speakerFallback)
+        val output = h.attach()
+        h.owner.setSpeakerFallback(false)
+        assertFalse(h.owner.active)
+        assertEquals(1, output.closed)
+        assertFalse(h.owner.speakerFallbackEnabled)
+        h.owner.serviceDestroyed(ticket, h)
+        h.start(OTHER_ID)
+        assertFalse(requireNotNull(h.request).speakerFallback)
+        h.owner.setSpeakerFallback(true)
+        assertFalse(h.owner.speakerFallbackEnabled)
+        h.owner.stop()
+    }
+
+    @Test fun speakerRouteRecoveryDoesNotReplaceTheStreamAndStopFencesIt() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.owner.setSpeakerFallback(true)
+        h.start()
+        val ticket = requireNotNull(h.request)
+        val output = h.attach()
+        h.owner.outputRouteChanged(ticket)
+        assertTrue(h.owner.active)
+        assertEquals(ID, h.owner.streamId)
+        assertEquals(1, output.resumed)
+        h.owner.stop()
+        h.owner.outputRouteChanged(ticket)
+        assertEquals(1, output.resumed)
+    }
     @Test fun workerAudioFeedsReadyOutputWithoutUiDeliveryAndStopsAtTheSameStreamBoundary() = runBlocking {
         val h = Harness()
         h.owner.setConsent(true)

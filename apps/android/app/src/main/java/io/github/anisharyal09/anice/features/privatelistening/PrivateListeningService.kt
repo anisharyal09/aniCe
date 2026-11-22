@@ -59,9 +59,18 @@ class PrivateListeningService : Service() {
     private val noisy = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
-                controller.stop(reason = 2, message = "Headphones disconnected.")
+                recoverRoute()
             }
         }
+    }
+    private fun recoverRoute() {
+        val ticket = request ?: return
+        if (ticket.priming) return // Coalesce noisy/routing/device callbacks for this recovery.
+        if (!ticket.speakerFallback || !ticket.ready || player?.prepareSpeakerFallback() != true) {
+            controller.stop(reason = 2, message = "Approved audio route lost.")
+            return
+        }
+        controller.outputRouteChanged(ticket)
     }
     private val devices = object : AudioDeviceCallback() {
         override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
@@ -89,8 +98,9 @@ class PrivateListeningService : Service() {
             })
             ServiceCompat.startForeground(this, ID, notification(ticket),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-            val output = PrivateListeningPlayer(audio, app.listeningConfirmedRoutes(), ticket.bufferProfile) {
-                handler.post { if (request === ticket) controller.stop(reason = 2, message = "Headphone route lost.") }
+            val output = PrivateListeningPlayer(audio, app.listeningConfirmedRoutes(), ticket.bufferProfile,
+                ticket.speakerFallback) {
+                handler.post { if (request === ticket) recoverRoute() }
             }
             player = output
             val worker = PrivateListeningAudioWorker()
@@ -147,10 +157,12 @@ class PrivateListeningService : Service() {
             devicesRegistered = true
             powerJob = scope.launch {
                 var previousState = controller.state
+                var previousRoute = controller.diagnostics?.routeType
                 while (request === ticket && controller.request(id, instance) === ticket) {
                     if (focusGranted && android.os.SystemClock.elapsedRealtime() - powerRefreshAt >= 30000) acquirePower()
-                    if (previousState != controller.state) {
+                    if (previousState != controller.state || previousRoute != controller.diagnostics?.routeType) {
                         previousState = controller.state
+                        previousRoute = controller.diagnostics?.routeType
                         getSystemService(NotificationManager::class.java).notify(ID, notification(ticket))
                         app.listeningMediaStateChanged()
                     }
@@ -174,13 +186,13 @@ class PrivateListeningService : Service() {
                         output.pump { health -> scope.launch { controller.playbackHealth(ticket, health) } }
                     }
                 } catch (error: kotlinx.coroutines.TimeoutCancellationException) {
-                    controller.failed(ticket, 9, "Headphone preparation timed out.")
+                    controller.failed(ticket, 9, "Audio output preparation timed out.")
                 } catch (error: CancellationException) {
                     if (controller.request(id, instance) === ticket) controller.failed(ticket, 8, "Audio preparation was cancelled.")
                 } catch (error: PrivateListeningPlaybackError) {
                     controller.failed(ticket, error.result, error.message.orEmpty())
                 } catch (_: Exception) {
-                    controller.failed(ticket, 8, "Native headphone playback failed.")
+                    controller.failed(ticket, 8, "Native audio playback failed.")
                 }
             }
         } catch (_: SecurityException) {
@@ -209,6 +221,9 @@ class PrivateListeningService : Service() {
         return Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_notification_small)
             .setContentTitle(getString(R.string.listening_title))
             .setContentText(when (controller.state) {
+                2L -> if (controller.diagnostics?.routeType == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
+                    getString(R.string.listening_speaker_active)
+                    else getString(R.string.listening_notification_peer, ticket.descriptor.peer.deviceName)
                 4L -> getString(R.string.listening_renewing)
                 3L -> getString(R.string.listening_focus_paused)
                 5L -> getString(R.string.listening_buffering)

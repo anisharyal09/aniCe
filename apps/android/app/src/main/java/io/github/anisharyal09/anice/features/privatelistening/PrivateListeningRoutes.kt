@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Accepts explicitly private output types or address-bound headphone confirmation without trusting ephemeral device IDs.
+// Separates private routes from explicitly consented built-in speaker playback; never trusts labels or ephemeral IDs.
 package io.github.anisharyal09.anice.features.privatelistening
 
 import android.media.AudioDeviceInfo
@@ -19,4 +19,9 @@ internal object PrivateListeningRoutes {
 
     fun approved(routes: List<ListeningRoute>, confirmed: Set<String>): Boolean =
         routes.isNotEmpty() && routes.all { privateOutput(it, confirmed) }
+
+    fun permitted(routes: List<ListeningRoute>, confirmed: Set<String>, speakerFallback: Boolean): Boolean =
+        routes.isNotEmpty() && routes.all {
+            privateOutput(it, confirmed) || speakerFallback && it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+        }
 }

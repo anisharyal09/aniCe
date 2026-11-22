@@ -88,6 +88,11 @@ Profile 4 reserves a 524,416-byte authenticated plaintext budget for each transf
 
 ## Private Listening
 
+Android has an explicit default-off, credential-scoped built-in speaker fallback
+exception to headphone-only routing. It adds no transport or wire field: the
+native worker pauses/flushes and silently re-verifies output before current audio
+resumes; revocation stops listening. Speaker playback is deliberately not private.
+
 Mac process taps capture fixed 48-kHz stereo PCM16 for one authenticated Android peer over an already-secured LAN channel. Android receiving consent binds the full peer credential and current local identity; an eligible native mediaPlayback service owns headphone routing, focus and job-scoped LAN work. Mac suppresses tapped-process output only after phone Ready and keeps reading/discarding during interruptions. Existing channel maintenance preserves stream ownership across retained-socket renewal; actual retirement ends listening without replay.
 
 Audio workers retain bounded plaintext/native queues. Android owns adaptive Balanced and opt-in Lower delay profiles, platform-aware native startup/write limits and local backlog diagnostics; none synchronizes arbitrary Mac video or changes wire PCM. App assembly switches phone media volume to local output and paces future transfer chunks/credit during listening without changing session framing, crypto validation or Connections feature dependencies. See [feature behavior](docs/features/PRIVATE_LISTENING.md) and [Private Listening v1](protocol/private-listening/README.md).

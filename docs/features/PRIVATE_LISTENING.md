@@ -26,7 +26,22 @@ The Mac minimum is macOS 14.2. Android retains API 29 and later. Native low-late
 
 Phone hardware volume buttons and the active media session control local phone/headphone media volume during listening ownership, including preparation, pauses and LAN maintenance. Previously queued remote Mac-volume callbacks are invalidated. Player transport commands remain scoped to current Mac playback capabilities.
 
-Android approves explicitly identified wired headphones/headsets, USB headsets and BLE headsets. A2DP and generic USB are ambiguous and require confirmation. An actual speaker/unknown route is not approved by its product name. Routing changes and becoming-noisy events stop playback rather than intentionally falling back to phone speakers; asynchronous OS routing still governs what happens before notification delivery.
+Android approves explicitly identified wired headphones/headsets, USB headsets and BLE headsets. A2DP and generic USB are ambiguous and require confirmation. An actual speaker/unknown route is not approved by its product name. By default, route loss and becoming-noisy events stop playback; asynchronous OS routing still governs what happens before notification delivery.
+
+**Use phone speaker when headphones are unavailable** is a separate Android
+opt-in, off by default and bound to this Mac's full credential and the current
+phone identity. Enable it before Start and confirm that audio can play aloud.
+It uses confirmed headphones first, otherwise the built-in phone speaker, and
+may switch to that speaker after headphone loss. Recovery pauses and flushes,
+then silently verifies the route before current audio resumes. Unknown,
+unconfirmed Bluetooth, HDMI and earpiece outputs remain unapproved. Speaker
+playback is labelled **not private** in the panel/notification. Turning the
+option off during listening stops it; enabling receiving alone never enables
+speaker fallback.
+
+Phone speakers avoid downstream Bluetooth encoding/headphone buffering, but
+retain capture, LAN, app-buffer and OS-output delay. They do not guarantee
+imperceptible latency, video lip-sync, or freedom from scheduling/network stalls.
 
 **Stop listening** is available in the feature panel, phone notification and active Mac companion row. Terminal cleanup restores normal Mac output. A still-playing source can become audible on Mac; the feature is not a crash-proof mute latch. No audio history, saved recording or offline queue is created.
 
@@ -49,7 +64,7 @@ With Bluetooth headphones, especially on Android 34+, leaving the app or switchi
 
 ## Interruptions and renewal
 
-Transient focus loss pauses/flushes phone playback for at most 90 seconds; Mac capture continues reading/discarding with the chosen mute behavior. Focus return silently re-primes and verifies routing before current audio resumes. Permanent focus loss and headphone route loss end listening.
+Transient focus loss pauses/flushes phone playback for at most 90 seconds; Mac capture continues reading/discarding with the chosen mute behavior. Focus return silently re-primes and verifies routing before current audio resumes. Permanent focus loss ends listening. Headphone loss ends listening unless the separately enabled speaker fallback can be silently verified.
 
 Silent priming accounts for delayed native playback-head resets and route-driven startup-threshold changes. A raised threshold tops up only its missing pending silent reservation, including when earlier silence has already drained. It retains the original preparation deadline and never opens audible writes before route verification.
 

@@ -13,6 +13,59 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PrivateListeningPlayerTests {
+    @Test fun explicitlyPermittedSpeakerUsesSilentPrimingBeforeCurrentPcm() = runBlocking {
+        val now = clock()
+        val native = Track(now)
+        val track = object : ListeningNativeTrack by native {
+            override val routes get() = if (!native.playing) emptyList() else
+                listOf(ListeningRoute(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, "", "Phone"))
+        }
+        val player = PrivateListeningPlayer({ track }, emptySet(), ListeningBufferProfile.LOWER_DELAY,
+            now = now, speakerFallback = true) { fail("Approved speaker lost") }
+        try {
+            player.prepare()
+            assertEquals(0, native.nonzeroFrames)
+            for (sequence in 1L..6) player.offer(packet(sequence))
+            val pumping = launch { player.pump {} }
+            try {
+                withTimeout(3000) { while (native.nonzeroFrames == 0) delay(5) }
+                assertTrue(native.maximumAudiblePending <= 1920)
+            } finally { player.close(); pumping.cancelAndJoin() }
+        } finally { player.close() }
+    }
+
+    @Test fun headphoneToSpeakerChangeClosesWritesUntilFreshSilentVerification() = runBlocking {
+        val now = clock()
+        val native = Track(now)
+        var speaker = false
+        val track = object : ListeningNativeTrack by native {
+            override val routes get() = if (!native.playing) emptyList() else listOf(ListeningRoute(
+                if (speaker) AudioDeviceInfo.TYPE_BUILTIN_SPEAKER else AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+                "", "Fixture"))
+            override fun preferBuiltInSpeaker(): Boolean { speaker = true; return true }
+        }
+        var losses = 0
+        val player = PrivateListeningPlayer({ track }, emptySet(), ListeningBufferProfile.LOWER_DELAY,
+            now = now, speakerFallback = true) { losses++ }
+        try {
+            player.prepare()
+            speaker = true
+            native.changed()
+            assertEquals(1, losses)
+            assertEquals(0f, native.volume, 0f)
+            assertFalse(player.offer(packet(1)))
+            assertTrue(player.prepareSpeakerFallback())
+            player.beginResume()
+            for (sequence in 2L..7) assertTrue(player.offer(packet(sequence)))
+            player.resume()
+            assertEquals(0, native.nonzeroFrames)
+            val pumping = launch { player.pump {} }
+            try {
+                withTimeout(3000) { while (native.nonzeroFrames == 0) delay(5) }
+            } finally { player.close(); pumping.cancelAndJoin() }
+        } finally { player.close() }
+    }
+
     private class Track(
         private val now: () -> Long,
         private val modern: Boolean = true,

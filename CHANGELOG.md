@@ -10,6 +10,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
+- Add separately confirmed, default-off Android built-in speaker fallback for
+  Mac audio, preserving receiving consent, route verification and bounded queues.
 - Add bounded, read-only Private Listening preview diagnostics and a physical comparison guide without recording audio or changing device settings; recognize native track prefixes and separate current Wi-Fi rates from capability limits.
 - Connect native Private Listening engines through secured LAN with explicit setup, bounded lifecycle, local headphone volume and transfer pacing.
 - Add native Private Listening capture/playback primitives with bounded buffers, route verification and off-callback audio conversion.

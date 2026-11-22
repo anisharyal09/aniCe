@@ -129,6 +129,11 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 - Centered track metadata (title, artist, album), fixed-dimension artwork placeholder to prevent layout shifts, transport controls (play/pause/skip), and volume slider.
 
 ### Private Listening
+- Phone speaker fallback is a separate default-off, credential-scoped checkbox
+  with explicit audible/non-private confirmation before enabling. Keep it below
+  Stop and above diagnostics. Permit revocation during playback by stopping;
+  never silently enable it from receiving consent. Label actual speaker output
+  as not private in the feature and notification.
 - Keep explicit capture preparation and Start/Stop on Mac; Android receiving consent remains credential-scoped and headphone confirmation is local.
 - Android buffering choices form one accessible radio group: Balanced by default and opt-in Lower delay, disabled while listening. Keep Stop above diagnostics so setup detail cannot bury it.
 - Label app/native buffer diagnostics as local backlog, with native writes included once. Never label a target or platform buffer as measured video/headphone latency. Explain Bluetooth's additional output delay without promising lip-sync. See [Private Listening](../features/PRIVATE_LISTENING.md).

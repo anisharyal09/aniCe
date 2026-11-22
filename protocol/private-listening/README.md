@@ -29,6 +29,15 @@ Mac requires an already-secured LAN channel and enabled capability. Local system
 
 Android prepares only one operation. It checks consent and current native startup eligibility, promotes its mediaPlayback service before requesting audio focus, silently primes playback and verifies the actual approved output route before returning Ready. A missing/unconfirmed private route fails preparation rather than launching a background confirmation dialog. Notification permission denial alone does not prohibit a foreground service; result 7 denotes an actual required-notification setup failure.
 
+Android may additionally permit its built-in speaker only with separate,
+default-off, local/full-peer-credential-scoped speaker-fallback consent. This
+exception is audible, not private, and grants neither receiving consent nor
+authorization to unknown/external outputs. The choice is frozen for each Start;
+revocation stops the stream. Without it, headphones-only admission is unchanged.
+Route fallback pauses/flushes obsolete audio and silently verifies the built-in
+speaker before current PCM resumes on the same stream. No new wire field or
+Ready replay is introduced; ordinary deadlines, focus and retirement still win.
+
 A duplicate Start with the same ID and channel coalesces during preparation or repeats its live Ready result without extending deadlines. A different ID while preparing or active returns busy. A stopped/rejected/timed-out ID cannot be reused on that channel. A late result cannot revive an aborted operation.
 
 Every mutation binds to the full peer credential, authenticated channel instance, stream ID and local operation generation. Capability is channel-scoped; every other message is stream-scoped. Unknown or retired stream traffic is discarded. Traffic with a valid shape but the wrong direction cannot change the receiving owner's state. Stop for an inactive ID is idempotently ignored. Readiness/submission is not proof of physical audibility.
@@ -83,7 +92,7 @@ Mac `lastSequence` is the highest successfully submitted Audio sequence, or zero
 
 Owners coalesce status changes and report health once per second while owned and outside maintenance. Successfully validated Audio or Status from the current stream confirms feature-peer activity. Missing such activity for ten seconds outside maintenance ends listening. Native transport/security deadlines remain independent. Legitimate silent Audio confirms activity. Slow focus/routing/preparation work must not block the shared DATA dispatcher.
 
-Transient focus loss, including a duck request under pause-on-duck policy, pauses/flushes playback for at most 90 seconds while Mac reads/discards and preserves its selected mute behavior. Focus gain requires silent re-priming and actual route verification. Permanent focus loss or unsafe route ends listening. Merely retaining a focus request does not establish granted focus.
+Transient focus loss, including a duck request under pause-on-duck policy, pauses/flushes playback for at most 90 seconds while Mac reads/discards and preserves its selected mute behavior. Focus gain requires silent re-priming and actual route verification. Permanent focus loss ends listening. Route loss ends listening unless the separately consented built-in speaker fallback passes fresh silent verification; unknown outputs never authorize writes. Merely retaining a focus request does not establish granted focus.
 
 ## Retained-channel LAN renewal
 

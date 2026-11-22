@@ -6,6 +6,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Add credential-scoped speaker opt-in, silent route recovery and non-private
+  output warnings; revocation stops playback without enabling unknown routes.
 - Add isolated, non-playback device regressions for accepted audio-worker priority,
   native PCM support, private service declaration and credential/Stop admission.
 - Add credential-scoped Private Listening consent, headphone confirmation and foreground playback with focus, notification Stop and native work leases.
