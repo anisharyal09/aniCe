@@ -48,7 +48,7 @@ struct MacKeyboardTrackpadView: View {
       targetHeader
 
       if !floatingPresentation {
-        Text("Shortcut: ⌥⌘K shows or hides Floating Key")
+        Text("Shortcut: \(GlobalShortcutPreferences.shared.binding(.floatingKey).label) shows or hides Floating Key")
           .font(.caption)
           .foregroundStyle(AniCePalette.secondaryText(scheme))
       }

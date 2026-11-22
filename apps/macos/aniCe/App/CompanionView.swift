@@ -28,7 +28,7 @@ struct CompanionView: View {
         AniCeWordmark(size: 15, weight: .semibold)
         Spacer()
         Menu {
-          Button("Quick Paste Tray (⌥⌘V)") {
+          Button("Quick Paste Tray (\(GlobalShortcutPreferences.shared.binding(.tray).label))") {
             PasteTrayController.shared.show()
           }
           Button("Manage devices") { navigation.open(.devices, present: openMain) }
@@ -102,7 +102,7 @@ struct CompanionView: View {
         .buttonStyle(AniCeButtonStyle(compact: true))
         .frame(maxWidth: .infinity)
         .accessibilityLabel("Open clipboard tray")
-        .help("Open clipboard tray (⌥⌘V)")
+        .help("Open clipboard tray (\(GlobalShortcutPreferences.shared.binding(.tray).label))")
       }
 
       HStack(spacing: 8) {
@@ -125,7 +125,7 @@ struct CompanionView: View {
         .buttonStyle(AniCeButtonStyle(compact: true))
         .frame(maxWidth: .infinity)
         .accessibilityLabel(floatingKeyboard.isVisible ? "Hide Floating Key" : "Show Floating Key")
-        .help("Show Floating Key to type directly on Android; right-click for full controls including trackpad (⌥⌘K).")
+        .help("Show Floating Key to type directly on Android; right-click for trackpad controls (\(GlobalShortcutPreferences.shared.binding(.floatingKey).label)).")
       }
     }
   }
@@ -315,7 +315,7 @@ struct CompanionView: View {
       menu.addItem(entry)
     }
 
-    let keyboard = NSMenuItem(title: (floatingKeyboardVisible ? "Hide Floating Key" : "Show Floating Key") + "  ⌥⌘K",
+    let keyboard = NSMenuItem(title: (floatingKeyboardVisible ? "Hide Floating Key" : "Show Floating Key") + "  " + GlobalShortcutPreferences.shared.binding(.floatingKey).label,
       action: #selector(toggleFloatingKeyboard), keyEquivalent: "")
     keyboard.target = target
     menu.addItem(keyboard)

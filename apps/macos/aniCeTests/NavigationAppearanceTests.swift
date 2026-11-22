@@ -10,6 +10,46 @@ import Observation
 @testable import aniCe
 
 extension SessionTests {
+  @MainActor func testGlobalShortcutFailureAndCollisionPreserveSavedBinding() throws {
+    let name = "aniCe.ShortcutTests.\(UUID())"
+    let storage = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { storage.removePersistentDomain(forName: name) }
+    var allow = false
+    var attempts = 0
+    let preferences = GlobalShortcutPreferences(storage: storage) { _, _ in attempts += 1; return allow }
+    let candidate = GlobalShortcut(keyCode: 0, shift: true)
+    XCTAssertFalse(preferences.set(candidate, for: .tray))
+    XCTAssertEqual(preferences.binding(.tray), GlobalShortcutAction.tray.defaultBinding)
+    XCTAssertNil(storage.dictionary(forKey: "ui.globalShortcut.tray"))
+    XCTAssertFalse(preferences.set(preferences.binding(.floatingKey), for: .tray))
+    XCTAssertEqual(attempts, 1, "Internal collisions must not reach native registration")
+    allow = true
+    XCTAssertTrue(preferences.set(candidate, for: .tray))
+    XCTAssertEqual(preferences.binding(.tray), candidate)
+    XCTAssertNil(preferences.errors[.tray])
+    let restored = GlobalShortcutPreferences(storage: storage) { _, _ in true }
+    XCTAssertEqual(restored.binding(.tray), candidate)
+    XCTAssertFalse(preferences.set(GlobalShortcut(keyCode: 53, shift: false), for: .tray))
+    XCTAssertEqual(preferences.binding(.tray), candidate)
+  }
+
+  @MainActor func testShortcutCaptureRejectsEditingAndSystemCombinations() throws {
+    for code: UInt16 in [12, 4, 2, 46, 53] {
+      XCTAssertFalse(GlobalShortcut(keyCode: code, shift: false).valid)
+      XCTAssertFalse(GlobalShortcut(keyCode: code, shift: true).valid)
+    }
+    for flags: NSEvent.ModifierFlags in [.command, [.command, .shift], [.control, .option], []] {
+      let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+        modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil,
+        characters: "z", charactersIgnoringModifiers: "z", isARepeat: false, keyCode: 6))
+      XCTAssertNil(GlobalShortcut.captured(event))
+    }
+    let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+      modifierFlags: [.command, .option, .shift], timestamp: 0, windowNumber: 0, context: nil,
+      characters: "a", charactersIgnoringModifiers: "a", isARepeat: false, keyCode: 0))
+    XCTAssertEqual(GlobalShortcut.captured(event), GlobalShortcut(keyCode: 0, shift: true))
+  }
+
   @MainActor func testFeatureSettingsTargetSurvivesBackAndForward() {
     let navigation = ConnectionNavigation()
     navigation.openFeature(.clipboard)

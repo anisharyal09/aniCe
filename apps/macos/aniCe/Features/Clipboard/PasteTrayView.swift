@@ -295,7 +295,7 @@ struct PasteTrayView: View {
       Image(systemName: "clipboard").font(.system(size: 14)).foregroundStyle(AniCePalette.secondaryText(scheme))
       Text("Clipboard").font(.system(size: 13, weight: .medium))
       if !isNarrow {
-        Text("⌥⌘V").font(.system(size: 10)).foregroundStyle(AniCePalette.secondaryText(scheme))
+        Text(GlobalShortcutPreferences.shared.binding(.tray).label).font(.system(size: 10)).foregroundStyle(AniCePalette.secondaryText(scheme))
       }
     }.fixedSize()
   }

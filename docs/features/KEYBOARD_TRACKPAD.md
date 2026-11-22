@@ -14,6 +14,8 @@ Keyboard & Trackpad lets the Mac send standard Bluetooth keyboard and mouse inpu
 
 Press **⌥⌘K** anywhere while aniCe is running to show or hide **Floating Key**. Hover its button for direct-typing and trackpad guidance.
 
+Settings → Shortcuts can record or reset the Floating Key shortcut. Command–Option is required, Shift is optional, and reserved system combinations are rejected. A conflicting shortcut leaves the previous registration unchanged.
+
 Use **Other devices…** to select another trusted aniCe phone. Use **Change Bluetooth device…** in that menu to replace the system-paired device associated with the selected phone. A removed aniCe trust or reset local identity clears these local associations. Forgetting a phone in macOS Bluetooth Settings also requires linking again.
 
 ## Keyboard and pointer

@@ -572,11 +572,7 @@ extension MainWindowView {
                 }
                 settingsCategoryHeading(.shortcuts)
                 preferenceSection("Shortcuts", id: "shortcuts") {
-                  VStack(alignment: .leading, spacing: 8) {
-                    Text("Global · while aniCe is running").font(.system(size: 12 * fontScale))
-                    LabeledContent("Clipboard tray", value: "⌥⌘V")
-                    LabeledContent("Floating Key", value: "⌥⌘K")
-                  }.padding(.vertical, 12)
+                  GlobalShortcutSettingsView()
                 }
               }
             }

@@ -141,7 +141,7 @@ struct ClipboardView: View {
             Image(systemName: "rectangle.stack").foregroundStyle(AniCePalette.secondaryText(scheme))
           }
         }
-          .buttonStyle(AniCeButtonStyle(quiet: true)).help("Open clipboard tray (⌥⌘V)")
+          .buttonStyle(AniCeButtonStyle(quiet: true)).help("Open clipboard tray (\(GlobalShortcutPreferences.shared.binding(.tray).label))")
         Button {
           if let openSettings { openSettings() } else { preferencesOpen.toggle() }
         } label: { Image(systemName: "gearshape").frame(width: 24, height: 24) }
