@@ -46,6 +46,8 @@ struct MacKeyboardTrackpadView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: floatingPresentation ? 12 : 16) {
       targetHeader
+      Toggle("Use keyboard and trackpad together", isOn: $model.combinedInput)
+        .toggleStyle(.checkbox).aniCeControlFeedback()
 
       if !floatingPresentation {
         Text("Shortcut: \(GlobalShortcutPreferences.shared.binding(.floatingKey).label) shows or hides Floating Key")
@@ -1030,7 +1032,7 @@ private struct KeyboardCaptureSurface: NSViewRepresentable {
     if let localMonitor { NSEvent.removeMonitor(localMonitor) }
   }
 
-  private static func hidModifiers(_ flags: NSEvent.ModifierFlags) -> UInt8 {
+  static func hidModifiers(_ flags: NSEvent.ModifierFlags) -> UInt8 {
     AniCeHIDProtocol.physicalModifiers(for: flags)
   }
 }
@@ -1068,6 +1070,7 @@ private struct MousePadSurface: NSViewRepresentable {
   private var mouseTrackingArea: NSTrackingArea?
   private var consumingArmingGesture = false
   private var blockedTouchSequence = false
+  private var combinedCapsLock = false
   private var focusedOwner: KeyboardTrackpadCaptureOwner?
 
   override var acceptsFirstResponder: Bool { true }
@@ -1135,7 +1138,41 @@ private struct MousePadSurface: NSViewRepresentable {
       model?.stopControl(owner: captureOwner)
       return
     }
+    if forwardCombinedKey(event) { return }
     super.keyDown(with: event)
+  }
+
+  override func keyUp(with event: NSEvent) {
+    if !forwardCombinedKey(event) { super.keyUp(with: event) }
+  }
+  override func flagsChanged(with event: NSEvent) {
+    if !forwardCombinedKey(event) { super.flagsChanged(with: event) }
+  }
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    forwardCombinedKey(event) || super.performKeyEquivalent(with: event)
+  }
+  private func forwardCombinedKey(_ event: NSEvent) -> Bool {
+    guard let model, model.combinedInput, model.isControlling(owner: captureOwner),
+      let window, window.isKeyWindow, window.firstResponder === self else { return false }
+    if event.keyCode == 53 && event.modifierFlags.contains([.command, .shift]) {
+      model.stopControl(owner: captureOwner); return true
+    }
+    let modifiers = KeyboardInputNSView.hidModifiers(event.modifierFlags)
+    if event.type == .flagsChanged {
+      if event.keyCode == 0x39 {
+        let enabled = event.modifierFlags.contains(.capsLock)
+        if enabled != combinedCapsLock {
+          combinedCapsLock = enabled
+          model.keyDown(usage: 0x39, modifiers: modifiers, owner: captureOwner)
+          model.keyUp(usage: 0x39, modifiers: modifiers, owner: captureOwner)
+        }
+      } else { model.modifiersChanged(modifiers, owner: captureOwner) }
+    } else {
+      let usage = AniCeHIDProtocol.usage(forMacKeyCode: event.keyCode)
+      if event.type == .keyUp { model.keyUp(usage: usage, modifiers: modifiers, owner: captureOwner) }
+      else if !event.isARepeat { model.keyDown(usage: usage, modifiers: modifiers, owner: captureOwner) }
+    }
+    return true
   }
 
   override func mouseUp(with event: NSEvent) {

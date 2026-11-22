@@ -265,6 +265,13 @@ enum ClipboardTypingValidationError: Error, Equatable {
   var reverseVerticalPointer = false {
     didSet { preferences.set(reverseVerticalPointer, forKey: "keyboardTrackpad.reverseVerticalPointer") }
   }
+  var combinedInput = true {
+    didSet {
+      guard combinedInput != oldValue else { return }
+      stopControlling()
+      preferences.set(combinedInput, forKey: "keyboardTrackpad.combinedInput")
+    }
+  }
   var pointerSpeed: KeyboardTrackpadSpeed = .standard {
     didSet { preferences.set(pointerSpeed.rawValue, forKey: "keyboardTrackpad.pointerSpeed") }
   }
@@ -303,6 +310,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
     self.transport = transport
     self.preferences = preferences
     self.lifecycleCenter = lifecycleCenter
+    combinedInput = preferences.object(forKey: "keyboardTrackpad.combinedInput") as? Bool ?? true
     associations = KeyboardTrackpadAssociations(storage: preferences)
     if let raw = preferences.string(forKey: "keyboardTrackpad.scrollSpeed"),
        let stored = KeyboardTrackpadSpeed(rawValue: raw) {
@@ -632,7 +640,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
   }
 
   func keyDown(usage: UInt8, modifiers: UInt8, owner: KeyboardTrackpadCaptureOwner? = nil) {
-    guard phase == .controlling, activeSurface == .keyboard, owner == nil || activeOwner == owner,
+    guard phase == .controlling, activeSurface == .keyboard || combinedInput && activeSurface == .pad, owner == nil || activeOwner == owner,
           usage > 0, typingJob == nil else { return }
     heldModifiers = modifiers
     if heldUsages.contains(usage) { return }
@@ -645,7 +653,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
   }
 
   func keyUp(usage: UInt8, modifiers: UInt8, owner: KeyboardTrackpadCaptureOwner? = nil) {
-    guard phase == .controlling, activeSurface == .keyboard, owner == nil || activeOwner == owner,
+    guard phase == .controlling, activeSurface == .keyboard || combinedInput && activeSurface == .pad, owner == nil || activeOwner == owner,
           typingJob == nil else { return }
     heldModifiers = modifiers
     heldUsages.removeAll { $0 == usage }
@@ -653,7 +661,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
   }
 
   func modifiersChanged(_ modifiers: UInt8, owner: KeyboardTrackpadCaptureOwner? = nil) {
-    guard phase == .controlling, activeSurface == .keyboard, owner == nil || activeOwner == owner,
+    guard phase == .controlling, activeSurface == .keyboard || combinedInput && activeSurface == .pad, owner == nil || activeOwner == owner,
           typingJob == nil,
           heldModifiers != modifiers else { return }
     heldModifiers = modifiers

@@ -20,6 +20,7 @@ Use **Other devices…** to select another trusted aniCe phone. Use **Change Blu
 
 ## Keyboard and pointer
 
+- **Use keyboard and trackpad together** defaults on. An armed pointer pad also accepts physical keyboard input in regular, expanded floating and full-screen controls. Off restores separate keyboard/pad capture. Changing the preference releases input and requires a fresh activation.
 - Click the keyboard area to focus it. The click that starts control only arms keyboard input; it is not forwarded to the phone. Type with the Mac keyboard while the area has focus.
 - Click the pointer pad to arm pointer input. While inactive, scrolling over it scrolls this panel; once active, scrolling controls the phone. Later clicks and held drags are sent as mouse-button reports. Move the pointer to move the phone's pointer.
 - Drag the handle below the pointer pad up or down to resize the pad; the keyboard stays the same height. The saved pad height is shared by the main feature and expanded floating controls, and resizing keeps the input surface and its focus.

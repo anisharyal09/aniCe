@@ -72,6 +72,32 @@ import SwiftUI
 }
 
 final class KeyboardTrackpadTests: XCTestCase {
+  @MainActor func testCombinedPadAcceptsTypingAndModeChangeReleasesCapture() throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let preferences = testDefaults()
+    let model = MacKeyboardTrackpadModel(transport: transport, preferences: preferences)
+    defer { model.shutdown() }
+    model.updateTargets([peer], connectedPeerIDs: [peer.deviceId], peerContextID: nil)
+    model.refreshPairedDevices()
+    XCTAssertTrue(model.link(paired(peer)))
+    model.connect()
+    model.requestControl(on: .pad)
+    XCTAssertTrue(model.combinedInput)
+    model.keyDown(usage: 4, modifiers: 2)
+    model.pointerButtonDown()
+    XCTAssertTrue(transport.writes.contains(.keyboard(2, [4])))
+    XCTAssertTrue(transport.writes.contains(.mouse(1, 0, 0, 0)))
+    model.combinedInput = false
+    XCTAssertFalse(model.isControlling)
+    XCTAssertFalse(preferences.bool(forKey: "keyboardTrackpad.combinedInput"))
+    model.requestControl(on: .pad)
+    let count = transport.writes.count
+    model.keyDown(usage: 5, modifiers: 0)
+    XCTAssertEqual(transport.writes.count, count)
+  }
+
   @MainActor func testActiveBlePhoneIsTheAutomaticDefaultWithoutReroutingLiveInput() throws {
     let a = try phone("A"), b = try phone("B")
     let transport = FakeKeyboardTrackpadTransport()
