@@ -3,6 +3,34 @@
 import AppKit
 import SwiftUI
 
+struct ClipboardHistoryPauseMenu: View {
+  let history: ClipboardHistory
+  @State private var custom = false
+  @State private var minutes = 60.0
+  var body: some View {
+    Menu(history.collectionPaused ? "Resume history" : "Pause history") {
+      if history.collectionPaused {
+        Button("Resume history") { history.resumeCollection() }
+      }
+      ForEach(ClipboardPauseDuration.allCases) { duration in
+        Button(duration.rawValue) { history.pauseCollection(seconds: duration.seconds) }
+      }
+      Button("Custom…") { custom = true }
+    }.menuStyle(.borderlessButton)
+      .help(history.pauseDescription ?? "Pause history collection only; automatic sharing stays available")
+      .popover(isPresented: $custom) {
+        VStack(alignment: .leading, spacing: 12) {
+          Text("Pause history").font(.headline)
+          Stepper("Minutes: \(Int(minutes))", value: $minutes, in: 1...43200, step: 15)
+          HStack {
+            Button("Cancel") { custom = false }
+            Button("Pause") { history.pauseCollection(seconds: minutes * 60); custom = false }
+          }
+        }.padding(16)
+      }
+  }
+}
+
 struct ClipboardSettingsView: View {
   let model: MacClipboardModel
   let peers: [PeerTrustRecord]
@@ -55,6 +83,7 @@ struct ClipboardSettingsView: View {
             Rectangle().fill(AniCePalette.separator(scheme)).frame(height: 0.5).padding(.vertical, 8)
           }
           HistoryPreference(history: model.history, compact: compactSettings)
+          ClipboardHistoryPauseMenu(history: model.history)
         }
       }
       ClipboardAccessGuidance(model: model, settingsFontScale: compactSettings ? fontScale : nil)
@@ -311,7 +340,7 @@ struct ClipboardHistoryView: View {
       HStack {
         Text("\(model.history.entries.count) saved · On this Mac").font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
         Spacer()
-        Text(model.history.enabled ? "History on" : "History paused")
+        Text(model.history.collecting ? "History on" : "History paused")
           .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
         if !model.history.entries.isEmpty { Button("Clear...") { clearing = true }.buttonStyle(.borderless).aniCeControlFeedback().controlSize(.small) }
       }
@@ -343,11 +372,21 @@ struct ClipboardHistoryView: View {
           }
         }
       }
-      if model.history.error != nil && model.history.entries.isEmpty { Button("Clear history") { model.history.clear(includePinned: true) } }
+      if model.history.error != nil && model.history.entries.isEmpty { Button("Retry history update") { model.history.setEnabled(model.history.enabled) } }
+      if let status = model.history.editStatus { Text(status).font(.caption) }
+      HStack {
+        Button("Undo") { model.history.undo() }.disabled(!model.history.canUndo)
+        Button("Redo") { model.history.redo() }.disabled(!model.history.canRedo)
+        ClipboardHistoryPauseMenu(history: model.history)
+      }
     }
     .confirmationDialog("Clear clipboard history?", isPresented: $clearing) {
       Button("Clear unpinned", role: .destructive) { model.history.clear(includePinned: false) }
-      Button("Clear all", role: .destructive) { model.history.clear(includePinned: true) }
+      if filter == .pinned {
+        Button("Delete pinned clips", role: .destructive) {
+          model.history.delete(Set(model.history.entries.filter(\.pinned).map(\.id)), fromPinned: true)
+        }
+      }
       Button("Cancel", role: .cancel) {}
     } message: { Text("Clear saved text on this Mac. Pinned snippets are kept when clearing unpinned items.") }
   }
@@ -370,6 +409,6 @@ struct ClipboardHistoryView: View {
     }
     Button { model.sendHistory(entry) } label: { Label("Send", systemImage: "paperplane") }
       .disabled(model.busy || model.selected.map(model.supports) != true)
-    Button(role: .destructive) { model.history.delete(entry.id) } label: { Label("Delete", systemImage: "trash") }
+    Button(role: .destructive) { model.history.delete(entry.id, fromPinned: filter == .pinned) } label: { Label("Delete", systemImage: "trash") }
   }
 }

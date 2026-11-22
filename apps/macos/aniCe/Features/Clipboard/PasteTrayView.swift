@@ -241,6 +241,10 @@ struct PasteTrayView: View {
     }
     .onKeyPress(characters: PasteTrayKeyboard.searchCharacters) { press in
       guard !historyConsent.isPresented else { return .ignored }
+      if focus == .tray, press.modifiers.contains(.command), press.characters.lowercased() == "z" {
+        if press.modifiers.contains(.shift) { model.history.redo() } else { model.history.undo() }
+        return .handled
+      }
       guard press.characters != " " else { return .ignored }
       guard focus == .tray, press.modifiers.intersection([.command, .control, .option]).isEmpty else {
         if press.modifiers == .command && press.characters == "f" { focus = .search; return .handled }
@@ -352,6 +356,8 @@ struct PasteTrayView: View {
         Text(selectedIDs.count > 1 ? "\(selectedIDs.count) selected" : "← → Select · Space Preview · ↵ Copy · ⌫ Delete")
       }
       Spacer(minLength: 0)
+      if let status = model.history.editStatus { Text(status) }
+      ClipboardHistoryPauseMenu(history: model.history)
       if model.status == "Could not copy text" {
         Text("Could not copy text. Try again.").font(.system(size: 10)).foregroundStyle(AniCePalette.error(scheme))
           .accessibilityAddTraits(.updatesFrequently)
@@ -441,7 +447,7 @@ struct PasteTrayView: View {
     let earliestIndex = entries.firstIndex { idsToDelete.contains($0.id) } ?? 0
     let remaining = entries.filter { !idsToDelete.contains($0.id) }
 
-    model.deleteHistory(ids: idsToDelete)
+    model.history.delete(idsToDelete, fromPinned: filter == .pinned)
 
     if !remaining.isEmpty {
       let nextIndex = min(earliestIndex, remaining.count - 1)

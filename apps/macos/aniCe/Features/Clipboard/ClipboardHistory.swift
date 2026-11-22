@@ -134,12 +134,29 @@ struct ClipboardHistoryFile: ClipboardHistoryStorage {
   private var captures: [(ClipboardSample, String, String?)] = []
   private var recording = false
   private var preferenceRevision = 0
+  private struct Edit { let before: [ClipboardHistoryEntry]; let after: [ClipboardHistoryEntry] }
+  private var undoEdits: [Edit] = []
+  private var redoEdits: [Edit] = []
+  private(set) var editStatus: String?
+  private(set) var collectionPaused = false
+  private var pauseDeadline: Date?
+  private var pauseTask: Task<Void, Never>?
+  var collecting: Bool { enabled && !collectionPaused }
+  var canUndo: Bool { !undoEdits.isEmpty }
+  var canRedo: Bool { !redoEdits.isEmpty }
+  var pauseDescription: String? {
+    guard collectionPaused else { return nil }
+    return pauseDeadline.map { "History paused until " + $0.formatted(date: .omitted, time: .shortened) }
+      ?? "History paused until resumed"
+  }
   var onChanged: () -> Void = {}
   // Delayed startup reads must not overwrite a newer collection preference.
   // Preferences instance is injected to isolate test executions from shared process UserDefaults.
   init(storage: (any ClipboardHistoryStorage)? = nil, capacity: Int? = nil, preferences: UserDefaults? = nil) {
     self.storage = storage
     self.preferences = preferences
+    collectionPaused = preferences?.bool(forKey: "clipboard.historyPaused") ?? false
+    pauseDeadline = preferences?.object(forKey: "clipboard.historyPauseDeadline") as? Date
     let saved = preferences?.integer(forKey: "clipboard.historyCapacity") ?? 0
     self.capacity = capacity ?? ([20, 50, 100].contains(saved) ? saved : 20)
     command {
@@ -148,6 +165,35 @@ struct ClipboardHistoryFile: ClipboardHistoryStorage {
       if self.preferenceRevision == 0 { self.enabled = saved?.enabled ?? false }
       if capacity == nil, let savedCapacity = saved?.capacity { self.capacity = savedCapacity }
       self.onChanged()
+      self.reconcilePause()
+    }
+  }
+  func pauseCollection(seconds: TimeInterval?) {
+    pauseTask?.cancel()
+    collectionPaused = true
+    captures.removeAll()
+    pauseDeadline = seconds.map { Date().addingTimeInterval(max(1, min($0, 30 * 86400))) }
+    preferences?.set(true, forKey: "clipboard.historyPaused")
+    preferences?.set(pauseDeadline, forKey: "clipboard.historyPauseDeadline")
+    onChanged()
+    reconcilePause()
+  }
+  func resumeCollection() {
+    pauseTask?.cancel(); pauseTask = nil
+    collectionPaused = false; pauseDeadline = nil
+    preferences?.set(false, forKey: "clipboard.historyPaused")
+    preferences?.removeObject(forKey: "clipboard.historyPauseDeadline")
+    onChanged()
+  }
+  func reconcilePause() {
+    pauseTask?.cancel(); pauseTask = nil
+    guard collectionPaused, let deadline = pauseDeadline else { return }
+    let remaining = deadline.timeIntervalSinceNow
+    guard remaining > 0 else { resumeCollection(); return }
+    pauseTask = Task { [weak self] in
+      do { try await Task.sleep(for: .seconds(remaining)) } catch { return }
+      guard !Task.isCancelled else { return }
+      self?.resumeCollection()
     }
   }
   func setCapacity(_ value: Int) {
@@ -183,14 +229,14 @@ struct ClipboardHistoryFile: ClipboardHistoryStorage {
     }
   }
   func record(_ sample: ClipboardSample, origin: String, credential: String? = nil) {
-    guard enabled, !sample.sensitive, !sample.excluded, ClipboardHistoryFile.valid(sample.text) else { return }
+    guard collecting, !sample.sensitive, !sample.excluded, ClipboardHistoryFile.valid(sample.text) else { return }
     // Bound pending content independently of the saved inventory while disk IO is stalled.
     if captures.count >= 100 { captures.removeFirst() }
     captures.append((sample, origin, credential))
     guard !recording else { return }; recording = true
     command {
       defer { self.recording = false; self.captures = [] }
-      while self.enabled, !self.captures.isEmpty {
+      while self.collecting, !self.captures.isEmpty {
         let (sample, origin, credential) = self.captures.removeFirst()
         let existing = self.entries.first { $0.text == sample.text && $0.origin == origin }
         let row = ClipboardHistoryEntry(
@@ -246,14 +292,54 @@ struct ClipboardHistoryFile: ClipboardHistoryStorage {
     return entries.filter { $0.text.localizedCaseInsensitiveContains(trimmed) }
   }
   /// Deletes multiple entries atomically from history storage with a single disk persistence write.
-  func delete(_ ids: Set<String>) { replace { $0.filter { !ids.contains($0.id) } } }
+  func delete(_ ids: Set<String>, fromPinned: Bool = false) {
+    replace { rows in
+      let protected = rows.filter { ids.contains($0.id) && $0.pinned && !fromPinned }.count
+      self.editStatus = protected > 0 ? "\(protected) pinned clip\(protected == 1 ? "" : "s") kept" : nil
+      return rows.filter { !ids.contains($0.id) || $0.pinned && !fromPinned }
+    }
+  }
   /// Deletes a single entry by its unique identifier.
-  func delete(_ id: String) { delete(Set([id])) }
+  func delete(_ id: String, fromPinned: Bool = false) { delete(Set([id]), fromPinned: fromPinned) }
   // Retains pinned items by default when clearing unpinned history.
-  func clear(includePinned: Bool = false) { replace { includePinned ? [] : $0.filter(\.pinned) } }
+  func clear(includePinned: Bool = false) { replace { $0.filter(\.pinned) } }
   private func replace(_ transform: @escaping ([ClipboardHistoryEntry]) -> [ClipboardHistoryEntry]) { command {
-    let rows = transform(self.entries), storage = self.storage, enabled = self.enabled, capacity = self.capacity
+    let before = self.entries
+    let rows = transform(before), storage = self.storage, enabled = self.enabled, capacity = self.capacity
     try await Task.detached { try storage?.save(rows, enabled: enabled, capacity: capacity) }.value
     self.entries = rows
+    guard rows != before else { return }
+    self.undoEdits.append(Edit(before: before, after: rows))
+    // At most five bounded inventories remain process-local for undo.
+    if self.undoEdits.count > 5 { self.undoEdits.removeFirst() }
+    self.redoEdits.removeAll()
   } }
+  func undo() { applyEdit(undoing: true) }
+  func redo() { applyEdit(undoing: false) }
+  private func applyEdit(undoing: Bool) {
+    command {
+      guard let edit = undoing ? self.undoEdits.last : self.redoEdits.last else { return }
+      let source = undoing ? edit.after : edit.before
+      let target = undoing ? edit.before : edit.after
+      let changed = Set((source + target).map(\.id)).filter { id in
+        source.first { $0.id == id } != target.first { $0.id == id }
+      }
+      var rows = self.entries
+      for id in changed {
+        let expected = source.first { $0.id == id }
+        let replacement = target.first { $0.id == id }
+        guard rows.first(where: { $0.id == id }) == expected else { continue }
+        rows.removeAll { $0.id == id }
+        if let replacement { rows.append(replacement) }
+      }
+      guard rows.count <= 100 else { throw CocoaError(.fileWriteOutOfSpace) }
+      rows.sort { $0.timestamp > $1.timestamp }
+      let snapshot = rows
+      let storage = self.storage, enabled = self.enabled, capacity = self.capacity
+      try await Task.detached { try storage?.save(snapshot, enabled: enabled, capacity: capacity) }.value
+      self.entries = snapshot
+      if undoing { self.undoEdits.removeLast(); self.redoEdits.append(edit) }
+      else { self.redoEdits.removeLast(); self.undoEdits.append(edit) }
+    }
+  }
 }

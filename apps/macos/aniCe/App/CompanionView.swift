@@ -276,6 +276,8 @@ private struct CompanionMaterialBackground: NSViewRepresentable {
   private let popover = NSPopover()
   private let playback: MacPlaybackModel
   private let floatingKeyboard: FloatingKeyboardController
+  private let clipboard: MacClipboardModel
+  private let navigation: ConnectionNavigation
   private let onOpen: () -> Void
   private let onManage: () -> Void
   private var handoffCompletion: (() -> Void)?
@@ -284,6 +286,8 @@ private struct CompanionMaterialBackground: NSViewRepresentable {
   init(content: CompanionView, floatingKeyboard: FloatingKeyboardController, onOpen: @escaping () -> Void,
     onManage: @escaping () -> Void) {
     self.playback = content.playback
+    self.clipboard = content.clipboard
+    self.navigation = content.navigation
     self.floatingKeyboard = floatingKeyboard
     self.onOpen = onOpen
     self.onManage = onManage
@@ -314,7 +318,22 @@ private struct CompanionMaterialBackground: NSViewRepresentable {
     if Self.showsContextMenu(eventType: event?.type,
       modifiers: event?.modifierFlags ?? []) {
       popover.performClose(nil)
-      item.popUpMenu(Self.makeMenu(target: self, floatingKeyboardVisible: floatingKeyboard.isVisible))
+      let menu = Self.makeMenu(target: self, floatingKeyboardVisible: floatingKeyboard.isVisible)
+      let history = NSMenuItem(title: "Clipboard history", action: nil, keyEquivalent: "")
+      let submenu = NSMenu()
+      if clipboard.history.collectionPaused {
+        let resume = NSMenuItem(title: "Resume history", action: #selector(resumeHistory), keyEquivalent: "")
+        resume.target = self; submenu.addItem(resume)
+      }
+      for (index, duration) in ClipboardPauseDuration.allCases.enumerated() {
+        let entry = NSMenuItem(title: duration.rawValue, action: #selector(pauseHistory(_:)), keyEquivalent: "")
+        entry.tag = index; entry.target = self; submenu.addItem(entry)
+      }
+      let custom = NSMenuItem(title: "Custom…", action: #selector(openHistorySettings), keyEquivalent: "")
+      custom.target = self; submenu.addItem(custom)
+      history.submenu = submenu
+      menu.insertItem(history, at: max(0, menu.items.count - 2))
+      item.popUpMenu(menu)
     } else if popover.isShown {
       popover.performClose(nil)
     } else {
@@ -361,6 +380,21 @@ private struct CompanionMaterialBackground: NSViewRepresentable {
     onManage()
   }
   @objc private func toggleFloatingKeyboard() { floatingKeyboard.toggleVisibility() }
+  @objc private func resumeHistory() { clipboard.history.resumeCollection() }
+  @objc private func pauseHistory(_ sender: NSMenuItem) {
+    let choices = ClipboardPauseDuration.allCases
+    guard choices.indices.contains(sender.tag) else { return }
+    clipboard.history.pauseCollection(seconds: choices[sender.tag].seconds)
+  }
+  @objc private func openHistorySettings() {
+    popover.performClose(nil)
+    navigationToHistory()
+  }
+  private func navigationToHistory() {
+    navigation.openSettings(section: "clipboard")
+    onOpen()
+    NSApp.activate(ignoringOtherApps: true)
+  }
   @objc private func quitApp() { NSApp.terminate(nil) }
   func close() { popover.performClose(nil) }
 

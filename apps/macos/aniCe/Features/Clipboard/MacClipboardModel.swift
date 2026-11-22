@@ -106,6 +106,7 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
   let preferences: ClipboardPreferences
   let history: ClipboardHistory
   private var historyToken: String?
+  private var historyWasPaused = false
   private let now: () -> TimeInterval
   private let wait: @MainActor (TimeInterval) async throws -> Void
   private var links: [String: Link] = [:]
@@ -188,7 +189,12 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
   init(native: any NativeClipboard, history: ClipboardHistory = ClipboardHistory(), preferences: ClipboardPreferences = ClipboardPreferences(), now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }, wait: @escaping @MainActor (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }, openURL: @escaping @MainActor (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
     self.history = history
     self.native = native; self.preferences = preferences; self.now = now; self.wait = wait; self.openURL = openURL
-    history.onChanged = { [weak self] in self?.updateObservation() }
+    history.onChanged = { [weak self] in
+      guard let self else { return }
+      if self.historyWasPaused && !self.history.collectionPaused { self.historyToken = self.native.token() }
+      self.historyWasPaused = self.history.collectionPaused
+      self.updateObservation()
+    }
   }
   func installLifecycle() {
     guard notifications.isEmpty else { return }
@@ -197,7 +203,7 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
       MainActor.assumeIsolated { self?.sleeping = true; self?.cancel(); self?.updateObservation() }
     })
     notifications.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-      MainActor.assumeIsolated { self?.sleeping = false; self?.updateObservation() }
+      MainActor.assumeIsolated { self?.sleeping = false; self?.history.reconcilePause(); self?.updateObservation() }
     })
   }
   func connected(_ peer: DeviceIdentity) -> Bool { links.values.contains { key($0.channel.descriptor.peer) == key(peer) } }
@@ -226,7 +232,7 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
   }
   func refreshAccess() { updateObservation() }
   private func updateObservation() {
-    native.observe(!sleeping && !isPaused && (history.enabled || automatic && selected.map(supports) == true) && native.automaticAccessAllowed) { [weak self] in
+    native.observe(!sleeping && !isPaused && (history.collecting || automatic && selected.map(supports) == true) && native.automaticAccessAllowed) { [weak self] in
       guard let self, !self.applying, !self.isPaused else { return }; self.sampleAutomatic()
     }
     if !isPaused && (automatic || history.enabled) && !native.automaticAccessAllowed { status = "Allow pasteboard access in System Settings, or paste text below" }
@@ -242,7 +248,7 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
     submit(sample, auto: true)
   }
   private func captureLocal(_ sample: ClipboardSample) {
-    guard history.enabled else { return }
+    guard history.collecting else { return }
     guard sample.token.isEmpty || sample.token != historyToken else { return }; historyToken = sample.token
     history.record(sample, origin: "mac")
   }

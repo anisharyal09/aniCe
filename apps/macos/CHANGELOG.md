@@ -6,6 +6,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Protect pinned clips from ordinary deletion, add bounded local history Undo/Redo and a separate persistent history pause with custom duration.
 - Add independent sidebar feature pins, wrapping Overview/companion shortcuts and a quiet companion support link.
 - Add configurable clipboard-tray and Floating Key global shortcuts with focused recording, Reset, collision reporting and preservation of the last working registration.
 - Show a brief recipient-bound Edge Drop preparation acknowledgment before progress continues in aniCe; retain verified completion feedback.

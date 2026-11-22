@@ -95,6 +95,66 @@ private struct FailedHistoryStorage: ClipboardHistoryStorage {
   func delete() throws { throw CocoaError(.fileWriteNoPermission) }
 }
 final class ClipboardTests: XCTestCase {
+  @MainActor func testHistoryPauseSurvivesRestartAndExpiryWithoutChangingConsent() async throws {
+    let name = "aniCe.HistoryPause.\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let history = ClipboardHistory(preferences: defaults)
+    history.pauseCollection(seconds: nil)
+    let restored = ClipboardHistory(preferences: defaults)
+    XCTAssertTrue(restored.collectionPaused)
+    restored.resumeCollection()
+    defaults.set(true, forKey: "clipboard.historyPaused")
+    defaults.set(Date(timeIntervalSinceNow: -10), forKey: "clipboard.historyPauseDeadline")
+    let expired = ClipboardHistory(preferences: defaults)
+    for _ in 0..<30 { await Task.yield() }
+    expired.reconcilePause()
+    XCTAssertFalse(expired.collectionPaused)
+    XCTAssertFalse(expired.enabled)
+    history.resumeCollection()
+  }
+
+  @MainActor func testUndoPreservesNewlyCollectedClips() async throws {
+    let history = ClipboardHistory()
+    history.setEnabled(true); try await until { history.enabled }
+    history.record(ClipboardSample(text: "first"), origin: "mac")
+    try await until { history.entries.count == 1 }
+    let first = history.entries[0]
+    history.delete(first.id); try await until { history.entries.isEmpty }
+    history.record(ClipboardSample(text: "later"), origin: "mac")
+    try await until { history.entries.count == 1 }
+    history.undo(); try await until { history.entries.count == 2 }
+    XCTAssertEqual(Set(history.entries.map(\.text)), ["first", "later"])
+    history.redo(); try await until { history.entries.count == 1 }
+    XCTAssertEqual(history.entries[0].text, "later")
+  }
+
+  @MainActor func testProtectedPinsUndoAndHistoryOnlyPause() async throws {
+    let history = ClipboardHistory()
+    history.setEnabled(true)
+    try await until { history.enabled }
+    history.record(ClipboardSample(text: "pinned"), origin: "mac")
+    try await until { history.entries.count == 1 }
+    let id = history.entries[0].id
+    history.togglePin(id)
+    try await until { history.entries[0].pinned }
+    history.delete(id)
+    for _ in 0..<15 { await Task.yield() }
+    XCTAssertEqual(history.entries.count, 1)
+    history.pauseCollection(seconds: nil)
+    history.record(ClipboardSample(text: "during pause"), origin: "mac")
+    XCTAssertFalse(history.collecting)
+    XCTAssertTrue(history.enabled)
+    history.resumeCollection()
+    history.delete(id, fromPinned: true)
+    try await until { history.entries.isEmpty }
+    history.undo()
+    try await until { history.entries.count == 1 }
+    XCTAssertTrue(history.entries[0].pinned)
+    history.redo()
+    try await until { history.entries.isEmpty }
+  }
+
   @MainActor func testTrayHistoryRequiresCurrentExplicitConsent() async throws {
     let history = ClipboardHistory()
     let consent = PasteTrayHistoryConsent()
@@ -662,7 +722,7 @@ final class ClipboardTests: XCTestCase {
     XCTAssertEqual(history.entries.first?.text, "item-2")
     XCTAssertTrue(history.entries.first?.pinned == true)
 
-    history.clear(includePinned: true)
+    history.delete(Set(history.entries.map(\.id)), fromPinned: true)
     try await until { history.entries.isEmpty }
   }
 
