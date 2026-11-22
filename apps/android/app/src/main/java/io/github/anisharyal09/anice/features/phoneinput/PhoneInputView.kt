@@ -298,6 +298,19 @@ fun PhoneInputView(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        if (connectedPeer != null && owner.macInputSetupNeeded && !owner.active) {
+            Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Allow control on your Mac", style = MaterialTheme.typography.titleSmall)
+                    Text("On the Mac: aniCe → Settings → Permissions → Request Events access. Allow this aniCe copy in macOS Privacy & Security, then return and tap Start control.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Already allowed? Restart aniCe on the Mac once. If still blocked, use Show this app in Finder in Mac Permissions and re-add that copy.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
         val visibleStatus = localStatus.ifEmpty { owner.status }
         if (visibleStatus.isNotBlank()) {
             Text(visibleStatus, style = MaterialTheme.typography.bodySmall,

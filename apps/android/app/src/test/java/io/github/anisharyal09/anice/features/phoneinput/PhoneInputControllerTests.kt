@@ -15,6 +15,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PhoneInputControllerTests {
+    @Test fun setupGuidanceNeedsRealRejectionAndClearsAfterSuccessfulStart() = runBlocking {
+        val (owner, channel, descriptor, peer) = connectedController()
+        assertFalse(owner.macInputSetupNeeded)
+        assertTrue(owner.start(peer))
+        val denied = channel.messages().last()
+        owner.handle(descriptor, PhoneInputMessage.of(3, Cbor.Text(denied.text(0)), Cbor.Integer(2)).encode())
+        assertTrue(owner.macInputSetupNeeded)
+        assertTrue(owner.start(peer))
+        val accepted = channel.messages().last()
+        owner.handle(descriptor, PhoneInputMessage.of(3, Cbor.Text(accepted.text(0)), Cbor.Integer(0)).encode())
+        assertTrue(owner.active)
+        assertFalse(owner.macInputSetupNeeded)
+        owner.stop()
+        assertFalse("Idle is not a permission failure", owner.macInputSetupNeeded)
+    }
+
     @Test fun requiresTextAndKeyTransitionsForCorrectionSupport() = runBlocking {
         val setup = connectedController(remoteEvents = 0x01)
         assertEquals(7L, setup.channel.messages().first().number(1))

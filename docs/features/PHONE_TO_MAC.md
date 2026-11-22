@@ -11,6 +11,8 @@
 4. Use one finger to move, tap to click, long-press and move to drag, and two fingers to scroll.
 5. Stop on either device to release remote input and clear the temporary phone editor.
 
+The phone shows compact Mac setup instructions after an actual access rejection or revocation. A successful Start clears them; stopping control or losing Bluetooth does not by itself mean Mac permission is missing.
+
 The Mac checks `CGPreflightPostEventAccess()` before accepting a start. Accessibility trust alone does not confirm Event Posting. The Mac Settings permission section refreshes status when you return from System Settings. If access remains blocked after granting it, restart aniCe once. macOS tracks privacy grants by code identity: consistent certificate signing helps preserve permission across rebuilds; an old ad-hoc grant may require reapproval after signing changes. Input goes to the Mac app with keyboard focus.
 
 Choose Live typing to send composing text immediately, or keyboard-committed typing to wait for the keyboard to commit it. Changing modes keeps the session active.

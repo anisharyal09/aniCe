@@ -19,6 +19,8 @@ Application release v0.9.0-beta.4, build 90024.
 
 ### Added
 
+- Show phone-side Mac input setup only after an access rejection or revocation; hide it after successful Start.
+
 - Add a separate 48 dp About Email action beside the GitHub issue form, with narrow/large-text reflow and a visible fallback when no email app is available.
 - Add a collapsed update-check preference that cancels automatic checks and persisted jobs when off, preserves manual checking and saves the choice across restarts; cover real scheduler re-arming, cancelled redirects/body reads and cached-check ownership.
 - Add credential-scoped private nicknames and an explicit Use nickname choice in saved-device details without modifying authenticated peer identity.

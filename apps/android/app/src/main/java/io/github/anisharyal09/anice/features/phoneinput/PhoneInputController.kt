@@ -60,6 +60,8 @@ class PhoneInputController(
         private set
     var status by mutableStateOf("Connect to your Mac over Bluetooth to get started.")
         private set
+    var macInputSetupNeeded by mutableStateOf(false)
+        private set
 
     val active: Boolean get() = state == PhoneInputState.ACTIVE
 
@@ -412,12 +414,14 @@ class PhoneInputController(
                 sendTerminal(session, current)
             } else {
                 activeSession = ActiveSession(request.id)
+                macInputSetupNeeded = false
                 state = PhoneInputState.ACTIVE
                 status = "Typing to ${request.peer.deviceName}."
             }
             1L -> { state = PhoneInputState.IDLE; status = "Your Mac is not ready to receive input yet." }
             2L -> {
                 state = PhoneInputState.IDLE
+                macInputSetupNeeded = true
                 status = "Allow aniCe in Device Control and Data Access on your Mac, then try again."
             }
             else -> { state = PhoneInputState.IDLE; status = "Update aniCe on your Mac to enable phone typing." }
@@ -458,7 +462,10 @@ class PhoneInputController(
 
     private fun endedStatus(reason: Long) = when (reason) {
         0L -> "The Mac stopped phone input."
-        1L -> "macOS input access changed. Typing stopped."
+        1L -> {
+            macInputSetupNeeded = true
+            "macOS input access changed. Typing stopped."
+        }
         2L -> "The Mac rejected an input event. Typing stopped."
         else -> "The Mac input surface closed. Typing stopped."
     }
