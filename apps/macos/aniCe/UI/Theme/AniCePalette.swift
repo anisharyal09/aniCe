@@ -6,6 +6,12 @@ import SwiftUI
 enum NativeGlassStyle: String, CaseIterable {
   case standard = "Standard", vibrant = "Vibrant"
   static func stored(_ value: String) -> Self { Self(rawValue: value) ?? .standard }
+  func navigationBackingOpacity(_ scheme: ColorScheme) -> Double {
+    switch self {
+    case .standard: scheme == .dark ? 0.45 : 0.35
+    case .vibrant: scheme == .dark ? 0.08 : 0.06
+    }
+  }
 }
 
 enum NativeGlassPresentation: Equatable {
@@ -52,6 +58,12 @@ private struct AniCeNativeSurface: ViewModifier {
       enabled: enabled, reduceTransparency: reduceTransparency, supportsGlass: supportsGlass)
     if presentation == .solid {
       content.background(surface, in: shape)
+    } else if secondary {
+      let style = NativeGlassStyle.stored(savedStyle)
+      content.background {
+        NativeNavigationMaterial()
+          .overlay(surface.opacity(style.navigationBackingOpacity(scheme)).allowsHitTesting(false))
+      }
     } else if #available(macOS 26.0, *) {
       if NativeGlassStyle.stored(savedStyle) == .vibrant {
         content.glassEffect(.regular.tint(AniCePalette.accent(scheme).opacity(scheme == .light ? 0.22 : 0.12)), in: shape)
@@ -71,6 +83,19 @@ private struct AniCeNativeSurface: ViewModifier {
   private var supportsGlass: Bool {
     if #available(macOS 26.0, *) { return true }
     return false
+  }
+}
+
+/// Large navigation surfaces use native window vibrancy, not a tinted floating glass card.
+private struct NativeNavigationMaterial: NSViewRepresentable {
+  @Environment(\.colorScheme) private var scheme
+
+  func makeNSView(context: Context) -> NSVisualEffectView { NSVisualEffectView() }
+  func updateNSView(_ view: NSVisualEffectView, context: Context) {
+    view.material = .sidebar
+    view.blendingMode = .behindWindow
+    view.state = .followsWindowActiveState
+    view.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
   }
 }
 
@@ -110,7 +135,7 @@ struct NativeGlassPreferencesRows: View {
           ForEach(NativeGlassStyle.allCases, id: \.self) { Text($0.rawValue).tag($0) }
         }
         .pickerStyle(.segmented)
-        .accessibilityHint("Standard is the default native treatment. Vibrant adds stronger theme tint.")
+        .accessibilityHint("Standard is softly backed. Vibrant lets more of the background show through.")
       }
     }.padding(.vertical, 8)
   }

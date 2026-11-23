@@ -21,6 +21,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Keep Vibrant navigation on native window materials, hide the redundant keyboard area in combined control, remove duplicate tray overflow access and reflect live Edge Drop sending state.
+
 - Keep clipboard-tray history consent inside its non-activating panel, avoiding detached alerts and main-window focus handoffs.
 
 ## [v0.9.0-beta.4]

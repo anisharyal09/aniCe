@@ -51,6 +51,7 @@ struct MainWindowView: View {
   @AppStorage("window.appearance") var appearance = WindowAppearance.system.rawValue
   @AppStorage("ui.fontScale") var fontScale: Double = 1.0
   @AppStorage("ui.nativeGlass") var nativeGlass = true
+  @AppStorage("ui.nativeGlassStyle") private var nativeGlassStyle = NativeGlassStyle.standard.rawValue
   @AppStorage("ui.sidebarPinnedFeatures") private var sidebarPinnedFeatures = ""
   @Environment(\.accessibilityReduceTransparency) var reduceTransparency
 
@@ -202,7 +203,9 @@ struct MainWindowView: View {
     }
     .navigationTitle(MacAppStorage.applicationName)
     .toolbarBackground(nativeGlass && !reduceTransparency
-      ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(AniCePalette.background(colorScheme)), for: .windowToolbar)
+      ? (NativeGlassStyle.stored(nativeGlassStyle) == .vibrant
+        ? AnyShapeStyle(.thinMaterial) : AnyShapeStyle(.regularMaterial))
+      : AnyShapeStyle(AniCePalette.background(colorScheme)), for: .windowToolbar)
     .toolbarBackground(.visible, for: .windowToolbar)
     .background(AniCePalette.background(colorScheme))
     .overlay(alignment: .top) { AniCePalette.separator(colorScheme).frame(height: 0.5) }

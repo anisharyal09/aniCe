@@ -12,7 +12,7 @@ The Mac picker confirmation is centered on the initiating display; Home keeps th
 
 **Edge Drop** is on by default at the right edge. It can be moved to the left or top, or turned off in Settings → File transfer; an explicit choice is saved. It appears only for a current Finder file drag on the display containing the drag. Drops accept regular local files already available to Mac, up to 128 per batch. Folders, symbolic links, promised files, unavailable cloud files and mixed unsupported selections are rejected without partial sending. After the receiver verifies a drop, the shelf confirms the file count and recipient before dismissing. Edge Drop uses native drag observation and requires no Accessibility permission.
 
-An accepted drop briefly names its preparation target and directs progress to aniCe's existing transfer activity. Preparation is not delivery confirmation; only receiver-verified completion shows **Sent**. Leaving the shelf does not cancel the transfer.
+An accepted drop briefly names its target and follows its own preparation, approval, sending and verification state. Only receiver-verified completion shows **Sent**. Detailed progress remains in aniCe's existing transfer activity. Leaving the shelf does not cancel the transfer.
 
 On Android, **Share → Send to Mac** sends one or more selected files to the connected compatible Mac. The send is pinned to that Mac. Busy or disconnected states offer recovery instead of queuing or redirecting the batch. Text and link sharing keep their existing clipboard flow.
 

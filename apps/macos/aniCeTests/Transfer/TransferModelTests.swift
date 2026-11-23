@@ -574,6 +574,20 @@ final class TransferModelTests: XCTestCase {
       TransferFile(id: UUID(), name: "feedback.bin", size: 1,
         sha256: Data(repeating: 0, count: 32), localURL: nil)
     ], totalBytes: 1, peerName: "Pixel 9")
+    owner.dropSourceID = reservation
+    owner.preparing = false
+    owner.state = .waitingForPeerApproval(batch: batch)
+    XCTAssertEqual(controller.shelfTitle, "Waiting for approval from")
+    owner.state = .transferring(batch: batch, fileIndex: 0, fileName: "feedback.bin",
+      fileBytes: 0, fileSize: 1, totalBytes: 0, speedBps: 0)
+    XCTAssertEqual(controller.shelfTitle, "Sending 1 file to")
+    XCTAssertEqual(controller.shelfSymbol, "paperplane")
+    owner.state = .transferring(batch: batch, fileIndex: 0, fileName: "feedback.bin",
+      fileBytes: 1, fileSize: 1, totalBytes: 1, speedBps: 0)
+    XCTAssertEqual(controller.shelfTitle, "Verifying 1 file with")
+    owner.dropSourceID = UUID()
+    XCTAssertEqual(controller.acceptedDropPhase, .ended)
+    owner.state = .cancelled
 
     controller.handle(.sentFromDrop(reservation: UUID(), batch: batch))
     XCTAssertNil(controller.sentFeedback, "A different drop cannot reuse an old result")

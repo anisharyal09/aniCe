@@ -10,6 +10,18 @@ import Observation
 @testable import aniCe
 
 extension SessionTests {
+  func testNavigationGlassPresetsUseDistinctBackingWithoutChangingSolidFallback() {
+    for scheme in [ColorScheme.light, .dark] {
+      let standard = NativeGlassStyle.standard.navigationBackingOpacity(scheme)
+      let vibrant = NativeGlassStyle.vibrant.navigationBackingOpacity(scheme)
+      XCTAssertGreaterThan(standard - vibrant, 0.25)
+      XCTAssertTrue((0...1).contains(standard))
+      XCTAssertTrue((0...1).contains(vibrant))
+    }
+    XCTAssertEqual(NativeGlassPresentation.resolve(enabled: false, reduceTransparency: false, supportsGlass: true), .solid)
+    XCTAssertEqual(NativeGlassPresentation.resolve(enabled: true, reduceTransparency: true, supportsGlass: true), .solid)
+  }
+
   func testSidebarPinsUseIndependentOrderedLocalList() {
     let favourites = AppFeature.defaultFavourites
     let menu = AppFeature.defaultPinnedToCompanion

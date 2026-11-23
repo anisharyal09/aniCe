@@ -37,7 +37,7 @@ Color communicates action and status, not decorative categorization. Always pair
 
 - **Contrast**: Minimum 4.5:1 contrast for standard text; 3:1 for large text and meaningful control graphics.
 - **Theme support**: Follow system appearance by default. Offer explicit System / Light / Dark modes in Settings.
-- **Mac Native Glass**: General → Appearance offers a default-on master toggle and Standard (default) / Vibrant styles. Off restores solid surfaces. Reduce Transparency disables the toggle and displays **Locked to Normal by macOS System Settings** without overwriting the saved choice. Apply one native treatment to sidebar/header, companion, clipboard tray/copy feedback, Floating Key, Edge Drop and floating pairing. Vibrant strengthens the semantic theme tint; it does not expose system blur or refraction controls. System menu-bar and notification appearance remain OS-owned.
+- **Mac Native Glass**: General → Appearance offers a default-on master toggle and Standard (default) / Vibrant styles. Off restores solid surfaces. Reduce Transparency disables the toggle and displays **Locked to Normal by macOS System Settings** without overwriting the saved choice. Navigation uses native window materials rather than tinted floating-card glass. Standard adds a restrained semantic backing; Vibrant reduces that backing and uses thinner toolbar material, revealing more of the desktop without a colored wash. Floating surfaces retain native glass with semantic tint. System menu-bar and notification appearance remain OS-owned.
 
 ## Typography and text scaling
 
@@ -78,6 +78,7 @@ Shared information architecture mapped into platform-native navigation:
 - **Main window**: Resizable window with traffic lights and Back/Forward history navigation on the left of the split header; aniCe branding in the window titlebar. Sidebar holds navigation destinations; workspace content is centered with a maximum of two columns.
 - **Initial size and sidebar**: A new main window defaults to 960 × 640 pt; native resizing and restored window sizes remain in control. The sidebar uses a 27 pt brand mark and fits the wordmark and full destination labels at the current text size, with 12 pt of additional width. It remains resizable.
 - **Menu-bar companion**: Compact popover (max 520 pt height) showing active device state, Now Playing, file transfers, quick actions, and pinned favorite shortcuts.
+- Companion overflow contains Manage devices, Settings and Quit; the visible Paste tray action and global shortcut provide tray access without a duplicate overflow entry.
 - **Quick Paste Tray**: Non-activating floating panel toggled via `⌥⌘V` with real-time clip filtering and smart previews.
 
 ### Android layout

@@ -1149,6 +1149,7 @@ final class KeyboardTrackpadTests: XCTestCase {
     let transport = FakeKeyboardTrackpadTransport()
     transport.devices = [paired(peer)]
     let model = readyModel(peer: peer, transport: transport)
+    model.combinedInput = false
     defer { model.shutdown() }
     let host = NSHostingView(rootView: MacKeyboardTrackpadView(model: model).frame(width: 700, height: 760))
     let window = KeyboardTrackpadTestWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 760), styleMask: [.borderless], backing: .buffered, defer: false)
@@ -1215,6 +1216,7 @@ final class KeyboardTrackpadTests: XCTestCase {
     let transport = FakeKeyboardTrackpadTransport()
     transport.devices = [paired(peer)]
     let model = readyModel(peer: peer, transport: transport)
+    model.combinedInput = false
     defer { model.shutdown() }
     let host = NSHostingView(rootView: ScrollView { MacKeyboardTrackpadView(model: model).padding(24) })
     let window = KeyboardTrackpadTestWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 800), styleMask: [.borderless], backing: .buffered, defer: false)
@@ -1236,6 +1238,30 @@ final class KeyboardTrackpadTests: XCTestCase {
       XCTAssertTrue(model.isControlling)
       XCTAssertEqual(keyboards(host).count, 1, "Only one keyboard surface may own event capture")
     }
+  }
+
+  @MainActor func testCombinedLayoutHidesKeyboardAndRestoresItWhenDisabled() async throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let model = readyModel(peer: peer, transport: transport)
+    defer { model.shutdown() }
+    let host = NSHostingView(rootView: MacKeyboardTrackpadView(model: model).frame(width: 700, height: 760))
+    let window = KeyboardTrackpadTestWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 760),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.contentView = host
+    defer { window.contentView = nil }
+    func keyboards(_ view: NSView) -> [KeyboardInputNSView] {
+      (view as? KeyboardInputNSView).map { [$0] } ?? view.subviews.flatMap(keyboards)
+    }
+    try await Task.sleep(for: .milliseconds(80))
+    host.layoutSubtreeIfNeeded()
+    XCTAssertTrue(model.combinedInput)
+    XCTAssertTrue(keyboards(host).isEmpty)
+    model.combinedInput = false
+    try await Task.sleep(for: .milliseconds(80))
+    host.layoutSubtreeIfNeeded()
+    XCTAssertEqual(keyboards(host).count, 1)
   }
 
   @MainActor func testFailedWriteAfterCaptureEndsStopsPendingShortcut() throws {

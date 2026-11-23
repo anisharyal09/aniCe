@@ -356,7 +356,11 @@ struct MacKeyboardTrackpadView: View {
 
   private var inputSurfaces: some View {
     VStack(alignment: .leading, spacing: 8) {
-      controls
+      if model.combinedInput {
+        Text("Click the trackpad to control. Type while using the trackpad.")
+          .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+          .fixedSize(horizontal: false, vertical: true)
+      } else { controls }
       TrackpadPad(model: model, presentationID: activePresentationID)
         .frame(maxWidth: .infinity)
         .frame(height: trackpadAreaHeight)
@@ -404,7 +408,7 @@ struct MacKeyboardTrackpadView: View {
       .accessibilityElement()
       .accessibilityLabel("Trackpad height")
       .accessibilityValue("\(Int(trackpadAreaHeight)) points")
-      .accessibilityHint("Drag vertically to resize the trackpad. The keyboard area stays the same height.")
+       .accessibilityHint("Drag vertically to resize the trackpad.")
       .accessibilityAdjustableAction { direction in
         switch direction {
         case .increment: setTrackpadAreaHeight(trackpadAreaHeight + 16)
@@ -674,7 +678,9 @@ private struct TrackpadPad: View {
     ZStack {
       MousePadSurface(model: model, presentationID: presentationID, inputID: inputID, focused: $focused)
         .accessibilityLabel("Phone trackpad")
-        .accessibilityHint("Click to control the phone pointer; the first click is consumed. Two-finger scrolling browses this panel until active, then scrolls the phone.")
+        .accessibilityHint(model.combinedInput
+          ? "Click to activate pointer and keyboard input. The first click is consumed; type while using the trackpad."
+          : "Click to control the phone pointer; the first click is consumed. Two-finger scrolling browses this panel until active, then scrolls the phone.")
       VStack {
         HStack {
           Label("Phone trackpad", systemImage: "cursorarrow")
@@ -689,11 +695,11 @@ private struct TrackpadPad: View {
         }
         Spacer()
         if !model.isControlling(owner: captureOwner) {
-          Text("Click to control · scroll to browse")
+          Text(model.combinedInput ? "Click to control pointer and keyboard" : "Click to control · scroll to browse")
             .font(.caption)
             .foregroundStyle(AniCePalette.secondaryText(scheme))
         } else {
-          Text(model.pointerActivity)
+          Text(model.combinedInput ? "\(model.pointerActivity) · Keyboard active" : model.pointerActivity)
             .font(.caption)
             .foregroundStyle(AniCePalette.secondaryText(scheme))
         }
@@ -780,7 +786,10 @@ private struct FullScreenTrackpadContent: View {
         Button("Done", action: onDone)
       }
       .buttonStyle(AniCeButtonStyle())
-      keyboardInput
+       if model.combinedInput {
+         Text("Click the trackpad to control. Type while using the trackpad.")
+           .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+       } else { keyboardInput }
       TrackpadPad(model: model, presentationID: presentationID)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

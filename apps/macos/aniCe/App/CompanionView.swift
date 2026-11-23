@@ -28,9 +28,6 @@ struct CompanionView: View {
         AniCeWordmark(size: 15, weight: .semibold)
         Spacer()
         Menu {
-          Button("Quick Paste Tray (\(GlobalShortcutPreferences.shared.binding(.tray).label))") {
-            PasteTrayController.shared.show()
-          }
           Button("Manage devices") { navigation.open(.devices, present: openMain) }
           Button("Settings") { navigation.open(.settings, present: openMain) }
           Button("Quit aniCe") { NSApp.terminate(nil) }
@@ -255,16 +252,33 @@ private struct CompanionMaterialBackground: NSViewRepresentable {
   @AppStorage("ui.nativeGlassStyle") private var style = NativeGlassStyle.standard.rawValue
   @Environment(\.accessibilityReduceTransparency) private var reduced
   @Environment(\.colorScheme) private var scheme
-  func makeNSView(context: Context) -> NSVisualEffectView {
-    NSVisualEffectView()
+  func makeNSView(context: Context) -> CompanionMaterialView {
+    CompanionMaterialView()
   }
-  func updateNSView(_ view: NSVisualEffectView, context: Context) {
+  func updateNSView(_ view: CompanionMaterialView, context: Context) {
+    let preset = NativeGlassStyle.stored(style)
     view.blendingMode = .behindWindow
-    view.material = NativeGlassStyle.stored(style) == .vibrant ? .popover : .menu
+    view.material = .menu
     view.state = enabled && !reduced ? .active : .inactive
     view.wantsLayer = true
     view.layer?.backgroundColor = enabled && !reduced ? nil : NSColor(AniCePalette.surface(scheme)).cgColor
+    // A semantic backing distinguishes density without tinting macOS's sampled material.
+    view.backing.frame = view.bounds
+    view.backing.layer?.backgroundColor = enabled && !reduced
+      ? NSColor(AniCePalette.surface(scheme)).withAlphaComponent(preset.navigationBackingOpacity(scheme)).cgColor : nil
   }
+}
+
+private final class CompanionMaterialView: NSVisualEffectView {
+  let backing = NSView()
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    backing.wantsLayer = true
+    backing.autoresizingMask = [.width, .height]
+    addSubview(backing)
+  }
+  required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 // Owns status-item presentation only; closing either surface leaves shared sessions running.

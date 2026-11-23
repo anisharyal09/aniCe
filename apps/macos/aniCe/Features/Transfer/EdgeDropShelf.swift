@@ -95,6 +95,10 @@ enum EdgeDropGeometry {
   }
 }
 
+enum EdgeDropFeedbackPhase: Equatable {
+  case preparing, waiting, sending, verifying, paused, ended
+}
+
 @Observable @MainActor final class MacEdgeDropController {
   let model: MacTransferModel
   let preferences: EdgeDropPreferences
@@ -186,7 +190,15 @@ enum EdgeDropGeometry {
       return "Sent \(sentFeedback.files.count) file\(sentFeedback.files.count == 1 ? "" : "s") to"
     }
     if let acceptedDrop {
-      return "Preparing \(acceptedDrop.count) file\(acceptedDrop.count == 1 ? "" : "s") for"
+      let files = "\(acceptedDrop.count) file\(acceptedDrop.count == 1 ? "" : "s")"
+      switch acceptedDropPhase {
+      case .preparing: return "Preparing \(files) for"
+      case .waiting: return "Waiting for approval from"
+      case .sending: return "Sending \(files) to"
+      case .verifying: return "Verifying \(files) with"
+      case .paused: return "Transfer paused"
+      case .ended: return "Transfer ended"
+      }
     }
     if hasPromisedFiles { return "Save files before sending" }
     if selectionHasUnsupportedItems { return "Drop files only" }
@@ -198,6 +210,20 @@ enum EdgeDropGeometry {
       return model.peerConnected ? "File transfer is unavailable" : "Connect an Android phone"
     }
     return "Send \(draggedFileCount) file\(draggedFileCount == 1 ? "" : "s") to"
+  }
+
+  var acceptedDropPhase: EdgeDropFeedbackPhase {
+    // Presentation follows only the reservation that created this shelf, never another batch.
+    guard pendingDropID != nil, model.dropSourceID == pendingDropID, !model.receiving else { return .ended }
+    if model.preparing { return .preparing }
+    switch model.state {
+    case .idle: return .preparing
+    case .waitingForPeerApproval: return .waiting
+    case .transferring(let batch, _, _, _, _, let bytes, _):
+      return bytes >= batch.totalBytes ? .verifying : .sending
+    case .paused: return .paused
+    case .incomingOffer, .completed, .rejected, .failed, .cancelled: return .ended
+    }
   }
 
   var edgeHint: String {
@@ -218,7 +244,15 @@ enum EdgeDropGeometry {
 
   var shelfSymbol: String {
     if sentFeedback != nil { return "checkmark.circle" }
-    if acceptedDrop != nil { return "arrow.triangle.2.circlepath" }
+    if acceptedDrop != nil {
+      switch acceptedDropPhase {
+      case .preparing, .verifying: return "arrow.triangle.2.circlepath"
+      case .sending: return "paperplane"
+      case .waiting: return "hourglass"
+      case .paused: return "pause.circle"
+      case .ended: return "info.circle"
+      }
+    }
     if hasPromisedFiles || draggedFileCount > 128 { return "doc.badge.ellipsis" }
     if model.preparing { return "arrow.triangle.2.circlepath" }
     if model.isBusy { return "hourglass" }
@@ -541,7 +575,8 @@ private struct EdgeDropShelfView: View {
       Image(systemName: controller.shelfSymbol)
         .font(.system(size: 28, weight: .medium))
         .foregroundStyle(controller.sentFeedback != nil ? AniCePalette.success(scheme) :
-          controller.canAcceptCurrentDrag ? AniCePalette.accent(scheme) : AniCePalette.warning(scheme))
+          controller.canAcceptCurrentDrag || controller.acceptedDrop != nil
+            ? AniCePalette.accent(scheme) : AniCePalette.warning(scheme))
         .frame(width: 38)
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 6) {
