@@ -6,6 +6,8 @@ import Foundation
 import XCTest
 import SwiftUI
 import Observation
+import Carbon
+import UserNotifications
 
 @testable import aniCe
 
@@ -59,20 +61,131 @@ extension SessionTests {
   }
 
   @MainActor func testShortcutCaptureRejectsEditingAndSystemCombinations() throws {
-    for code: UInt16 in [12, 4, 2, 46, 53] {
-      XCTAssertFalse(GlobalShortcut(keyCode: code, shift: false).valid)
-      XCTAssertFalse(GlobalShortcut(keyCode: code, shift: true).valid)
+    let reserved: [(UInt16, NSEvent.ModifierFlags)] = [
+      (0, .command), (6, .command), (6, [.command, .shift]), (9, .command),
+      (6, .control), (4, [.command, .option]), (2, [.command, .option]),
+      (46, [.command, .option]), (53, [.command, .option]),
+      (12, [.command, .option, .shift]), (12, [.command, .control]),
+      (49, .command), (48, .command), (53, [.command, .shift]),
+    ]
+    XCTAssertGreaterThanOrEqual(reserved.count, 12)
+    for (code, flags) in reserved {
+      XCTAssertFalse(GlobalShortcut(keyCode: code, modifierFlags: flags).valid)
     }
-    for flags: NSEvent.ModifierFlags in [.command, [.command, .shift], [.control, .option], []] {
+    for flags: NSEvent.ModifierFlags in [.command, [.command, .shift], .control, [], .shift] {
       let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
         modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil,
         characters: "z", charactersIgnoringModifiers: "z", isARepeat: false, keyCode: 6))
       XCTAssertNil(GlobalShortcut.captured(event))
     }
-    let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
-      modifierFlags: [.command, .option, .shift], timestamp: 0, windowNumber: 0, context: nil,
-      characters: "a", charactersIgnoringModifiers: "a", isARepeat: false, keyCode: 0))
-    XCTAssertEqual(GlobalShortcut.captured(event), GlobalShortcut(keyCode: 0, shift: true))
+    let permitted: [(UInt16, NSEvent.ModifierFlags)] = [
+      (0, [.command, .option, .shift]), (0, [.control, .shift]), (6, [.control, .option]),
+      (40, [.command, .shift]), (7, [.control, .shift]), (50, .control), (18, .option),
+      (123, [.control, .option]), (36, [.command, .option]), (53, [.control, .option]),
+      (122, []), (120, .shift), (118, .control),
+    ]
+    XCTAssertGreaterThanOrEqual(permitted.count, 12)
+    for (code, flags) in permitted {
+      let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+        modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil,
+        characters: "a", charactersIgnoringModifiers: "a", isARepeat: false, keyCode: code))
+      XCTAssertEqual(GlobalShortcut.captured(event), GlobalShortcut(keyCode: code, modifierFlags: flags))
+    }
+    XCTAssertFalse(GlobalShortcut(keyCode: 999, modifierFlags: .control).valid)
+    XCTAssertFalse(GlobalShortcut(keyCode: 40, modifierFlags: [.control, .capsLock]).valid)
+  }
+
+  @MainActor func testExpandedShortcutPersistenceRetainsLegacyBindingsAndRejectsMalformedState() throws {
+    let name = "aniCe.ExpandedShortcuts.\(UUID())"
+    let storage = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { storage.removePersistentDomain(forName: name) }
+    storage.set(["keyCode": 40, "shift": true], forKey: "ui.globalShortcut.tray")
+    let preferences = GlobalShortcutPreferences(storage: storage) { _, _ in true }
+    XCTAssertEqual(preferences.binding(.tray), GlobalShortcut(keyCode: 40, shift: true))
+    let expanded = GlobalShortcut(keyCode: 40, modifierFlags: [.control, .shift])
+    XCTAssertTrue(preferences.set(expanded, for: .tray))
+    let restored = GlobalShortcutPreferences(storage: storage) { _, _ in true }
+    XCTAssertEqual(restored.binding(.tray), expanded)
+    XCTAssertEqual(expanded.modifiers, UInt32(controlKey | shiftKey))
+    XCTAssertEqual(expanded.label, "⌃⇧K")
+    XCTAssertEqual(GlobalShortcut(keyCode: 122, modifierFlags: []).label, "F1")
+    for invalid in [
+      ["keyCode": -1, "modifiers": Int(NSEvent.ModifierFlags.control.rawValue)],
+      ["keyCode": 999, "modifiers": Int(NSEvent.ModifierFlags.control.rawValue)],
+      ["keyCode": 40, "modifiers": -1],
+      ["keyCode": 40, "modifiers": Int(NSEvent.ModifierFlags.capsLock.rawValue)],
+    ] {
+      storage.set(invalid, forKey: "ui.globalShortcut.tray")
+      XCTAssertEqual(GlobalShortcutPreferences(storage: storage).binding(.tray), GlobalShortcutAction.tray.defaultBinding)
+    }
+  }
+
+  func testEnabledSystemShortcutDetectionRequiresExactKeyAndModifiers() {
+    let binding = GlobalShortcut(keyCode: 40, modifierFlags: [.control, .option])
+    let row: [String: Any] = [
+      kHISymbolicHotKeyEnabled as String: true,
+      kHISymbolicHotKeyCode as String: Int(binding.keyCode),
+      kHISymbolicHotKeyModifiers as String: Int(binding.modifiers),
+    ]
+    XCTAssertTrue(GlobalShortcut.matchesEnabledSystemHotkey(binding, entries: [row]))
+    var disabled = row
+    disabled[kHISymbolicHotKeyEnabled as String] = false
+    XCTAssertFalse(GlobalShortcut.matchesEnabledSystemHotkey(binding, entries: [disabled]))
+    XCTAssertFalse(GlobalShortcut.matchesEnabledSystemHotkey(
+      GlobalShortcut(keyCode: 40, modifierFlags: .control), entries: [row]))
+    XCTAssertFalse(GlobalShortcut.matchesEnabledSystemHotkey(binding, entries: [[:]]))
+  }
+
+  @MainActor func testPermissionSummaryHidesGrantedRowsInAllAndReflowsInPermissions() throws {
+    let name = "aniCe.PermissionSummaryTests.\(UUID())"
+    let preferences = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { preferences.removePersistentDomain(forName: name) }
+    let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("anice-permission-refinement-renders", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let native = ClipboardNativeFake()
+    let clipboard = MacClipboardModel(native: native)
+    defer { clipboard.invalidate() }
+    for status in [UNAuthorizationStatus.authorized, .provisional] {
+      let empty = NSHostingView(rootView: MacPermissionSummary(
+        clipboard: clipboard, notifications: status, showGranted: false).frame(width: 300))
+      empty.frame.size = empty.fittingSize
+      empty.layoutSubtreeIfNeeded()
+      XCTAssertLessThan(empty.bounds.height, 1, "Granted permission rows must not occupy All")
+    }
+    XCTAssertFalse(MacPermissionSummary.notificationsAllowed(.denied))
+    XCTAssertFalse(MacPermissionSummary.notificationsAllowed(.notDetermined))
+    XCTAssertFalse(MacPermissionSummary.notificationsAllowed(nil))
+    var renders = 0
+    for showGranted in [false, true] {
+      for scheme in [ColorScheme.light, .dark] {
+        for width in [280.0, 600.0] {
+          for allowed in [false, true] {
+            native.automaticAccessAllowed = allowed
+            let view = MacPermissionSummary(clipboard: clipboard,
+              notifications: allowed ? .authorized : .denied, showGranted: showGranted)
+              .font(.system(size: 13 * 1.2)).padding(14).frame(width: width)
+              .background(AniCePalette.surface(scheme))
+              .environment(\.colorScheme, scheme).defaultAppStorage(preferences)
+            preferences.set(1.2, forKey: "ui.fontScale")
+            let host = NSHostingView(rootView: view)
+            host.frame.size = host.fittingSize
+            host.layoutSubtreeIfNeeded()
+            XCTAssertEqual(host.bounds.width, width, accuracy: 1)
+            XCTAssertLessThan(host.bounds.height, 380)
+            if showGranted { XCTAssertGreaterThan(host.bounds.height, 90) }
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+              .write(to: directory.appendingPathComponent("permissions-\(showGranted)-\(scheme)-\(Int(width))-\(allowed).png"))
+            renders += 1
+          }
+        }
+      }
+    }
+    XCTAssertEqual(renders, 16)
+    XCTAssertEqual(native.writes, 0)
+    print("Permission summary renders: \(directory.path)")
   }
 
   @MainActor func testFeatureSettingsTargetSurvivesBackAndForward() {
@@ -587,7 +700,7 @@ final class PauseMenuTests: XCTestCase {
     XCTAssertTrue(scroll.documentVisibleRect.contains(section.frame))
   }
 
-  func testAnimatedScrollCompletesOnTheMainActorAtTheTarget() async {
+  func testDetachedAnimatedScrollCompletesDirectlyOnTheMainActorAtTheTarget() async {
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 300))
     let document = FlippedSettingsDocument(frame: NSRect(x: 0, y: 0, width: 500, height: 1200))
     scroll.documentView = document

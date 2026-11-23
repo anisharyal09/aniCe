@@ -16,7 +16,7 @@ struct ClipboardHistoryPauseMenu: View {
         Button(duration.rawValue) { history.pauseCollection(seconds: duration.seconds) }
       }
       Button("Custom…") { custom = true }
-    }.menuStyle(.borderlessButton)
+    }.menuStyle(.borderedButton).controlSize(.small).aniCeControlFeedback()
       .help(history.pauseDescription ?? "Pause history collection only; automatic sharing stays available")
       .popover(isPresented: $custom) {
         VStack(alignment: .leading, spacing: 12) {
@@ -83,13 +83,32 @@ struct ClipboardSettingsView: View {
             Rectangle().fill(AniCePalette.separator(scheme)).frame(height: 0.5).padding(.vertical, 8)
           }
           HistoryPreference(history: model.history, compact: compactSettings)
-          ClipboardHistoryPauseMenu(history: model.history)
+          if model.history.enabled || model.history.collectionPaused {
+            ViewThatFits(in: .horizontal) {
+              HStack(alignment: .center, spacing: 12) {
+                historyCollectionStatus
+                Spacer(minLength: 8)
+                ClipboardHistoryPauseMenu(history: model.history)
+              }
+              VStack(alignment: .leading, spacing: 8) {
+                historyCollectionStatus
+                ClipboardHistoryPauseMenu(history: model.history)
+                  .frame(maxWidth: .infinity, alignment: .trailing)
+              }
+            }.frame(minHeight: 32).padding(.leading, compactSettings ? 20 : 0).padding(.top, 6)
+          }
         }
       }
       ClipboardAccessGuidance(model: model, settingsFontScale: compactSettings ? fontScale : nil)
     }
     .onAppear { model.prune(peers.map(\.peer)); if model.selected == nil { model.select(peers.first?.peer) }; model.refreshAccess() }
     .onChange(of: peers.map { $0.peer.deviceId + ":" + $0.peer.fingerprint }) { _, _ in model.prune(peers.map(\.peer)); if model.selected == nil { model.select(peers.first?.peer) } }
+  }
+  private var historyCollectionStatus: some View {
+    Text(model.history.pauseDescription ?? "Collection active")
+      .font(compactSettings ? .system(size: 12 * fontScale) : .caption)
+      .foregroundStyle(AniCePalette.secondaryText(scheme))
+      .fixedSize(horizontal: false, vertical: true)
   }
 }
 private struct ClipboardAccessGuidance: View {

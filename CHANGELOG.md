@@ -10,6 +10,7 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Keep permission status and purpose details in the dedicated category on both platforms, with missing-access recovery in All and feature settings.
 - Extend the Mac design direction to optional native-glass navigation and floating surfaces while retaining solid content panels and Android's native Material presentation.
 
 ## [v0.9.0-beta.4]

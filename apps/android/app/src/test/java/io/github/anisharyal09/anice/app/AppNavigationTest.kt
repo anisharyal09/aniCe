@@ -22,7 +22,9 @@ class AppNavigationTest {
             assertEquals(SettingsCategory.General, SettingsCategory.forSection(section))
         }
         assertEquals(SettingsCategory.Permissions, SettingsCategory.forSection("Permissions"))
-        assertEquals(SettingsCategory.Shortcuts, SettingsCategory.forSection("Shortcuts"))
+        assertEquals(SettingsCategory.All, SettingsCategory.forSection("Shortcuts"))
+        assertEquals(listOf(SettingsCategory.All, SettingsCategory.General, SettingsCategory.Permissions, SettingsCategory.Features),
+            SettingsCategory.visibleEntries)
         for (section in listOf("Clipboard", "Messages", "Notification sync", "Do Not Disturb", "File transfer")) {
             assertEquals(SettingsCategory.Features, SettingsCategory.forSection(section))
         }

@@ -95,6 +95,47 @@ private struct FailedHistoryStorage: ClipboardHistoryStorage {
   func delete() throws { throw CocoaError(.fileWriteNoPermission) }
 }
 final class ClipboardTests: XCTestCase {
+  @MainActor func testCompactClipboardPauseRowRendersAtLargeTextInBothThemes() async throws {
+    let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("anice-clipboard-refinement-renders", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let suite = "aniCe.ClipboardPauseLayout.\(UUID())"
+    let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { preferences.removePersistentDomain(forName: suite) }
+    let history = ClipboardHistory(preferences: preferences)
+    history.setEnabled(true)
+    try await until { history.enabled }
+    let native = ClipboardNativeFake()
+    let model = MacClipboardModel(native: native, history: history)
+    defer { model.invalidate(); history.resumeCollection() }
+    var renders = 0
+    for paused in [false, true] {
+      if paused { history.pauseCollection(seconds: nil) } else { history.resumeCollection() }
+      for scheme in [ColorScheme.light, .dark] {
+        for width in [300.0, 600.0] {
+          preferences.set(1.2, forKey: "ui.fontScale")
+          let view = ClipboardSettingsView(model: model, peers: [], compactSettings: true)
+            .padding(14).frame(width: width)
+            .background(AniCePalette.surface(scheme))
+            .environment(\.colorScheme, scheme).defaultAppStorage(preferences)
+          let host = NSHostingView(rootView: view)
+          host.frame.size = host.fittingSize
+          host.layoutSubtreeIfNeeded()
+          XCTAssertEqual(host.bounds.width, width, accuracy: 1)
+          XCTAssertLessThan(host.bounds.height, 320)
+          let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+          host.cacheDisplay(in: host.bounds, to: bitmap)
+          try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            .write(to: directory.appendingPathComponent("clipboard-\(paused)-\(scheme)-\(Int(width)).png"))
+          renders += 1
+        }
+      }
+    }
+    XCTAssertEqual(renders, 8)
+    XCTAssertEqual(native.writes, 0)
+    print("Clipboard pause layout renders: \(directory.path)")
+  }
+
   @MainActor func testHistoryPauseSurvivesRestartAndExpiryWithoutChangingConsent() async throws {
     let name = "aniCe.HistoryPause.\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: name))

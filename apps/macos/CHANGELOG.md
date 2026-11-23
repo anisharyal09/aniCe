@@ -16,6 +16,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Confine granted-access descriptions to Permissions, align glass/pause controls and support broader global shortcut combinations while preserving native system/editing keys and legacy bindings.
 - Use desktop-sampling companion vibrancy, stronger light-mode Vibrant tint and quieter secondary button faces.
 - Organize Settings into ordered category sections, remove the duplicate jump strip and route Clipboard/Messages gears to their settings.
 

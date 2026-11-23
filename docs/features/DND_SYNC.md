@@ -11,6 +11,8 @@ In aniCe → Settings → Do Not Disturb, choose separate Shortcuts for **When p
 
 On Android, open aniCe → Settings → Do Not Disturb, enable **Sync phone DND to Mac**, and allow aniCe DND access. Keep both apps connected when changing DND. Android requires Notification Policy access to observe phone-side DND changes.
 
+Settings → Permissions retains Do Not Disturb access status and its observation purpose. All and the Do Not Disturb feature settings show the access action only while missing; approved-access descriptions do not repeat there.
+
 The Desk Deck **DND mode** button runs a separate Mac-local toggle Shortcut. It does not sync to the phone.
 
 See the [DND sync v1 contract](../../protocol/dnd-sync/README.md).

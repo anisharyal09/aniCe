@@ -14,6 +14,8 @@ Notification mirroring sends alerts from apps chosen on Android to the connected
 
 Android's system notification-access page grants aniCe permission to read posted notifications and lists aniCe with other listener apps. The in-app **Select apps** list is a separate source filter. aniCe and Android's current default SMS app are excluded from that list. SMS continues through the existing Messages relay, avoiding a second alert for the same text.
 
+Settings → Permissions lists Notification Access, Phone state, Answer phone calls, Call log and Contacts independently, with their current grants and purposes. All shows only missing-access actions; Notification sync removes permission prompts after their grants succeed. Runtime requests contain only missing permissions. Granting access does not change the selected-app filter or enable mirroring preferences.
+
 ## What is mirrored
 
 The Mac shows the title and text that Android exposes, along with the source app name. Tapping the alert invokes the source notification's normal tap action. Available notification actions are shown by macOS; a free-form text reply becomes a native text-input action. Android notifications without usable actions remain informational. A Mac dismissal asks Android to dismiss the matching active notification. Android removals, including a dismissal in the source app, clear the Mac alert.
@@ -43,7 +45,7 @@ Turning off an app stops new mirroring and clears its current mirrored alerts. R
 - Only the current default SMS app is excluded. SMS content should continue to use the Messages relay.
 - Routine ongoing notifications are skipped; only an incoming call is mirrored while ongoing.
 - Up to eight available source actions are relayed. macOS decides how many fit in a banner; additional actions may appear when the notification is expanded.
-- Live SIM call detection and remote Answer/Decline require both **READ_PHONE_STATE** and **ANSWER_PHONE_CALLS**; aniCe asks for them only through **Allow phone access** in Notification sync settings. If either permission is denied, the listener-based app notifications can still work but SIM fallback calls will not appear.
+- Live SIM call detection and remote Answer/Decline require both **READ_PHONE_STATE** and **ANSWER_PHONE_CALLS**; aniCe asks through **Allow phone access** in Permissions or Notification sync settings. If either permission is denied, the listener-based app notifications can still work but SIM fallback calls will not appear.
 - `READ_CALL_LOG` is restricted: the installer may need to allowlist it, and Google Play distribution requires an eligible use case. Denying caller-ID access does not disable ringing alerts or call controls.
 - Android can hide sensitive content, and some source-app actions cannot be invoked outside Android.
 - Notifications that arrive while the phone and Mac are disconnected are not replayed unless they remain active when they reconnect.

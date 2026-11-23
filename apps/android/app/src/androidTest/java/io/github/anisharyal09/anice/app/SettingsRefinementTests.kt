@@ -64,6 +64,80 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class SettingsRefinementTests {
     @get:Rule val presentation: org.junit.rules.TestRule = EmulatorPresentationRule()
+    @Test fun permissionRowsKeepGrantedDetailsOutOfAllAndReflowAtLargeText() {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        var captures = 0
+        for (dark in listOf(false, true)) {
+            for (scale in listOf(0.8f, 1.2f, 2f)) {
+                val activity = runner.startActivitySync(
+                    Intent(runner.targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                ) as MainActivity
+                val showGranted = mutableStateOf(false)
+                val allowed = mutableStateOf(true)
+                val requests = AtomicInteger()
+                try {
+                    val drawn = CountDownLatch(1)
+                    runner.runOnMainSync {
+                        activity.setContent {
+                            Fixture(dark, scale) {
+                                Column(Modifier.widthIn(max = 300.dp).fillMaxWidth().padding(12.dp)) {
+                                    Text(if (showGranted.value) "Permissions fixture" else "All fixture")
+                                    io.github.anisharyal09.anice.ui.PermissionStatusRow(
+                                        "Notification Access", allowed.value, "Mirror selected phone alerts.",
+                                        showGranted.value,
+                                    ) {
+                                        TextButton(onClick = { requests.incrementAndGet() },
+                                            modifier = Modifier.defaultMinSize(minHeight = 32.dp),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+                                            Text("Allow access fixture")
+                                        }
+                                    }
+                                    Text("Following settings fixture")
+                                }
+                            }
+                            SideEffect { activity.window.decorView.postOnAnimation { drawn.countDown() } }
+                        }
+                    }
+                    assertTrue(drawn.await(10, TimeUnit.SECONDS))
+                    idle()
+                    awaitLabel("All fixture")
+                    assertNull(find(root(), "Notification Access"))
+                    assertNull(find(root(), "Mirror selected phone alerts."))
+                    runner.runOnMainSync { allowed.value = false }
+                    awaitLabel("Notification Access")
+                    awaitLabel("Not allowed")
+                    awaitLabel("Allow access fixture")
+                    assertNull(find(root(), "Mirror selected phone alerts."))
+                    click("Allow access fixture")
+                    assertEquals(1, requests.get())
+                    runner.runOnMainSync { allowed.value = true }
+                    awaitNoLabel("Notification Access")
+                    assertNull(find(root(), "Allow access fixture"))
+                    runner.runOnMainSync { showGranted.value = true }
+                    awaitLabel("Notification Access")
+                    awaitLabel("Allowed")
+                    awaitLabel("Mirror selected phone alerts.")
+                    val title = bounds(find(root(), "Notification Access"))
+                    val status = bounds(find(root(), "Allowed"))
+                    val purpose = bounds(find(root(), "Mirror selected phone alerts."))
+                    assertTrue("Title and status must not overlap", title.right <= status.left)
+                    assertTrue("Purpose belongs below the name/status row",
+                        purpose.top >= maxOf(title.bottom, status.bottom))
+                    assertTrue("Permission row remains inside its narrow viewport",
+                        purpose.right <= bounds(root()).right && status.right <= bounds(root()).right)
+                    assertNull(find(root(), "Allow access fixture"))
+                    capture("permissions-${if (dark) "dark" else "light"}-${(scale * 100).toInt()}")
+                    captures++
+                } finally {
+                    runner.runOnMainSync { activity.finish() }
+                    runner.waitForIdleSync()
+                }
+            }
+        }
+        assertEquals(6, captures)
+    }
+
     @Test fun automaticUpdateOptionIsCollapsedAndManualChecksStayAvailableWhenOff() {
         assumeEmulator()
         val runner = InstrumentationRegistry.getInstrumentation()

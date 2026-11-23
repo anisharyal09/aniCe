@@ -120,24 +120,43 @@ struct NativeGlassPreferencesRows: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      Toggle("Native Glass", isOn: Binding(
-        get: { enabled && !reduceTransparency },
-        set: { if !reduceTransparency { enabled = $0 } }))
-        .toggleStyle(.checkbox).aniCeControlFeedback()
-        .disabled(reduceTransparency)
+      HStack(spacing: 12) {
+        Text("Native Glass")
+        Spacer(minLength: 8)
+        Toggle("Native Glass", isOn: Binding(
+          get: { enabled && !reduceTransparency },
+          set: { if !reduceTransparency { enabled = $0 } }))
+          .labelsHidden().toggleStyle(.switch).controlSize(.small)
+          .aniCeControlFeedback().disabled(reduceTransparency)
+      }.frame(minHeight: 36)
       if reduceTransparency {
         Text("Locked to Normal by macOS System Settings")
           .font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(scheme))
           .fixedSize(horizontal: false, vertical: true)
       } else if enabled {
-        Picker("Glass style", selection: Binding(
-          get: { NativeGlassStyle.stored(savedStyle) }, set: { savedStyle = $0.rawValue })) {
-          ForEach(NativeGlassStyle.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        ViewThatFits(in: .horizontal) {
+          HStack(spacing: 12) {
+            Text("Glass style").fixedSize(horizontal: true, vertical: false)
+            Spacer(minLength: 8)
+            stylePicker
+          }
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Glass style")
+            stylePicker.frame(maxWidth: .infinity, alignment: .trailing)
+          }
         }
-        .pickerStyle(.segmented)
-        .accessibilityHint("Standard is softly backed. Vibrant lets more of the background show through.")
       }
-    }.padding(.vertical, 8)
+    }.font(.system(size: 13 * fontScale)).padding(.vertical, 8)
+  }
+
+  private var stylePicker: some View {
+    Picker("Glass style", selection: Binding(
+      get: { NativeGlassStyle.stored(savedStyle) }, set: { savedStyle = $0.rawValue })) {
+      ForEach(NativeGlassStyle.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+    }
+    .labelsHidden().pickerStyle(.segmented)
+    .frame(width: 200 * fontScale)
+    .accessibilityHint("Standard is softly backed. Vibrant lets more of the background show through.")
   }
 }
 

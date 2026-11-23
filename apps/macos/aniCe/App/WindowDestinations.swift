@@ -6,36 +6,87 @@ import UserNotifications
 
 struct MacPermissionSummary: View {
   let clipboard: MacClipboardModel
-  @State private var notifications = "Checking"
+  let notifications: UNAuthorizationStatus?
+  let showGranted: Bool
+  var onPermissionsChanged: () -> Void = {}
+  @State private var requestingNotifications = false
+  @State private var notificationError: String?
   @Environment(\.colorScheme) private var scheme
-  var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Text("Notifications · \(notifications)")
-      Text("Show phone alerts, Messages, Find Device, transfers and update notices.")
-        .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
-      Text(clipboard.automaticAccessAllowed
-        ? "Automatic pasteboard reading · Available" : "Automatic pasteboard reading · Not allowed")
-      Text("Read eligible copied text for enabled history or automatic sharing. Manual paste stays available.")
-        .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
-      Button("Open Privacy & Security") {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension") {
-          NSWorkspace.shared.open(url)
-        }
-      }.buttonStyle(AniCeButtonStyle())
-    }.task { await refresh() }
-      .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-        Task { await refresh() }
-      }
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
+
+  static func notificationsAllowed(_ status: UNAuthorizationStatus?) -> Bool {
+    status == .authorized || status == .provisional
   }
-  private func refresh() async {
-    let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
-    switch status {
-    case .authorized, .provisional: notifications = "Allowed"
-    case .denied: notifications = "Not allowed"
-    case .notDetermined: notifications = "Not requested"
-    default: notifications = "Unavailable"
+
+  private var notificationStatus: String {
+    switch notifications {
+    case .authorized?, .provisional?: "Allowed"
+    case .denied?: "Not allowed"
+    case .notDetermined?: "Not requested"
+    case nil: "Checking"
+    default: "Unavailable"
     }
-    clipboard.refreshAccess()
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      if showGranted || notifications != nil && !Self.notificationsAllowed(notifications) {
+        permission("Notifications", status: notificationStatus,
+          purpose: "Show phone alerts, Messages, Find Device, transfers and updates.")
+        if notifications == .notDetermined {
+          Button("Allow notifications") {
+            guard !requestingNotifications else { return }
+            requestingNotifications = true
+            notificationError = nil
+            Task {
+              defer { requestingNotifications = false }
+              do { _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) }
+              catch { notificationError = "Notification access could not be requested. Open notification settings." }
+              onPermissionsChanged()
+            }
+          }.buttonStyle(AniCeButtonStyle()).disabled(requestingNotifications)
+        } else if notifications != nil, !Self.notificationsAllowed(notifications) {
+          Button("Notification settings") {
+            openSettings("x-apple.systempreferences:com.apple.Notifications-Settings.extension")
+          }.buttonStyle(AniCeButtonStyle())
+        }
+        if let notificationError {
+          Text(notificationError).font(.system(size: 12 * fontScale))
+            .foregroundStyle(AniCePalette.error(scheme)).fixedSize(horizontal: false, vertical: true)
+          Button("Notification settings") {
+            openSettings("x-apple.systempreferences:com.apple.Notifications-Settings.extension")
+          }.buttonStyle(AniCeButtonStyle())
+        }
+      }
+      if showGranted || !clipboard.automaticAccessAllowed {
+        permission("Automatic pasteboard reading",
+          status: clipboard.automaticAccessAllowed ? "Available" : "Not allowed",
+          purpose: "Read copied text for enabled history or automatic sharing.")
+        if !clipboard.automaticAccessAllowed {
+          Button("Pasteboard settings") {
+            openSettings("x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension")
+          }.buttonStyle(AniCeButtonStyle())
+        }
+      }
+    }
+  }
+  private func permission(_ title: String, status: String, purpose: String) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(alignment: .firstTextBaseline, spacing: 12) {
+        Text(title)
+        Spacer(minLength: 8)
+        Text(status).foregroundStyle(AniCePalette.secondaryText(scheme))
+          .fixedSize(horizontal: true, vertical: false)
+      }
+      if showGranted {
+        Text(purpose).font(.system(size: 12 * fontScale))
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+          .fixedSize(horizontal: false, vertical: true)
+      }
+    }.frame(maxWidth: .infinity, alignment: .leading)
+  }
+  private func openSettings(_ address: String) {
+    if let url = URL(string: address) { NSWorkspace.shared.open(url) }
   }
 }
 
@@ -567,12 +618,21 @@ extension MainWindowView {
                     }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
                   }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("This device, identity and security")
                 }
-                settingsCategoryHeading(.permissions)
-                preferenceSection("Mac input", id: "permissions") {
-                  MacPhoneInputView(model: phoneInput, onOpenDevices: { navigation.show(.devices) })
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
-                  Divider()
-                  MacPermissionSummary(clipboard: clipboard).padding(.vertical, 8)
+                if settingsCategory == .permissions || hasMissingPermissions {
+                  settingsCategoryHeading(.permissions)
+                  preferenceSection("Access", id: "permissions") {
+                    VStack(alignment: .leading, spacing: 24) {
+                      if settingsCategory == .permissions || phoneInput.needsPostEventAccess {
+                        MacPhoneInputView(model: phoneInput, showGranted: settingsCategory == .permissions)
+                      }
+                      if settingsCategory == .permissions || !clipboard.automaticAccessAllowed ||
+                        notificationPermissionStatus.map({ !MacPermissionSummary.notificationsAllowed($0) }) == true {
+                        MacPermissionSummary(clipboard: clipboard, notifications: notificationPermissionStatus,
+                          showGranted: settingsCategory == .permissions,
+                          onPermissionsChanged: { Task { await refreshPermissionStatus() } })
+                      }
+                    }.padding(.vertical, 14)
+                  }
                 }
                 settingsCategoryHeading(.features)
                 preferenceSection("Desk Deck", id: "desk-deck") {
@@ -635,7 +695,22 @@ extension MainWindowView {
           settingsFocusToken = UUID()
         }
       }
+      .task { await refreshPermissionStatus() }
+      .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+        Task { await refreshPermissionStatus() }
+      }
     }
+  }
+
+  private var hasMissingPermissions: Bool {
+    phoneInput.needsPostEventAccess || !clipboard.automaticAccessAllowed ||
+      notificationPermissionStatus.map { !MacPermissionSummary.notificationsAllowed($0) } == true
+  }
+
+  private func refreshPermissionStatus() async {
+    notificationPermissionStatus = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+    phoneInput.refreshAccessState()
+    clipboard.refreshAccess()
   }
 
   @ViewBuilder private func preferenceSection<Content: View>(
@@ -653,7 +728,9 @@ extension MainWindowView {
         .overlay { RoundedRectangle(cornerRadius: 10).stroke(focused ? AniCePalette.accent(colorScheme) : AniCePalette.separator(colorScheme), lineWidth: focused ? 1 : 0.5) }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: focused)
       VStack(alignment: .leading, spacing: 8) {
-        Text(title).font(.system(size: 13 * fontScale, weight: .medium)).foregroundStyle(AniCePalette.primaryText(colorScheme))
+        if id != "permissions" {
+          Text(title).font(.system(size: 13 * fontScale, weight: .medium)).foregroundStyle(AniCePalette.primaryText(colorScheme))
+        }
         group
       }
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -725,7 +802,8 @@ extension MainWindowView {
     let lower = document.bounds.minY
     let upper = max(lower, document.bounds.maxY - clip.bounds.height)
     let origin = NSPoint(x: clip.bounds.origin.x, y: min(upper, max(lower, desired)))
-    if animated {
+    // Detached or reduced-motion views reveal directly; AppKit cannot reliably complete offscreen animations.
+    if animated, scroll.window?.isVisible == true, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
       NSAnimationContext.runAnimationGroup { context in
         context.duration = 0.18
         clip.animator().setBoundsOrigin(origin)

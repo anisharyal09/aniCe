@@ -63,12 +63,20 @@ fun SettingsScreen(
     if (showingIdentity) LocalIdentitySheet(identity) { showingIdentity = false }
     val app = context.applicationContext as io.github.anisharyal09.anice.AniCeApplication
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(lifecycle, app.sms) {
+    var notificationPermissions by remember(context) {
+        mutableStateOf(io.github.anisharyal09.anice.features.notifications.notificationPermissionSnapshot(context))
+                    }
+    fun refreshPermissions() {
+        app.sms.refreshPermissions()
+        app.dndSync.refreshAccess()
+        notificationPermissions = io.github.anisharyal09.anice.features.notifications.notificationPermissionSnapshot(context)
+    }
+    DisposableEffect(lifecycle, app.sms, app.dndSync, context) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) app.sms.refreshPermissions()
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) refreshPermissions()
         }
         lifecycle.addObserver(observer)
-        app.sms.refreshPermissions()
+        refreshPermissions()
         onDispose { lifecycle.removeObserver(observer) }
     }
     if (navigation.destination == AppDestination.About || navigation.settingsRoute == SettingsRoute.About) {
@@ -79,8 +87,14 @@ fun SettingsScreen(
     } else {
         val lan = app.lanSessionController
         var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.All) }
+        val activeCategory = selectedCategory.takeIf { it in SettingsCategory.visibleEntries } ?: SettingsCategory.All
+        val showGrantedPermissions = activeCategory == SettingsCategory.Permissions
+        val hasMissingPermissions = !app.sms.granted || !notificationPermissions.allAllowed || !app.dndSync.granted
         val scrollState = rememberScrollState()
-        LaunchedEffect(selectedCategory) { scrollState.scrollTo(0) }
+        LaunchedEffect(selectedCategory) {
+            if (selectedCategory !in SettingsCategory.visibleEntries) selectedCategory = SettingsCategory.All
+            scrollState.scrollTo(0)
+        }
         LaunchedEffect(navigation.settingsSection) {
             navigation.settingsSection?.let { selectedCategory = SettingsCategory.forSection(it) }
         }
@@ -102,9 +116,9 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    SettingsCategory.entries.forEach { category ->
+                    SettingsCategory.visibleEntries.forEach { category ->
                         FilterChip(
-                            selected = selectedCategory == category,
+                            selected = activeCategory == category,
                             onClick = { selectedCategory = category },
                             label = { Text(category.label) },
                             modifier = Modifier.defaultMinSize(minHeight = 32.dp),
@@ -112,7 +126,7 @@ fun SettingsScreen(
                         }
                 }
 
-                CompositionLocalProvider(LocalSettingsCategory provides selectedCategory,
+                CompositionLocalProvider(LocalSettingsCategory provides activeCategory,
                     LocalSettingsTarget provides navigation.settingsSection) {
                 Column(
                     Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState)
@@ -257,29 +271,28 @@ fun SettingsScreen(
                                 modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    SettingsCategoryHeading(SettingsCategory.Permissions)
-                    PreferenceSection("Permissions") {
-                        for ((name, allowed, purpose) in listOf(
-                            Triple("Receive SMS", app.sms.permissionsState.receive, "Relay incoming SMS to Mac."),
-                            Triple("Read SMS", app.sms.permissionsState.read, "Read conversations and search on your phone."),
-                            Triple("Send SMS", app.sms.permissionsState.send, "Send replies composed on Mac."),
-                        )) {
-                            Text("$name · ${if (allowed) "Allowed" else "Not allowed"}",
-                                style = MaterialTheme.typography.bodyMedium)
-                            Text(purpose, style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (showGrantedPermissions || hasMissingPermissions) {
+                        SettingsCategoryHeading(SettingsCategory.Permissions)
+                        PreferenceSection("Permissions") {
+                            for ((name, allowed, purpose) in listOf(
+                                Triple("Receive SMS", app.sms.permissionsState.receive, "Relay incoming SMS to Mac."),
+                                Triple("Read SMS", app.sms.permissionsState.read, "Read conversations and search on your phone."),
+                                Triple("Send SMS", app.sms.permissionsState.send, "Send replies composed on Mac."),
+                            )) {
+                                io.github.anisharyal09.anice.ui.PermissionStatusRow(
+                                    name, allowed, purpose, showGrantedPermissions)
+                            }
+                            if (!app.sms.granted) {
+                                TextButton(onClick = { navigation.openFeature(AppFeature.Sms) },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text("Open Messages setup") }
+                            }
+                            io.github.anisharyal09.anice.features.notifications.NotificationSettings(
+                                app.notificationMirror, permissionsOnly = true,
+                                showGranted = showGrantedPermissions, onPermissionsChanged = ::refreshPermissions)
+                            io.github.anisharyal09.anice.features.dndsync.DndSyncSettings(
+                                app.dndSync, permissionsOnly = true, showGranted = showGrantedPermissions)
                         }
-                        if (!app.sms.granted) {
-                        TextButton(onClick = { navigation.openFeature(AppFeature.Sms) },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text("Open Messages setup") }
-                        }
-                        HorizontalDivider()
-                        io.github.anisharyal09.anice.features.notifications.NotificationSettings(
-                            app.notificationMirror, permissionsOnly = true)
-                        HorizontalDivider()
-                        io.github.anisharyal09.anice.features.dndsync.DndSyncSettings(
-                            app.dndSync, permissionsOnly = true)
                     }
                     SettingsCategoryHeading(SettingsCategory.Features)
                     PreferenceSection("Do Not Disturb") {
@@ -322,14 +335,6 @@ fun SettingsScreen(
                         )
                     }
 
-                    SettingsCategoryHeading(SettingsCategory.Shortcuts)
-                    PreferenceSection("Shortcuts") {
-                        Text("Star features for Home quick access. Long-press to reorder.",
-                            style = MaterialTheme.typography.bodySmall)
-                        TextButton(onClick = { navigation.select(AppDestination.Favourites, peers.isEmpty()) },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text("Manage favourites") }
-                    }
                 }
                 }
             }
@@ -356,8 +361,10 @@ private fun PreferenceSection(
     }
     val shape = RoundedCornerShape(8.dp)
     Column(modifier.bringIntoViewRequester(requester), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        Text(title, Modifier.padding(horizontal = 2.dp), style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (title != "Permissions") {
+            Text(title, Modifier.padding(horizontal = 2.dp), style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         Surface(
             modifier = Modifier.fillMaxWidth().then(
                 if (highlighted) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, shape) else Modifier

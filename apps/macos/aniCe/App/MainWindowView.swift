@@ -3,6 +3,7 @@
 import AppKit
 import SwiftUI
 import Observation
+import UserNotifications
 
 struct MainWindowView: View {
   let delegate: AppDelegate
@@ -39,6 +40,7 @@ struct MainWindowView: View {
   @State var editingLocalName = false
   @State var nicknamePeer: DeviceIdentity?
   @State var updates = MacUpdateModel.shared
+  @State var notificationPermissionStatus: UNAuthorizationStatus?
   var colorScheme: ColorScheme {
     WindowAppearance.stored(appearance).colorScheme(system: systemAppearance.colorScheme)
   }

@@ -15,10 +15,12 @@ enum class SettingsCategory(val label: String) {
     All("All"), General("General"), Permissions("Permissions"), Features("Features"), Shortcuts("Shortcuts");
 
     companion object {
+        // Shortcuts remains decodable from older saved UI state but is no longer a phone category.
+        val visibleEntries = listOf(All, General, Permissions, Features)
         fun forSection(title: String): SettingsCategory = when (title) {
             "Appearance", "Updates", "Connection", "This device" -> General
             "Permissions" -> Permissions
-            "Shortcuts" -> Shortcuts
+            "Shortcuts" -> All
             else -> Features
         }
     }

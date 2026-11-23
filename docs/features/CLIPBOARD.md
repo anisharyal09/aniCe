@@ -64,7 +64,7 @@ History uses a bounded versioned file in Android no-backup storage or a dedicate
 
 On macOS, aniCe includes a floating **Quick Paste Tray** that can be invoked from anywhere via global hotkey (`⌥⌘V`), the small tray icon beside **Send clipboard** in the menu-bar companion, or the in-app Clipboard panel. The tray icon remains available without a connected phone. Opening the tray closes the companion and starts a fresh search.
 
-Change the default shortcut under Settings → Shortcuts. Click the recorder and press Command–Option with a supported letter or number; Shift is optional. Escape cancels recording. Reset restores the default when it is available. Conflicts keep the previous binding and display an error; another running preview copy can occupy the same shortcut.
+Change the default shortcut under Settings → Shortcuts. Click the recorder and press a combination using Command, Control, Option or Shift with a letter, number, punctuation or navigation key; function keys are also supported. Bare Escape cancels recording, and bare Tab moves focus. Ordinary typing/editing and enabled macOS system shortcuts are reserved. Reset restores the default when available. A conflict preserves the previous binding and displays an error; another running preview copy can occupy the same shortcut.
 
 - **Floating presentation**: The tray opens as a lightweight, non-activating panel floating above other applications. Clicking outside dismisses it. Escape first exits search or full-text preview, then closes the tray.
 - **Instant search & filtering**: Type to filter history in real time. Switch between All, Pinned, Mac, and Phone filters.

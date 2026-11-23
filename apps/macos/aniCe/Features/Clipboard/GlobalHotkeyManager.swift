@@ -17,25 +17,112 @@ enum GlobalShortcutAction: String, CaseIterable, Identifiable {
 
 struct GlobalShortcut: Equatable {
   let keyCode: UInt16
-  let shift: Bool
+  let modifierFlags: NSEvent.ModifierFlags
+
+  init(keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags) {
+    self.keyCode = keyCode
+    self.modifierFlags = modifierFlags
+  }
+
+  // Legacy saved bindings always used Command–Option, with an optional Shift.
+  init(keyCode: UInt16, shift: Bool) {
+    self.init(keyCode: keyCode, modifierFlags: shift ? [.command, .option, .shift] : [.command, .option])
+  }
+
+  static let supportedModifiers: NSEvent.ModifierFlags = [.command, .control, .option, .shift]
   // Physical key positions match Carbon registration; native keyboard layout determines the typed character.
   static let keys: [UInt16: String] = [
     0: "A", 1: "S", 2: "D", 3: "F", 4: "H", 5: "G", 6: "Z", 7: "X", 8: "C", 9: "V",
     11: "B", 12: "Q", 13: "W", 14: "E", 15: "R", 16: "Y", 17: "T",
     18: "1", 19: "2", 20: "3", 21: "4", 22: "6", 23: "5", 25: "9", 26: "7", 28: "8", 29: "0",
-    31: "O", 32: "U", 34: "I", 35: "P", 37: "L", 38: "J", 40: "K", 45: "N", 46: "M"
+    24: "=", 27: "-", 30: "]", 31: "O", 32: "U", 33: "[", 34: "I", 35: "P",
+    36: "↩", 37: "L", 38: "J", 39: "'", 40: "K", 41: ";", 42: "\\", 43: ",", 44: "/",
+    45: "N", 46: "M", 47: ".", 48: "⇥", 49: "Space", 50: "`", 51: "⌫", 53: "Esc",
+    65: "Keypad .", 67: "Keypad *", 69: "Keypad +", 71: "Clear", 75: "Keypad /", 76: "⌤",
+    78: "Keypad -", 81: "Keypad =", 82: "Keypad 0", 83: "Keypad 1", 84: "Keypad 2",
+    85: "Keypad 3", 86: "Keypad 4", 87: "Keypad 5", 88: "Keypad 6", 89: "Keypad 7",
+    91: "Keypad 8", 92: "Keypad 9",
+    64: "F17", 79: "F18", 80: "F19", 90: "F20", 96: "F5", 97: "F6", 98: "F7",
+    99: "F3", 100: "F8", 101: "F9", 103: "F11", 105: "F13", 106: "F16", 107: "F14",
+    109: "F10", 111: "F12", 113: "F15", 115: "Home", 116: "Page Up", 117: "⌦",
+    118: "F4", 119: "End", 120: "F2", 121: "Page Down", 122: "F1",
+    123: "←", 124: "→", 125: "↓", 126: "↑"
   ]
-  // These system combinations control logout, Dock, hiding and minimization.
-  var valid: Bool { Self.keys[keyCode] != nil && ![12, 4, 2, 46].contains(keyCode) }
-  var label: String { (shift ? "⇧" : "") + "⌥⌘" + (Self.keys[keyCode] ?? "?") }
-  var modifiers: UInt32 { UInt32(cmdKey | optionKey | (shift ? shiftKey : 0)) }
+  private static let functionKeys: Set<UInt16> = [
+    64, 79, 80, 90, 96, 97, 98, 99, 100, 101, 103, 105, 106, 107, 109, 111, 113, 118, 120, 122
+  ]
+
+  var valid: Bool {
+    guard Self.keys[keyCode] != nil, modifierFlags.subtracting(Self.supportedModifiers).isEmpty else { return false }
+    // Ordinary typing, Shift-selection and standard editing must stay with the focused app.
+    if modifierFlags.intersection([.command, .control, .option]).isEmpty {
+      return Self.functionKeys.contains(keyCode)
+    }
+    if modifierFlags == .command || modifierFlags == [.command, .shift] {
+      if [0, 1, 3, 6, 7, 8, 9, 12, 13, 31, 35, 45, 46, 4, 51, 117].contains(keyCode) { return false }
+    }
+    if modifierFlags == .control && [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 14, 15, 17, 35, 40, 45, 11, 16].contains(keyCode) {
+      return false
+    }
+    if modifierFlags == [.command, .option] && [4, 2, 46, 53].contains(keyCode) { return false }
+    if modifierFlags == [.command, .option, .shift] && [9, 12].contains(keyCode) { return false }
+    if modifierFlags == [.command, .control] && keyCode == 12 { return false }
+    if modifierFlags == [.command, .shift] && keyCode == 53 { return false }
+    if modifierFlags.contains(.command) && [48, 49].contains(keyCode) { return false }
+    return true
+  }
+
+  var label: String {
+    (modifierFlags.contains(.control) ? "⌃" : "") +
+      (modifierFlags.contains(.option) ? "⌥" : "") +
+      (modifierFlags.contains(.shift) ? "⇧" : "") +
+      (modifierFlags.contains(.command) ? "⌘" : "") + keyLabel
+  }
+
+  private var keyLabel: String {
+    guard keyCode <= 50, ![36, 48, 49].contains(keyCode),
+      let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+      let property = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else {
+      return Self.keys[keyCode] ?? "?"
+    }
+    let data = unsafeBitCast(property, to: CFData.self)
+    guard let bytes = CFDataGetBytePtr(data) else { return Self.keys[keyCode] ?? "?" }
+    let layout = UnsafeRawPointer(bytes).assumingMemoryBound(to: UCKeyboardLayout.self)
+    var deadKey: UInt32 = 0
+    var length = 0
+    var characters = [UniChar](repeating: 0, count: 8)
+    let result = UCKeyTranslate(layout, keyCode, UInt16(kUCKeyActionDisplay), 0, UInt32(LMGetKbdType()),
+      OptionBits(kUCKeyTranslateNoDeadKeysMask), &deadKey, characters.count, &length, &characters)
+    guard result == noErr, length > 0, length <= characters.count else { return Self.keys[keyCode] ?? "?" }
+    return String(utf16CodeUnits: characters, count: length).uppercased()
+  }
+
+  var modifiers: UInt32 {
+    var result: UInt32 = 0
+    if modifierFlags.contains(.command) { result |= UInt32(cmdKey) }
+    if modifierFlags.contains(.control) { result |= UInt32(controlKey) }
+    if modifierFlags.contains(.option) { result |= UInt32(optionKey) }
+    if modifierFlags.contains(.shift) { result |= UInt32(shiftKey) }
+    return result
+  }
+
+  static let recordingHint = "Use a key combination or function key. System and editing shortcuts stay reserved."
 
   static func captured(_ event: NSEvent) -> Self? {
     let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
       .subtracting([.capsLock, .numericPad, .function])
-    guard flags == [.command, .option] || flags == [.command, .option, .shift] else { return nil }
-    let result = Self(keyCode: event.keyCode, shift: flags.contains(.shift))
+    let result = Self(keyCode: event.keyCode, modifierFlags: flags)
     return result.valid ? result : nil
+  }
+
+  static func matchesEnabledSystemHotkey(_ binding: Self, entries: [[String: Any]]) -> Bool {
+    entries.contains { row in
+      guard row[kHISymbolicHotKeyEnabled as String] as? Bool == true,
+        let code = row[kHISymbolicHotKeyCode as String] as? Int,
+        let modifiers = row[kHISymbolicHotKeyModifiers as String] as? Int,
+        let nativeCode = UInt16(exactly: code), let nativeModifiers = UInt32(exactly: modifiers) else { return false }
+      return nativeCode == binding.keyCode && nativeModifiers == binding.modifiers
+    }
   }
 }
 
@@ -55,9 +142,14 @@ struct GlobalShortcut: Equatable {
     for action in GlobalShortcutAction.allCases {
       let key = "ui.globalShortcut.\(action.rawValue)"
       if let row = storage.dictionary(forKey: key), let code = row["keyCode"] as? Int,
-        let shift = row["shift"] as? Bool, let nativeCode = UInt16(exactly: code) {
-        let binding = GlobalShortcut(keyCode: nativeCode, shift: shift)
-        if binding.valid { bindings[action] = binding }
+        let nativeCode = UInt16(exactly: code) {
+        let binding: GlobalShortcut?
+        if let raw = row["modifiers"] as? Int, let flags = UInt(exactly: raw) {
+          binding = GlobalShortcut(keyCode: nativeCode, modifierFlags: NSEvent.ModifierFlags(rawValue: flags))
+        } else if row["modifiers"] == nil, let shift = row["shift"] as? Bool {
+          binding = GlobalShortcut(keyCode: nativeCode, shift: shift)
+        } else { binding = nil }
+        if let binding, binding.valid { bindings[action] = binding }
       }
       if bindings[action] == nil { bindings[action] = action.defaultBinding }
     }
@@ -71,7 +163,7 @@ struct GlobalShortcut: Equatable {
   func report(_ message: String?, for action: GlobalShortcutAction) { errors[action] = message }
 
   @discardableResult func set(_ value: GlobalShortcut, for action: GlobalShortcutAction) -> Bool {
-    guard value.valid else { report("Use ⌥⌘ with a letter or number; Shift is optional.", for: action); return false }
+    guard value.valid else { report(GlobalShortcut.recordingHint, for: action); return false }
     guard !GlobalShortcutAction.allCases.contains(where: { $0 != action && binding($0) == value }) else {
       report("That shortcut is already used by the other action.", for: action); return false
     }
@@ -80,7 +172,8 @@ struct GlobalShortcut: Equatable {
       return false
     }
     bindings[action] = value
-    storage.set(["keyCode": Int(value.keyCode), "shift": value.shift], forKey: "ui.globalShortcut.\(action.rawValue)")
+    storage.set(["keyCode": Int(value.keyCode), "modifiers": Int(value.modifierFlags.rawValue)],
+      forKey: "ui.globalShortcut.\(action.rawValue)")
     errors[action] = nil
     return true
   }
@@ -91,13 +184,13 @@ struct GlobalShortcutSettingsView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       Text("Global · while aniCe is running").font(.caption)
-      Text("Click a shortcut, then press ⌥⌘ and a letter or number. Shift is optional; Escape cancels.")
+      Text("Click a shortcut and press a key combination. Escape cancels.")
         .font(.caption).foregroundStyle(.secondary)
       ForEach(GlobalShortcutAction.allCases) { action in
         LabeledContent(action.title) {
           ShortcutRecorder(label: preferences.binding(action).label) { binding in
             if let binding { _ = preferences.set(binding, for: action) }
-            else { preferences.report("Use ⌥⌘ with a letter or number; Shift is optional.", for: action) }
+            else { preferences.report(GlobalShortcut.recordingHint, for: action) }
           }.frame(width: 150, height: 32)
           Button("Reset") { _ = preferences.set(action.defaultBinding, for: action) }
             .buttonStyle(AniCeHoverButtonStyle())
@@ -141,8 +234,9 @@ final class ShortcutRecorderButton: NSButton {
   }
   override func keyDown(with event: NSEvent) {
     guard recording else { super.keyDown(with: event); return }
-    if event.keyCode == 53 { recording = false; title = label; return }
-    if event.keyCode == 48 { super.keyDown(with: event); return }
+    let modifiers = event.modifierFlags.intersection(GlobalShortcut.supportedModifiers)
+    if event.keyCode == 53 && modifiers.isEmpty { recording = false; title = label; return }
+    if event.keyCode == 48 && (modifiers.isEmpty || modifiers == .shift) { super.keyDown(with: event); return }
     accept(GlobalShortcut.captured(event))
   }
   @discardableResult func acceptRegistered(_ binding: GlobalShortcut) -> Bool {
@@ -154,7 +248,9 @@ final class ShortcutRecorderButton: NSButton {
     recording = false; title = label; captured(binding)
   }
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
-    guard recording, window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
+    guard recording, window?.isKeyWindow == true, window?.firstResponder === self else {
+      return super.performKeyEquivalent(with: event)
+    }
     keyDown(with: event); return true
   }
   override func resignFirstResponder() -> Bool {
@@ -245,6 +341,10 @@ final class GlobalHotkeyManager: @unchecked Sendable {
   @discardableResult func replace(_ action: GlobalShortcutAction, with binding: GlobalShortcut) -> Bool {
     guard binding.valid, eventHandler != nil else { return false }
     if hotKeyRefs[action] != nil && registeredBindings[action] == binding { return true }
+    var systemHotkeys: Unmanaged<CFArray>?
+    guard CopySymbolicHotKeys(&systemHotkeys) == noErr, let entries = systemHotkeys?.takeRetainedValue() else { return false }
+    guard let systemEntries = entries as? [[String: Any]],
+      !GlobalShortcut.matchesEnabledSystemHotkey(binding, entries: systemEntries) else { return false }
     var reference: EventHotKeyRef?
     let status = RegisterEventHotKey(
       UInt32(binding.keyCode),
@@ -256,7 +356,10 @@ final class GlobalHotkeyManager: @unchecked Sendable {
     )
     guard status == noErr, let reference else { return false }
     // Register first: a conflicting replacement cannot remove the working shortcut.
-    if let previous = hotKeyRefs[action] { UnregisterEventHotKey(previous) }
+    if let previous = hotKeyRefs[action], UnregisterEventHotKey(previous) != noErr {
+      UnregisterEventHotKey(reference)
+      return false
+    }
     hotKeyRefs[action] = reference
     registeredBindings[action] = binding
     return true

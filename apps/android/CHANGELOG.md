@@ -6,8 +6,9 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Keep granted-access details in Permissions only, space permission rows consistently and remove the phone keyboard-shortcut category; tile setup remains in Clipboard.
 - Wrap Home quick-access shortcuts into additional rows with native touch targets instead of horizontal scrolling.
-- Group Settings under All, General, Permissions, Features and Shortcuts with wrapped category controls and a direct Messages setup link.
+- Group Settings under All, General, Permissions and Features with wrapped category controls and a direct Messages setup link.
 
 ### Fixed
 

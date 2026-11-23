@@ -5,7 +5,7 @@ import SwiftUI
 
 struct MacPhoneInputView: View {
   @Bindable var model: MacPhoneInputModel
-  let onOpenDevices: () -> Void
+  var showGranted = true
   @Environment(\.colorScheme) private var colorScheme
   @AppStorage("ui.fontScale") private var fontScale = 1.0
 
@@ -27,25 +27,25 @@ struct MacPhoneInputView: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      if let phone = connectedPhone {
-        Label(phone.displayName, systemImage: "iphone")
-          .font(.system(size: 13 * fontScale, weight: .medium))
-          .foregroundStyle(AniCePalette.primaryText(colorScheme))
-      }
-
+    VStack(alignment: .leading, spacing: 12) {
       if model.needsPostEventAccess {
-        VStack(alignment: .leading, spacing: 10) {
-          Label("Allow Mac input", systemImage: "exclamationmark.triangle")
-            .font(.system(size: 13 * fontScale, weight: .medium))
-            .foregroundStyle(AniCePalette.error(colorScheme))
-          Text("Allow Events access for \(appDisplayName) in System Settings → Privacy & Security → \(permissionPaneName).")
-            .font(.system(size: 12 * fontScale))
-            .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("Event Posting")
+            Spacer(minLength: 8)
+            Text("Not allowed").foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          }
+          if showGranted {
+            Text("Allow keyboard and pointer input in Privacy & Security → \(permissionPaneName).")
+              .font(.system(size: 12 * fontScale))
+              .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+              .fixedSize(horizontal: false, vertical: true)
+          }
           Button("Request Events access") {
             if !model.requestEventAccess() { openSystemSettings() }
           }
           .buttonStyle(AniCeButtonStyle())
+          .help("Allow Events access for \(appDisplayName) in \(permissionPaneName).")
+          if showGranted {
 #if DEBUG
           if !model.hasStableSigningIdentity {
             Text("Development build: rebuilding may require permission again.")
@@ -71,19 +71,20 @@ struct MacPhoneInputView: View {
             Button("Restart \(appDisplayName)") { restartAniCe() }
               .buttonStyle(AniCeButtonStyle())
           }
+          }
+      } else if showGranted {
+        VStack(alignment: .leading, spacing: 6) {
+          HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("Event Posting")
+            Spacer(minLength: 8)
+            Text("Allowed").foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          }
+          Text("Post keyboard and pointer input for Control Mac and supported Lock Mac actions.")
+            .font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 10))
-      } else {
-        Label("Event Posting · Allowed", systemImage: "checkmark.circle")
-          .font(.system(size: 13 * fontScale))
-          .foregroundStyle(AniCePalette.success(colorScheme))
-        Text("Post keyboard and pointer events for Control Mac and supported Desk Deck lock actions.")
-          .font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-          .fixedSize(horizontal: false, vertical: true)
 
-        if let phone = connectedPhone {
+        if let phone = connectedPhone, model.isArmed(for: phone) {
           Label(
             model.isArmed(for: phone) || model.statusMessage != "Phone input is off."
               ? model.statusMessage : "Ready. Start Control Mac on your phone.",
@@ -92,18 +93,7 @@ struct MacPhoneInputView: View {
             .font(.system(size: 12 * fontScale))
             .foregroundStyle(model.isReceiving ? AniCePalette.success(colorScheme) : AniCePalette.secondaryText(colorScheme))
 
-          if model.isArmed(for: phone) {
-            Button("Stop receiving") { model.disarm(for: phone) }
-              .buttonStyle(AniCeButtonStyle())
-          }
-        } else {
-          Label("Connect a trusted Android phone over Bluetooth", systemImage: "iphone")
-            .font(.system(size: 13 * fontScale, weight: .medium))
-            .foregroundStyle(AniCePalette.primaryText(colorScheme))
-          Text("Then start Control Mac on the phone.")
-            .font(.system(size: 12 * fontScale))
-            .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-          Button("Open Devices", action: onOpenDevices)
+          Button("Stop receiving") { model.disarm(for: phone) }
             .buttonStyle(AniCeButtonStyle())
         }
       }
