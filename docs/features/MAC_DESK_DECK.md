@@ -39,7 +39,7 @@ Landscape presents meters and quick actions in an adaptive grid. Portrait stacks
 
 Desk Deck stays within the regular Android app shell. The app bar Back button and bottom destinations remain available while the panel is open.
 
-**Keep screen awake while charging** is off by default and uses the standard labeled checkbox control. When enabled, it prevents the screen timeout only while Desk Deck is visible and Android reports external power; backgrounding, unplugging, or leaving the panel restores the normal timeout.
+**Keep screen awake while charging** is off by default and uses the shared compact labeled switch. When enabled, it prevents the screen timeout only while Desk Deck is visible and Android reports external power; backgrounding, unplugging, or leaving the panel restores the normal timeout.
 
 ## Implementation and protocol
 

@@ -181,22 +181,30 @@ struct GlobalShortcut: Equatable {
 
 struct GlobalShortcutSettingsView: View {
   private let preferences = GlobalShortcutPreferences.shared
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      Text("Global · while aniCe is running").font(.caption)
+      Text("Global · while aniCe is running")
+        .font(.system(size: 12 * fontScale))
       Text("Click a shortcut and press a key combination. Escape cancels.")
-        .font(.caption).foregroundStyle(.secondary)
+        .font(.system(size: 12 * fontScale)).foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
       ForEach(GlobalShortcutAction.allCases) { action in
-        LabeledContent(action.title) {
-          ShortcutRecorder(label: preferences.binding(action).label) { binding in
-            if let binding { _ = preferences.set(binding, for: action) }
-            else { preferences.report(GlobalShortcut.recordingHint, for: action) }
-          }.frame(width: 150, height: 32)
-          Button("Reset") { _ = preferences.set(action.defaultBinding, for: action) }
-            .buttonStyle(AniCeHoverButtonStyle())
+        AniCePreferenceRow(action.title, fontScale: fontScale) {
+          HStack(spacing: 8) {
+            ShortcutRecorder(label: preferences.binding(action).label, fontScale: fontScale) { binding in
+              if let binding { _ = preferences.set(binding, for: action) }
+              else { preferences.report(GlobalShortcut.recordingHint, for: action) }
+            }
+            .frame(width: 132 * fontScale, height: 32)
+            .aniCeControlFeedback()
+            Button("Reset") { _ = preferences.set(action.defaultBinding, for: action) }
+              .buttonStyle(AniCeButtonStyle(quiet: true, compact: true))
+          }
         }
         if let error = preferences.errors[action] {
-          Text(error).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+          Text(error).font(.system(size: 12 * fontScale))
+            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
       }
     }.padding(.vertical, 12)
@@ -205,6 +213,7 @@ struct GlobalShortcutSettingsView: View {
 
 private struct ShortcutRecorder: NSViewRepresentable {
   let label: String
+  let fontScale: Double
   let captured: (GlobalShortcut?) -> Void
   func makeNSView(context: Context) -> ShortcutRecorderButton {
     let button = ShortcutRecorderButton()
@@ -216,6 +225,7 @@ private struct ShortcutRecorder: NSViewRepresentable {
   }
   func updateNSView(_ button: ShortcutRecorderButton, context: Context) {
     button.label = label; button.captured = captured
+    button.font = NSFont.systemFont(ofSize: 13 * fontScale)
   }
 }
 

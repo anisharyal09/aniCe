@@ -299,7 +299,7 @@ private struct MacNicknameEditor: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       TextField("Private nickname", text: $name).textFieldStyle(.roundedBorder)
-      Toggle("Use nickname", isOn: $enabled).toggleStyle(.checkbox)
+      Toggle("Use nickname", isOn: $enabled).toggleStyle(AniCePreferenceToggleStyle())
       Text("Only on this Mac. Device name remains the default.").font(.caption)
       Button("Save nickname") { model.saveNickname(peer: peer, name: name, enabled: enabled) }
         .disabled(model.savingNickname || name.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.count > 64 ||

@@ -291,13 +291,9 @@ struct AutomaticUpdateCheckOptions: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       DisclosureGroup("More options", isExpanded: $expanded) {
-        VStack(alignment: .leading, spacing: 6) {
-          Toggle("Check for updates automatically", isOn: $checked)
-            .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3)
-          Text(checked ? "Checks on launch when due and daily at 7:30 PM Nepal time." : "Manual checks remain available.")
-            .font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(scheme))
-            .fixedSize(horizontal: false, vertical: true)
-        }
+        Toggle("Check for updates automatically", isOn: $checked)
+          .toggleStyle(AniCePreferenceToggleStyle(description:
+            checked ? "Checks on launch when due and daily at 7:30 PM Nepal time." : "Manual checks remain available."))
       }
       if !checked && !expanded {
         Text("Automatic checks are off.")
@@ -331,22 +327,17 @@ struct BetaUpdateConsent {
 
 struct BetaUpdatePreference: View {
   @Binding var checked: Bool
-  @AppStorage("ui.fontScale") private var fontScale = 1.0
   @State private var consent = BetaUpdateConsent()
-  @Environment(\.colorScheme) private var scheme
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      Toggle("Include beta releases", isOn: Binding(
-        get: { checked },
-        set: { requested in
-          if let resolved = consent.request(requested, current: checked) { checked = resolved }
-        }))
-        .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3)
-        .accessibilityHint("Confirms before enabling beta updates")
-      Text(checked ? "Turning this off keeps your installed version." : "Get early builds and help test aniCe.")
-        .font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(scheme))
-    }
+    Toggle("Include beta releases", isOn: Binding(
+      get: { checked },
+      set: { requested in
+        if let resolved = consent.request(requested, current: checked) { checked = resolved }
+      }))
+      .toggleStyle(AniCePreferenceToggleStyle(description:
+        checked ? "Turning this off keeps your installed version." : "Get early builds and help test aniCe."))
+      .accessibilityHint("Confirms before enabling beta updates")
     .alert("Try beta updates?", isPresented: Binding(
       get: { consent.confirming },
       set: { if !$0 { consent.cancel() } })) {

@@ -7,23 +7,18 @@ import SwiftUI
 struct SmsNotificationControls: View {
   let preferences: SmsPreferences
   let peer: DeviceIdentity
-  var controlSize: ControlSize = .small
-  @Environment(\.colorScheme) private var scheme
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       Toggle("Notifications", isOn: Binding(get: { preferences.notifications(peer) },
         set: { preferences.setNotifications(peer, $0) }))
-        .aniCeControlFeedback(feedbackPadding: 3)
       Toggle("Play sound", isOn: Binding(get: { preferences.sound(peer) },
         set: { preferences.setSound(peer, $0) }))
-        .aniCeControlFeedback(feedbackPadding: 3)
         .disabled(!preferences.notifications(peer))
       Toggle("Show message text in notifications", isOn: Binding(get: { preferences.preview(peer) },
         set: { preferences.set(peer, $0) }))
-        .aniCeControlFeedback(feedbackPadding: 3)
         .disabled(!preferences.notifications(peer))
     }
-    .toggleStyle(.checkbox).controlSize(controlSize).tint(AniCePalette.accent(scheme))
+    .toggleStyle(AniCePreferenceToggleStyle())
   }
 }
 
@@ -43,7 +38,7 @@ struct SmsSettingsView: View {
         // One collapsed row per phone keeps the section short; the label still carries the state that matters.
         ForEach(peers) { record in
           DisclosureGroup {
-            SmsNotificationControls(preferences: preferences, peer: record.peer, controlSize: .regular)
+            SmsNotificationControls(preferences: preferences, peer: record.peer)
           } label: {
             VStack(alignment: .leading, spacing: 2) {
               Text(record.peer.displayName)

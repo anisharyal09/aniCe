@@ -67,7 +67,7 @@ A timed **Pause** closes BLE and LAN and stores a wall-clock resume deadline, or
 
 Pause stops unfinished admission immediately; only already-secured channels remain briefly available for the best-effort peer notice. Duplicate native presence callbacks do not undo Cancel. Android foreground return can restart a retained companion owner's recovery without requiring another presence callback.
 
-**Resume** acts immediately; only **Pause** opens the duration menu. The Auto connect checkbox shows currently armed work, so it is unchecked during a local pause. A current secured peer can receive a [pause notice](../protocol/connection-pause/README.md) before teardown and show **Paused on &lt;device&gt;**. This does not alter that peer's saved automatic choice; fresh secured connection, expiry or local Resume/Connect clears the notice.
+**Resume** acts immediately; only **Pause** opens the duration menu. The Auto connect switch shows currently armed work, so it is off during a local pause. A current secured peer can receive a [pause notice](../protocol/connection-pause/README.md) before teardown and show **Paused on &lt;device&gt;**. This does not alter that peer's saved automatic choice; fresh secured connection, expiry or local Resume/Connect clears the notice.
 
 A new file action from either updated peer can resume a transport-level LAN Disconnect, but never a timed/indefinite **Pause**, disabled automatic LAN or invalid trust. Passive feature traffic and automatic transfer recovery retain the Disconnect pause.
 

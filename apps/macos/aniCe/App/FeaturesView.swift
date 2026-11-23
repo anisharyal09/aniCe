@@ -224,7 +224,7 @@ struct PlaybackSetupView: View {
     VStack(alignment: .leading, spacing: 10) {
       Toggle("Show on Overview and menu bar", isOn: Binding(
         get: { playback.showOnMac }, set: { playback.setShowOnMac($0) }))
-        .toggleStyle(.checkbox).aniCeControlFeedback().controlSize(.small)
+        .toggleStyle(AniCePreferenceToggleStyle())
       HStack {
         Label(
           playback.phoneSubscribed ? "Active on your phone" : "Open aniCe on your phone",

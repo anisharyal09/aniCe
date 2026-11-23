@@ -302,7 +302,7 @@ struct ClipboardHistoryFile: ClipboardHistoryStorage {
   /// Deletes a single entry by its unique identifier.
   func delete(_ id: String, fromPinned: Bool = false) { delete(Set([id]), fromPinned: fromPinned) }
   // Retains pinned items by default when clearing unpinned history.
-  func clear(includePinned: Bool = false) { replace { $0.filter(\.pinned) } }
+  func clear() { replace { $0.filter(\.pinned) } }
   private func replace(_ transform: @escaping ([ClipboardHistoryEntry]) -> [ClipboardHistoryEntry]) { command {
     let before = self.entries
     let rows = transform(before), storage = self.storage, enabled = self.enabled, capacity = self.capacity

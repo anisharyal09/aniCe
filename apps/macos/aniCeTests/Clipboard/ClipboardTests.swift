@@ -95,6 +95,44 @@ private struct FailedHistoryStorage: ClipboardHistoryStorage {
   func delete() throws { throw CocoaError(.fileWriteNoPermission) }
 }
 final class ClipboardTests: XCTestCase {
+  @MainActor func testCompactSettingsRetainCapacityPickerWithCollectionOff() async throws {
+    let name = "aniCe.ClipboardCapacityLayout.\(UUID())"
+    let preferences = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { preferences.removePersistentDomain(forName: name) }
+    let history = ClipboardHistory()
+    let native = ClipboardNativeFake()
+    let model = MacClipboardModel(native: native, history: history)
+    defer { model.invalidate() }
+    for capacity in [20, 50, 100] {
+      history.setCapacity(capacity)
+      try await until { history.capacity == capacity }
+      for scheme in [ColorScheme.light, .dark] {
+        for scale in [0.8, 1.2] {
+          preferences.set(scale, forKey: "ui.fontScale")
+          let picker = NSHostingView(rootView: ClipboardHistoryCapacityPicker(history: history, fontScale: scale)
+            .frame(width: 270).environment(\.colorScheme, scheme))
+          picker.frame.size = picker.fittingSize
+          picker.layoutSubtreeIfNeeded()
+          XCTAssertEqual(picker.bounds.width, 270, accuracy: 1)
+          XCTAssertGreaterThanOrEqual(picker.bounds.height, 32)
+          let bitmap = try XCTUnwrap(picker.bitmapImageRepForCachingDisplay(in: picker.bounds))
+          picker.cacheDisplay(in: picker.bounds, to: bitmap)
+          XCTAssertGreaterThan(try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).count, 300)
+
+          let settings = NSHostingView(rootView: ClipboardSettingsView(model: model, peers: [], compactSettings: true)
+            .padding(14).frame(width: 300).environment(\.colorScheme, scheme).defaultAppStorage(preferences))
+          settings.frame.size = settings.fittingSize
+          settings.layoutSubtreeIfNeeded()
+          XCTAssertGreaterThan(settings.bounds.height, 140, "Compact settings must retain the capacity row even before opt-in")
+          XCTAssertFalse(history.enabled, "Changing or displaying capacity is not consent to collect text")
+          XCTAssertEqual(history.capacity, capacity)
+        }
+      }
+    }
+    XCTAssertEqual(native.writes, 0)
+    XCTAssertNil(native.observer)
+  }
+
   @MainActor func testCompactClipboardPauseRowRendersAtLargeTextInBothThemes() async throws {
     let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
       .appendingPathComponent("anice-clipboard-refinement-renders", isDirectory: true)
@@ -574,7 +612,7 @@ final class ClipboardTests: XCTestCase {
     try await until { !paused.entries.isEmpty }
     XCTAssertFalse(paused.enabled); XCTAssertEqual(paused.entries, saved)
     paused.delete(saved[0].id); try await until { paused.entries.count == saved.count - 1 }
-    paused.clear(includePinned: true); try await until { paused.entries.isEmpty }
+    paused.clear(); try await until { paused.entries.isEmpty }
     XCTAssertFalse(try XCTUnwrap(file.load()).enabled)
   }
   @MainActor func testHistoryCorruptStorageAndWriteFailureRemainVisible() async throws {
@@ -758,7 +796,7 @@ final class ClipboardTests: XCTestCase {
     history.setCapacity(50)
     try await until { history.capacity == 50 }
 
-    history.clear(includePinned: false)
+    history.clear()
     try await until { history.entries.count == 1 }
     XCTAssertEqual(history.entries.first?.text, "item-2")
     XCTAssertTrue(history.entries.first?.pinned == true)

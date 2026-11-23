@@ -47,7 +47,7 @@ struct MacKeyboardTrackpadView: View {
     VStack(alignment: .leading, spacing: floatingPresentation ? 12 : 16) {
       targetHeader
       Toggle("Use keyboard and trackpad together", isOn: $model.combinedInput)
-        .toggleStyle(.checkbox).aniCeControlFeedback()
+        .toggleStyle(AniCePreferenceToggleStyle())
 
       if !floatingPresentation {
         Text("Shortcut: \(GlobalShortcutPreferences.shared.binding(.floatingKey).label) shows or hides Floating Key")

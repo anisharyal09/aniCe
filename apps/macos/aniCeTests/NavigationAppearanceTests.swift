@@ -971,3 +971,402 @@ final class BetaUpdatePreferenceTests: XCTestCase {
     }
   }
 }
+
+@MainActor final class PreferenceToggleTests: XCTestCase {
+  @Observable final class FixtureState {
+    var checked = false
+    var enabled = true
+    var requests: [Bool] = []
+    var confirming = false
+  }
+
+  private struct PreferenceFixture: View {
+    let state: FixtureState
+    var requiresConsent = false
+    var body: some View {
+      Toggle("Enable option", isOn: Binding(
+        get: { state.checked }, set: {
+          state.requests.append($0)
+          if $0 && requiresConsent { state.confirming = true } else { state.checked = $0 }
+        }))
+        .toggleStyle(AniCePreferenceToggleStyle(description: "Helper text"))
+        .disabled(!state.enabled)
+    }
+  }
+
+  private struct SegmentedFixture: View {
+    let state: FixtureState
+    var body: some View {
+      AniCeSegmentedControl(
+        options: [(value: false, title: "Share"), (value: true, title: "History")],
+        selection: Binding(get: { state.checked }, set: { state.checked = $0; state.requests.append($0) }),
+        accessibilityLabel: "Clipboard view"
+      )
+      .disabled(!state.enabled)
+    }
+  }
+
+  func testLabelHelperAndCapsuleUseOneBindingAndDisabledRowsIgnoreClicks() async throws {
+    let name = "aniCe.PreferenceToggleTests.\(UUID())"
+    let preferences = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { preferences.removePersistentDomain(forName: name) }
+    for scheme in [ColorScheme.light, .dark] {
+      for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+        for width in [260.0, 600.0] {
+          let state = FixtureState()
+          let content = PreferenceFixture(state: state)
+            .font(.system(size: 13)).frame(height: 60)
+            .padding(14).frame(width: width, height: 120, alignment: .topLeading)
+            .environment(\.colorScheme, scheme).environment(\.layoutDirection, direction)
+            .defaultAppStorage(preferences)
+          let host = NSHostingView(rootView: content)
+          let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: width, height: 120),
+            styleMask: [.titled], backing: .buffered, defer: false)
+          window.isReleasedWhenClosed = false
+          window.contentView = host
+          window.orderFront(nil)
+          defer { window.contentView = nil; window.close() }
+          try await settle(host)
+          XCTAssertTrue(state.requests.isEmpty, "Rendering must not write preferences")
+          let labelX = direction == .leftToRight ? 40.0 : width - 40
+          let capsuleX = direction == .leftToRight ? width - 36 : 36.0
+          let points = [NSPoint(x: labelX, y: 34), NSPoint(x: labelX, y: 54), NSPoint(x: capsuleX, y: 44)]
+          for point in points {
+            try click(host, in: window, at: point)
+            try await settle(host)
+          }
+          XCTAssertEqual(state.requests, [true, false, true], "Each face must activate the same binding once")
+          XCTAssertTrue(state.checked)
+          state.enabled = false
+          try await settle(host)
+          for point in points { try click(host, in: window, at: point) }
+          try await settle(host)
+          XCTAssertEqual(state.requests, [true, false, true], "Disabled labels and capsules must not activate")
+        }
+      }
+    }
+  }
+
+  func testDeferredConsentStaysOffUntilTheOwnerConfirms() async throws {
+    let state = FixtureState()
+    let content = PreferenceFixture(state: state, requiresConsent: true)
+      .font(.system(size: 13)).frame(height: 60).padding(14)
+      .frame(width: 340, height: 120, alignment: .topLeading)
+    let host = NSHostingView(rootView: content)
+    let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 340, height: 120),
+      styleMask: [.titled], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    window.orderFront(nil)
+    defer { window.contentView = nil; window.close() }
+    try await settle(host)
+    try click(host, in: window, at: NSPoint(x: 40, y: 34))
+    try await settle(host)
+    XCTAssertTrue(state.confirming)
+    XCTAssertFalse(state.checked, "The face must not enable itself while consent is pending")
+    state.confirming = false
+    try click(host, in: window, at: NSPoint(x: 304, y: 44))
+    try await settle(host)
+    XCTAssertEqual(state.requests, [true, true], "Cancelling consent leaves both click routes requesting enablement")
+    state.checked = true
+    state.confirming = false
+    try await settle(host)
+    try click(host, in: window, at: NSPoint(x: 40, y: 34))
+    try await settle(host)
+    XCTAssertEqual(state.requests, [true, true, false])
+    XCTAssertFalse(state.checked)
+    XCTAssertFalse(state.confirming)
+  }
+
+  func testAccessibleControlMatchesNativeSwitchAndDoesNotDuplicateLabelActions() async throws {
+    let state = FixtureState()
+    let native = NSHostingView(rootView: Toggle("Enable option", isOn: .constant(false))
+      .toggleStyle(.switch).frame(width: 340, height: 120))
+    let nativeWindow = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 340, height: 120),
+      styleMask: [.titled], backing: .buffered, defer: false)
+    nativeWindow.isReleasedWhenClosed = false
+    nativeWindow.contentView = native
+    nativeWindow.orderFront(nil)
+    defer { nativeWindow.contentView = nil; nativeWindow.close() }
+    try await settle(native)
+    let nativeElements = accessibilityElements(native)
+    guard let nativeControl = nativeElements.first(where: {
+      $0.accessibilityRole() == .checkBox
+    }) else {
+      throw XCTSkip("This hosted runner exposes no accessibility children even for a native SwiftUI switch; verify with VoiceOver in a live app.")
+    }
+    let host = NSHostingView(rootView: PreferenceFixture(state: state)
+      .font(.system(size: 13)).padding(14).frame(width: 340, height: 120))
+    let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 340, height: 120),
+      styleMask: [.titled], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    window.orderFront(nil)
+    defer { window.contentView = nil; window.close() }
+    try await settle(host)
+    let elements = accessibilityElements(host)
+    let controls = elements.filter { $0.accessibilityRole() == nativeControl.accessibilityRole() }
+    XCTAssertEqual(controls.count, 1, "Label and capsule must expose one native switch, not two controls")
+    let control = try XCTUnwrap(controls.first)
+    let nativeLabel = accessibleLabel(nativeControl)
+    XCTAssertEqual(nativeLabel, "Enable option")
+    XCTAssertEqual(accessibleLabel(control), nativeLabel)
+    XCTAssertEqual((control.accessibilityValue() as? NSNumber)?.boolValue, false)
+    XCTAssertFalse(elements.contains { $0.accessibilityRole() == .button }, "Visible label is not a second accessibility action")
+    XCTAssertTrue(control.accessibilityPerformPress())
+    try await settle(host)
+    XCTAssertTrue(state.checked)
+    XCTAssertEqual(state.requests, [true])
+    let updated = try XCTUnwrap(accessibilityElements(host).first { $0.accessibilityRole() == .checkBox })
+    XCTAssertEqual((updated.accessibilityValue() as? NSNumber)?.boolValue, true)
+    state.enabled = false
+    try await settle(host)
+    let disabled = try XCTUnwrap(accessibilityElements(host).first { $0.accessibilityRole() == .checkBox })
+    XCTAssertFalse(disabled.isAccessibilityEnabled())
+  }
+
+  func testSegmentedControlKeepsOneSelectionAcrossThemes() async throws {
+    for scheme in [ColorScheme.light, .dark] {
+      let state = FixtureState()
+      let host = NSHostingView(rootView: SegmentedFixture(state: state)
+        .frame(width: 260, height: 80, alignment: .leading).padding(10)
+        .background(AniCePalette.surface(scheme))
+        .environment(\.colorScheme, scheme))
+      let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 280, height: 100),
+        styleMask: [.titled], backing: .buffered, defer: false)
+      window.isReleasedWhenClosed = false
+      window.contentView = host
+      window.orderFront(nil)
+      defer { window.contentView = nil; window.close() }
+      try await settle(host)
+
+      try click(host, in: window, at: NSPoint(x: 94, y: 50))
+      try await settle(host)
+      XCTAssertTrue(state.checked, "Tapping the trailing segment updates one binding")
+      try click(host, in: window, at: NSPoint(x: 94, y: 50))
+      try await settle(host)
+      XCTAssertEqual(state.requests, [true], "Reselecting a tab must not repeat its action")
+      try click(host, in: window, at: NSPoint(x: 32, y: 50))
+      try await settle(host)
+      XCTAssertFalse(state.checked, "Tapping the leading segment is the only other choice")
+      state.enabled = false
+      try await settle(host)
+      try click(host, in: window, at: NSPoint(x: 94, y: 50))
+      try await settle(host)
+      XCTAssertEqual(state.requests, [true, false], "Disabled segments cannot activate")
+    }
+  }
+
+  func testSegmentsStayContentSizedAcrossThemesAndTextSizes() throws {
+    var requests = 0, renders = 0
+    for scheme in [ColorScheme.light, .dark] {
+      for scale in [0.8, 1.2] {
+        for titles in [["Share", "History"], ["All", "Pinned", "Mac", "Phone"]] {
+          let control = AniCeSegmentedControl(
+            options: titles.map { (value: $0, title: $0) },
+            selection: Binding(get: { titles[0] }, set: { _ in requests += 1 }),
+            fontScale: scale
+          )
+          let host = NSHostingView(rootView: control.environment(\.colorScheme, scheme))
+          host.frame.size = host.fittingSize
+          host.layoutSubtreeIfNeeded()
+          XCTAssertLessThan(host.bounds.width, titles.count == 2 ? 180 : 260,
+            "A segmented control must not stretch across the workspace")
+          XCTAssertGreaterThan(host.bounds.width, 70)
+          XCTAssertLessThan(host.bounds.height, 40)
+          let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+          host.cacheDisplay(in: host.bounds, to: bitmap)
+          let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+          if let path = ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"] {
+            let directory = URL(fileURLWithPath: path, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try data.write(to: directory.appendingPathComponent("segments-\(titles.count)-\(scheme)-\(Int(scale * 100)).png"))
+          }
+          renders += 1
+        }
+      }
+    }
+    XCTAssertEqual(renders, 8)
+    XCTAssertEqual(requests, 0, "Rendering and layout never change the selection")
+  }
+
+  func testClipboardTabsAreLargerThanFiltersButRemainContentSized() throws {
+    for scale in [0.8, 1.2] {
+      let options = [(value: false, title: "Share"), (value: true, title: "History")]
+      let compact = NSHostingView(rootView: AniCeSegmentedControl(
+        options: options, selection: .constant(false), fontScale: scale))
+      let regular = NSHostingView(rootView: AniCeSegmentedControl(
+        options: options, selection: .constant(false), fontScale: scale, size: .regular))
+      for host in [compact, regular] {
+        host.frame.size = host.fittingSize
+        host.layoutSubtreeIfNeeded()
+      }
+      XCTAssertGreaterThan(regular.bounds.height, compact.bounds.height)
+      XCTAssertGreaterThan(regular.bounds.width, compact.bounds.width)
+      XCTAssertLessThan(regular.bounds.width, 240, "Larger tabs must not become workspace-wide buttons")
+      XCTAssertEqual(regular.bounds.height, 36, accuracy: 1)
+    }
+  }
+
+  func testPreferenceSelectorsStayTrailingWithoutStretchingTheirHelperRows() async throws {
+    for scale in [0.8, 1.2] {
+      for width in [300.0, 600.0] {
+        for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+          let frames = LayoutFrames()
+          let host = NSHostingView(rootView: PreferenceRowFixture(frames: frames, scale: scale)
+            .padding(14).frame(width: width)
+            .environment(\.layoutDirection, direction))
+          host.frame.size = host.fittingSize
+          try await settle(host)
+          let control = try XCTUnwrap(frames.control)
+          let row = try XCTUnwrap(frames.row)
+          XCTAssertGreaterThan(control.width, 50)
+          XCTAssertEqual(control.minY, row.minY, accuracy: 1, "The selector aligns with the label, not the helper")
+          XCTAssertGreaterThan(row.height, control.height, "The helper contributes height only to the label column")
+          XCTAssertLessThan(host.bounds.height, 200, "Narrow settings must reflow without runaway height")
+          if direction == .leftToRight {
+            XCTAssertEqual(control.maxX, row.maxX, accuracy: 1)
+          } else {
+            XCTAssertEqual(control.minX, row.minX, accuracy: 1)
+          }
+        }
+      }
+    }
+  }
+
+  private final class LayoutFrames {
+    var control: CGRect?
+    var row: CGRect?
+  }
+
+  private struct PreferenceRowFixture: View {
+    let frames: LayoutFrames
+    let scale: Double
+    var body: some View {
+      AniCePreferenceRow("Shelf edge",
+        description: "Drag files to the selected edge and drop them on the shelf.", fontScale: scale) {
+        Text("Right").padding(.horizontal, 12).frame(height: 32)
+          .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.control = $0 }
+      }
+      .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.row = $0 }
+    }
+  }
+
+  func testShelfEdgeAndGlobalShortcutRowsRenderAtBothSettingsWidths() throws {
+    let name = "aniCe.SelectorAlignment.\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let preferences = EdgeDropPreferences(storage: defaults)
+    let transfer = MacTransferModel()
+    let controller = MacEdgeDropController(model: transfer, preferences: preferences)
+    defer { controller.shutdown(); transfer.dismiss() }
+    for scheme in [ColorScheme.light, .dark] {
+      for scale in [0.8, 1.2] {
+        defaults.set(scale, forKey: "ui.fontScale")
+        for width in [300.0, 600.0] {
+          let content = VStack(alignment: .leading, spacing: 12) {
+            EdgeDropSettingsView(controller: controller, settingsFontScale: scale)
+            Divider()
+            GlobalShortcutSettingsView()
+            AniCeSegmentedControl(
+              options: [(value: false, title: "Share"), (value: true, title: "History")],
+              selection: .constant(false), fontScale: scale, size: .regular)
+          }
+          .padding(14).frame(width: width)
+          .background(AniCePalette.surface(scheme)).environment(\.colorScheme, scheme)
+          .defaultAppStorage(defaults)
+          let host = NSHostingView(rootView: content)
+          host.frame.size = host.fittingSize
+          host.layoutSubtreeIfNeeded()
+          XCTAssertEqual(host.bounds.width, width, accuracy: 1)
+          XCTAssertLessThan(host.bounds.height, width == 300 ? 520 : 380,
+            "Narrow recorder groups reflow below their labels; wide groups remain on one row")
+          XCTAssertEqual(preferences.edge, .right, "Rendering must not change the selected edge")
+          let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+          host.cacheDisplay(in: host.bounds, to: bitmap)
+          let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+          if let path = ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"] {
+            let folder = URL(fileURLWithPath: path, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try data.write(to: folder.appendingPathComponent("selector-rows-\(scheme)-\(Int(width))-\(Int(scale * 100)).png"))
+          }
+        }
+      }
+    }
+  }
+
+  func testCapsulesRenderAcrossThemesWidthsTextSizesAndAccessibilityStates() throws {
+    let name = "aniCe.PreferenceToggleTests.\(UUID())"
+    let preferences = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { preferences.removePersistentDomain(forName: name) }
+    var writes = 0, renders = 0
+    for scheme in [ColorScheme.light, .dark] {
+      for scale in [0.8, 1.2] {
+        preferences.set(scale, forKey: "ui.fontScale")
+        for width in [260.0, 600.0] {
+          for checked in [false, true] {
+            for enabled in [false, true] {
+              for direction in [LayoutDirection.leftToRight, .rightToLeft] {
+                for contrast in [ColorSchemeContrast.standard, .increased] {
+                  let content = Toggle("Use local network automatically", isOn: Binding(
+                    get: { checked }, set: { _ in writes += 1 }))
+                    .toggleStyle(AniCePreferenceToggleStyle(description: "Enable on both devices to use Wi-Fi."))
+                    .disabled(!enabled).font(.system(size: 13 * scale)).padding(14).frame(width: width)
+                    .background(AniCePalette.surface(scheme))
+                    .environment(\.colorScheme, scheme)
+                    .environment(\.layoutDirection, direction).defaultAppStorage(preferences)
+                  let host = NSHostingView(rootView: content)
+                  host.appearance = NSAppearance(named: contrast == .increased
+                    ? (scheme == .dark ? .accessibilityHighContrastDarkAqua : .accessibilityHighContrastAqua)
+                    : (scheme == .dark ? .darkAqua : .aqua))
+                  host.frame.size = host.fittingSize
+                  host.layoutSubtreeIfNeeded()
+                  XCTAssertEqual(host.bounds.width, width, accuracy: 1)
+                  XCTAssertLessThan(host.bounds.height, 140, "The fuller thumb must not inflate a preference row")
+                  let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                  host.cacheDisplay(in: host.bounds, to: bitmap)
+                  let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                  XCTAssertGreaterThan(data.count, 300)
+                  if scale == 1.2, width == 260, enabled, direction == .leftToRight, contrast == .standard,
+                    let path = ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"] {
+                    let directory = URL(fileURLWithPath: path, isDirectory: true)
+                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                    try data.write(to: directory.appendingPathComponent("soft-switch-\(scheme)-\(checked).png"))
+                  }
+                  renders += 1
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    XCTAssertEqual(renders, 128)
+    XCTAssertEqual(writes, 0)
+  }
+
+  private func settle(_ host: NSView) async throws {
+    try await Task.sleep(for: .milliseconds(80))
+    host.layoutSubtreeIfNeeded()
+    host.displayIfNeeded()
+  }
+
+  private func accessibilityElements(_ element: Any) -> [any NSAccessibilityProtocol] {
+    guard let element = element as? any NSAccessibilityProtocol else { return [] }
+    return [element] + (element.accessibilityChildren() ?? []).flatMap { accessibilityElements($0) }
+  }
+  private func accessibleLabel(_ element: any NSAccessibilityProtocol) -> String? {
+    element.accessibilityLabel() ??
+      (element.accessibilityTitleUIElement() as? any NSAccessibilityProtocol)?.accessibilityValue() as? String
+  }
+
+  private func click(_ host: NSView, in window: NSWindow, at point: NSPoint) throws {
+    let location = host.convert(point, to: nil)
+    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+      let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
+        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+        context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+      window.sendEvent(event)
+    }
+  }
+}

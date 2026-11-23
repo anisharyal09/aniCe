@@ -537,14 +537,12 @@ extension MainWindowView {
                 settingsCategoryHeading(.general)
                 preferenceSection("Appearance", id: "appearance") {
                   VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                      Text("Window appearance").font(.system(size: 13 * fontScale))
-                      Spacer()
+                    AniCePreferenceRow("Window appearance", fontScale: fontScale) {
                       Picker("Window appearance", selection: Binding(
                         get: { WindowAppearance.stored(appearance).rawValue }, set: { appearance = $0 })) {
                           ForEach(WindowAppearance.allCases, id: \.self) { Text($0.rawValue).tag($0.rawValue) }
                       }
-                      .labelsHidden().pickerStyle(.menu).frame(width: 130)
+                      .labelsHidden().pickerStyle(.menu).aniCeControlFeedback()
                     }.frame(minHeight: 40)
                     Divider()
                     HStack(spacing: 8) {
@@ -598,12 +596,9 @@ extension MainWindowView {
                   }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }
                 preferenceSection("Connection", id: "connection") {
-                  VStack(alignment: .leading, spacing: 5) {
-                    Toggle("Use local network automatically", isOn: Binding(get: { lan.automatic }, set: { lan.setAutomatic($0) }))
-                      .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3)
-                    Text("Enable on both devices to use Wi-Fi.").font(.system(size: 12 * fontScale))
-                      .foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.leading, 20)
-                  }.frame(minHeight: 48, alignment: .leading)
+                  Toggle("Use local network automatically", isOn: Binding(get: { lan.automatic }, set: { lan.setAutomatic($0) }))
+                    .toggleStyle(AniCePreferenceToggleStyle(description: "Enable on both devices to use Wi-Fi."))
+                    .padding(.vertical, 10)
                 }
                 preferenceSection("This device", id: "this-device") {
                   Button { showingLocalIdentity = true } label: {
@@ -666,7 +661,7 @@ extension MainWindowView {
                 }
                 preferenceSection("Now Playing", id: "now-playing") {
                   Toggle("Show on Overview and menu bar", isOn: Binding(get: { playback.showOnMac }, set: { playback.setShowOnMac($0) }))
-                    .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).frame(minHeight: 48)
+                    .toggleStyle(AniCePreferenceToggleStyle())
                 }
                 settingsCategoryHeading(.shortcuts)
                 preferenceSection("Shortcuts", id: "shortcuts") {

@@ -10,6 +10,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Align persistent preference switches across Mac and Android, preserving existing consent, permission and saved-state behavior.
+- Share one theme-aware segmented control for mutually exclusive navigation and filters on both platforms.
 - Keep permission status and purpose details in the dedicated category on both platforms, with missing-access recovery in All and feature settings.
 - Extend the Mac design direction to optional native-glass navigation and floating surfaces while retaining solid content panels and Android's native Material presentation.
 

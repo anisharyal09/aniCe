@@ -6,12 +6,16 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Use compact, softly filled capsule switches with fuller inset thumbs for persistent preferences, preserving one accessible touch row and unchanged confirmation flows.
+- Use themed Clipboard segments with accent selection, muted inactive faces, native hover/focus/ripple feedback and 48 dp interaction targets.
 - Keep granted-access details in Permissions only, space permission rows consistently and remove the phone keyboard-shortcut category; tile setup remains in Clipboard.
 - Wrap Home quick-access shortcuts into additional rows with native touch targets instead of horizontal scrolling.
 - Group Settings under All, General, Permissions and Features with wrapped category controls and a direct Messages setup link.
 
 ### Fixed
 
+- Remove redundant switch semantics, guard disabled accessibility activation and align presentation checks with Compose's role; initialize emulator accessibility before permission fixtures.
+- Restore the 20/50/100-item history capacity menu in grouped Clipboard settings and History without enabling collection; correct segmented selection colors and no-match history copy.
 - Restore compact Home/Settings action faces and show granted/missing SMS, notification, call, caller-ID and DND access with their purposes.
 - Show native app-bar Back on About and apply safe drawing/keyboard insets to full-screen Mac control.
 

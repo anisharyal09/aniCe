@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.MainActivity
@@ -64,9 +65,92 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class SettingsRefinementTests {
     @get:Rule val presentation: org.junit.rules.TestRule = EmulatorPresentationRule()
+
+    @Suppress("DEPRECATION") // Checked-state access remains available on the minimum API.
+    @Test fun compactCapsuleKeepsOneSwitchActionAndAccessibleRowAtEveryTextSize() {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        runner.uiAutomation
+        for (dark in listOf(false, true)) {
+            for (scale in listOf(0.8f, 1.2f)) {
+                for (direction in listOf(LayoutDirection.Ltr, LayoutDirection.Rtl)) {
+                    val activity = runner.startActivitySync(
+                        Intent(runner.targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    ) as MainActivity
+                    val checked = mutableStateOf(false)
+                    val enabled = mutableStateOf(true)
+                    val changes = AtomicInteger()
+                    try {
+                        val drawn = CountDownLatch(1)
+                        runner.runOnMainSync {
+                            activity.setContent {
+                                Fixture(dark, scale) {
+                                    CompositionLocalProvider(LocalLayoutDirection provides direction) {
+                                        Column(Modifier.widthIn(max = 300.dp).fillMaxWidth().padding(12.dp)) {
+                                            io.github.anisharyal09.anice.ui.AutomaticConnectionToggle(
+                                                checked = checked.value, enabled = enabled.value,
+                                                onCheckedChange = { checked.value = it; changes.incrementAndGet() },
+                                                label = "Capsule preference fixture",
+                                                description = "Helper belongs to the same switch.", compact = true,
+                                            )
+                                        }
+                                    }
+                                }
+                                SideEffect { activity.window.decorView.postOnAnimation { drawn.countDown() } }
+                            }
+                        }
+                        assertTrue(drawn.await(10, TimeUnit.SECONDS))
+                        idle()
+                        awaitLabel("Capsule preference fixture")
+                        val toggle = clickable(find(root(), "Capsule preference fixture"))
+                        assertNotNull(toggle)
+                        // Compose exposes a switch role description, not android.widget.Switch.
+                        assertTrue("The row retains the native switch role", hasSwitchRole(toggle))
+                        assertTrue(toggle!!.isCheckable)
+                        assertFalse(toggle.isChecked)
+                        if (Build.VERSION.SDK_INT >= 30) assertEquals("Off", toggle.stateDescription?.toString())
+                        assertTrue(bounds(toggle).height() >= (48 * activity.resources.displayMetrics.density).toInt())
+                        assertEquals(0, changes.get())
+                        click("Capsule preference fixture")
+                        assertTrue(checked.value)
+                        assertEquals(1, changes.get())
+                        if (Build.VERSION.SDK_INT >= 30) {
+                            assertEquals("On", clickable(find(root(), "Capsule preference fixture"))!!.stateDescription?.toString())
+                        }
+                        click("Helper belongs to the same switch.")
+                        assertFalse(checked.value)
+                        assertEquals(2, changes.get())
+                        runner.runOnMainSync { enabled.value = false }
+                        idle()
+                        awaitDisabled("Capsule preference fixture")
+                        val disabled = checkable(find(root(), "Capsule preference fixture"))
+                        assertNotNull("The disabled preference keeps its checkable row", disabled)
+                        assertFalse(disabled!!.isEnabled)
+                        val area = bounds(disabled)
+                        ParcelFileDescriptor.AutoCloseInputStream(runner.uiAutomation.executeShellCommand(
+                            "input tap ${area.centerX()} ${area.centerY()}"
+                        )).use { it.readBytes() }
+                        idle()
+                        assertFalse(checked.value)
+                        assertEquals(2, changes.get())
+                        disabled.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        idle()
+                        assertFalse(checked.value)
+                        assertEquals("Disabled accessibility activation must not reach the owner", 2, changes.get())
+                        capture("soft-switch-${if (dark) "dark" else "light"}-${(scale * 100).toInt()}-$direction")
+                    } finally {
+                        runner.runOnMainSync { activity.finish() }
+                        runner.waitForIdleSync()
+                    }
+                }
+            }
+        }
+    }
+
     @Test fun permissionRowsKeepGrantedDetailsOutOfAllAndReflowAtLargeText() {
         assumeEmulator()
         val runner = InstrumentationRegistry.getInstrumentation()
+        runner.uiAutomation
         var captures = 0
         for (dark in listOf(false, true)) {
             for (scale in listOf(0.8f, 1.2f, 2f)) {
@@ -388,7 +472,7 @@ class SettingsRefinementTests {
         }
     }
 
-    @Test fun settingsCheckboxStopsNativeSchedulingAndManualCheckUsesTheSameOwner() = runBlocking {
+    @Test fun settingsSwitchStopsNativeSchedulingAndManualCheckUsesTheSameOwner() = runBlocking {
         assumeEmulator()
         val runner = InstrumentationRegistry.getInstrumentation()
         val preferences = runner.targetContext.getSharedPreferences("update-test-${UUID.randomUUID()}", 0)
@@ -1078,6 +1162,28 @@ class SettingsRefinementTests {
             current = current.parent
         }
         return null
+    }
+    private fun hasSwitchRole(node: AccessibilityNodeInfo?): Boolean {
+        if (node == null) return false
+        if (AccessibilityNodeInfoCompat.wrap(node).roleDescription?.toString()?.equals("Switch", ignoreCase = true) == true) return true
+        for (index in 0 until node.childCount) { if (hasSwitchRole(node.getChild(index))) return true }
+        return false
+    }
+    private fun checkable(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        var current = node
+        while (current != null) {
+            if (current.isCheckable) return current
+            current = current.parent
+        }
+        return null
+    }
+    private fun awaitDisabled(label: String) {
+        val deadline = System.nanoTime() + 5_000_000_000
+        while (System.nanoTime() < deadline) {
+            if (checkable(find(root(), label))?.isEnabled == false) return
+            Thread.sleep(50)
+        }
+        fail("Timed out waiting for the checkable row to be disabled: $label")
     }
     private fun scrollable(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
         if (node == null) return null

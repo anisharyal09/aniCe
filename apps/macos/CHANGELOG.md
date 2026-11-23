@@ -16,12 +16,17 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Use compact, softly filled capsule switches with fuller inset thumbs, clickable labels and native accessibility for persistent preferences while retaining explicit consent controls.
+- Use content-sized themed segments for glass style and Clipboard navigation/filters, roomier Share/History tabs and stronger theme-aware hover, pressed and focus feedback.
 - Confine granted-access descriptions to Permissions, align glass/pause controls and support broader global shortcut combinations while preserving native system/editing keys and legacy bindings.
 - Use desktop-sampling companion vibrancy, stronger light-mode Vibrant tint and quieter secondary button faces.
 - Organize Settings into ordered category sections, remove the duplicate jump strip and route Clipboard/Messages gears to their settings.
 
 ### Fixed
 
+- Unify the Auto connect label and capsule action, and remove obsolete preference-size/theme configuration.
+- Restore 20/50/100-item history capacity menus in compact Clipboard settings and History, retain paused/off access and remove duplicate feedback layers and unused clipboard helpers.
+- Keep Shelf edge labels/helpers together, align intrinsic selector faces and Shortcut controls to the trailing edge, and reflow narrow rows without clipping.
 - Preserve vertical trackpad inertia while releasing sideways drags, and explain Event Posting, notification and pasteboard access in Permissions.
 - Keep Vibrant navigation on native window materials, hide the redundant keyboard area in combined control, remove duplicate tray overflow access and reflect live Edge Drop sending state.
 

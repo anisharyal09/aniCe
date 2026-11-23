@@ -33,7 +33,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
-import io.github.anisharyal09.anice.ui.theme.selectionAccent
 import io.github.anisharyal09.anice.ui.theme.warning
 
 @Composable

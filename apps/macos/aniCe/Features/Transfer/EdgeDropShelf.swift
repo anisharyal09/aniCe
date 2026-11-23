@@ -613,29 +613,24 @@ struct EdgeDropSettingsView: View {
   @Environment(\.colorScheme) private var scheme
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 2) {
+    VStack(alignment: .leading, spacing: 8) {
       Toggle("Edge Drop", isOn: Binding(
         get: { controller.preferences.enabled },
         set: { controller.setEnabled($0) }))
-        .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3)
-        .controlSize(.regular).frame(minHeight: 32, alignment: .leading)
-      HStack {
-        Text("Shelf edge")
-        Spacer()
+        .toggleStyle(AniCePreferenceToggleStyle())
+        .frame(minHeight: 32, alignment: .leading)
+      AniCePreferenceRow("Shelf edge", description: controller.preferences.enabled
+        ? "Drag files to the selected edge and drop them on the shelf."
+        : "Turn on to send files from Finder.", fontScale: settingsFontScale ?? 1) {
         Picker("Shelf edge", selection: Binding(
           get: { controller.preferences.edge },
           set: { controller.setEdge($0) })) {
           ForEach(EdgeDropEdge.allCases) { edge in Text(edge.title).tag(edge) }
         }
-        .labelsHidden().pickerStyle(.menu).controlSize(.regular).frame(width: 112)
+        .labelsHidden().pickerStyle(.menu).controlSize(.regular)
           .accessibilityLabel("Shelf edge")
+          .aniCeControlFeedback()
       }
-      .frame(minHeight: 32)
-      Text(controller.preferences.enabled
-        ? "Drag files to the selected edge and drop them on the shelf."
-        : "Turn on to send files from Finder.")
-        .font(settingsFontScale.map { Font.system(size: 12 * $0) } ?? .caption).foregroundStyle(AniCePalette.secondaryText(scheme))
-        .fixedSize(horizontal: false, vertical: true)
       if let error = controller.monitorError {
         Text(error).font(settingsFontScale.map { Font.system(size: 12 * $0) } ?? .caption).foregroundStyle(AniCePalette.error(scheme))
       }

@@ -17,7 +17,7 @@ struct MacNicknamePanel: View {
         .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
       Text("Private to this Mac.").font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
       TextField("Private nickname", text: $name).textFieldStyle(.roundedBorder).disabled(model.savingNickname)
-      Toggle("Use nickname", isOn: $enabled).toggleStyle(.checkbox).disabled(model.savingNickname)
+      Toggle("Use nickname", isOn: $enabled).toggleStyle(AniCePreferenceToggleStyle()).disabled(model.savingNickname)
       if submitted && model.nicknameFailure { Text("Couldn't save. Try again.").foregroundStyle(AniCePalette.error(scheme)) }
       HStack {
         Spacer()
