@@ -76,9 +76,12 @@ struct MacPhoneInputView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 10))
       } else {
-        Label("Mac input allowed", systemImage: "checkmark.circle")
+        Label("Event Posting · Allowed", systemImage: "checkmark.circle")
           .font(.system(size: 13 * fontScale))
           .foregroundStyle(AniCePalette.success(colorScheme))
+        Text("Post keyboard and pointer events for Control Mac and supported Desk Deck lock actions.")
+          .font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+          .fixedSize(horizontal: false, vertical: true)
 
         if let phone = connectedPhone {
           Label(

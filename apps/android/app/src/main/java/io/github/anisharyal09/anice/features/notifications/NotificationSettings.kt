@@ -84,13 +84,14 @@ internal fun filterNotificationAppChoices(
 }
 
 @Composable
-fun NotificationSettings(owner: NotificationMirrorController) {
+fun NotificationSettings(owner: NotificationMirrorController, permissionsOnly: Boolean = false) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var access by remember { mutableStateOf(false) }
     var mirrorIncomingCalls by remember { mutableStateOf(owner.preferences.mirrorIncomingCalls()) }
     var callPermissions by remember { mutableStateOf(false) }
     var callerIdPermissions by remember { mutableStateOf(false) }
+    var permissionRevision by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     fun refresh() {
         access = context.packageName in NotificationManagerCompat.getEnabledListenerPackages(context)
         owner.accessChanged(access)
@@ -101,6 +102,7 @@ fun NotificationSettings(owner: NotificationMirrorController) {
             ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
         }
         owner.phoneCallPermissionsChanged()
+        permissionRevision++
     }
     val callPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { refresh() }
     val permissionButtonModifier = Modifier.defaultMinSize(minHeight = 32.dp)
@@ -113,6 +115,12 @@ fun NotificationSettings(owner: NotificationMirrorController) {
     }
     LaunchedEffect(Unit) { refresh() }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (permissionsOnly || access) {
+            Text("Notification Access · ${if (access) "Allowed" else "Not allowed"}",
+                style = MaterialTheme.typography.bodyMedium)
+            Text("Read selected app alerts for mirroring to Mac.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (!access) {
             Text(
                 "Allow access to sync alerts to your Mac.",
@@ -130,7 +138,7 @@ fun NotificationSettings(owner: NotificationMirrorController) {
                 Text("Enable notification access")
             }
         }
-        AutomaticConnectionToggle(
+        if (!permissionsOnly) AutomaticConnectionToggle(
             checked = mirrorIncomingCalls,
             enabled = true,
             label = "Mirror incoming calls",
@@ -142,7 +150,18 @@ fun NotificationSettings(owner: NotificationMirrorController) {
                 owner.selectionChanged()
             },
         )
-        if (mirrorIncomingCalls && !callPermissions) {
+        if (permissionsOnly) {
+            androidx.compose.runtime.key(permissionRevision) { PermissionGrantRows(listOf(
+                Manifest.permission.READ_PHONE_STATE to "Phone state — Detect incoming SIM calls and list SIM choices.",
+                Manifest.permission.ANSWER_PHONE_CALLS to "Answer phone calls — Answer or decline ringing SIM calls from Mac.",
+            )) }
+        } else if (callPermissions) {
+            Text("Phone state and Answer phone calls · Allowed",
+                style = MaterialTheme.typography.bodySmall)
+            Text("Detect and control ringing SIM calls; audio stays on the phone.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if ((permissionsOnly || mirrorIncomingCalls) && !callPermissions) {
             Text(
                 "Allow phone access to answer or decline SIM calls from your Mac.",
                 style = MaterialTheme.typography.bodySmall,
@@ -156,21 +175,32 @@ fun NotificationSettings(owner: NotificationMirrorController) {
                     callPermissionLauncher.launch(arrayOf(
                         Manifest.permission.READ_PHONE_STATE,
                         Manifest.permission.ANSWER_PHONE_CALLS,
-                    ))
+                    ).filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }.toTypedArray())
                 },
                 modifier = permissionButtonModifier,
             ) {
                 Text("Allow phone access")
             }
         }
-        if (mirrorIncomingCalls && !callerIdPermissions) {
+        if (permissionsOnly) {
+            androidx.compose.runtime.key(permissionRevision) { PermissionGrantRows(listOf(
+                Manifest.permission.READ_CALL_LOG to "Call log — Receive incoming caller numbers; no call-history query.",
+                Manifest.permission.READ_CONTACTS to "Contacts — Resolve incoming caller names locally.",
+            )) }
+        } else if (callerIdPermissions) {
+            Text("Call log and Contacts · Allowed", style = MaterialTheme.typography.bodySmall)
+            Text("Resolve incoming caller identity locally; caller details are not saved.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if ((permissionsOnly || mirrorIncomingCalls) && !callerIdPermissions) {
             Text(
                 "Match incoming numbers against Contacts for caller names.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             OutlinedButton(
-                onClick = { callPermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_CONTACTS)) },
+                onClick = { callPermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_CONTACTS)
+                    .filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }.toTypedArray()) },
                 modifier = permissionButtonModifier,
                 shape = MaterialTheme.shapes.small,
                 colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -178,6 +208,17 @@ fun NotificationSettings(owner: NotificationMirrorController) {
             ) { Text("Allow caller ID") }
         }
 
+    }
+}
+
+@Composable
+private fun PermissionGrantRows(permissions: List<Pair<String, String>>) {
+    val context = LocalContext.current
+    for ((permission, purpose) in permissions) {
+        val allowed = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+        Text("${purpose.substringBefore(" —")} · ${if (allowed) "Allowed" else "Not allowed"}",
+            style = MaterialTheme.typography.bodyMedium)
+        Text(purpose.substringAfter(" — "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

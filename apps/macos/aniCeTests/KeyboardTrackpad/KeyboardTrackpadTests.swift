@@ -72,6 +72,30 @@ import SwiftUI
 }
 
 final class KeyboardTrackpadTests: XCTestCase {
+  @MainActor func testVerticalScrollMomentumContinuesButCannotResumeAfterCaptureLoss() async throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let model = readyModel(peer: peer, transport: transport)
+    defer { model.shutdown() }
+    model.connect()
+    model.scrollSpeed = .standard
+    model.requestControl(on: .pad)
+    model.scrollGesture(deltaX: 0, deltaY: 24, phase: .began, precise: true, momentum: false)
+    model.scrollGesture(deltaX: 0, deltaY: 0, phase: .ended, precise: true, momentum: false)
+    try await Task.sleep(for: .milliseconds(40))
+    let before = transport.writes.count
+    model.scrollGesture(deltaX: 0, deltaY: 24, phase: [], precise: true, momentum: true)
+    try await Task.sleep(for: .milliseconds(40))
+    XCTAssertGreaterThan(transport.writes.count, before)
+    model.stopControlling()
+    model.requestControl(on: .pad)
+    let stopped = transport.writes.count
+    model.scrollGesture(deltaX: 0, deltaY: 24, phase: [], precise: true, momentum: true)
+    try await Task.sleep(for: .milliseconds(40))
+    XCTAssertEqual(transport.writes.count, stopped)
+  }
+
   @MainActor func testCombinedPadAcceptsTypingAndModeChangeReleasesCapture() throws {
     let peer = try phone("Phone")
     let transport = FakeKeyboardTrackpadTransport()

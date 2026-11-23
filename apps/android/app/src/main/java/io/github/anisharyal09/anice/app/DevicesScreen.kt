@@ -117,7 +117,7 @@ internal fun DevicesScreen(pairing: PairingViewModel, discovery: DiscoveryViewMo
                                             OutlinedButton(onClick = { navigation.openFeature(feature) },
                                                 shape = MaterialTheme.shapes.small,
                                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-                                                 modifier = Modifier.heightIn(min = 48.dp)) {
+                                                 modifier = Modifier.defaultMinSize(minHeight = 32.dp)) {
                                                 Text(feature.label)
                                             }
                                         }

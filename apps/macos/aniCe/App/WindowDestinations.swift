@@ -2,6 +2,42 @@
 // Composes the device overview, nested management and settings through application-scoped owners.
 import SwiftUI
 import AppKit
+import UserNotifications
+
+struct MacPermissionSummary: View {
+  let clipboard: MacClipboardModel
+  @State private var notifications = "Checking"
+  @Environment(\.colorScheme) private var scheme
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Notifications · \(notifications)")
+      Text("Show phone alerts, Messages, Find Device, transfers and update notices.")
+        .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+      Text(clipboard.automaticAccessAllowed
+        ? "Automatic pasteboard reading · Available" : "Automatic pasteboard reading · Not allowed")
+      Text("Read eligible copied text for enabled history or automatic sharing. Manual paste stays available.")
+        .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+      Button("Open Privacy & Security") {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension") {
+          NSWorkspace.shared.open(url)
+        }
+      }.buttonStyle(AniCeButtonStyle())
+    }.task { await refresh() }
+      .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+        Task { await refresh() }
+      }
+  }
+  private func refresh() async {
+    let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+    switch status {
+    case .authorized, .provisional: notifications = "Allowed"
+    case .denied: notifications = "Not allowed"
+    case .notDetermined: notifications = "Not requested"
+    default: notifications = "Unavailable"
+    }
+    clipboard.refreshAccess()
+  }
+}
 
 struct AboutFeedbackLinks: View {
   var reportURL: URL
@@ -535,6 +571,8 @@ extension MainWindowView {
                 preferenceSection("Mac input", id: "permissions") {
                   MacPhoneInputView(model: phoneInput, onOpenDevices: { navigation.show(.devices) })
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                  Divider()
+                  MacPermissionSummary(clipboard: clipboard).padding(.vertical, 8)
                 }
                 settingsCategoryHeading(.features)
                 preferenceSection("Desk Deck", id: "desk-deck") {

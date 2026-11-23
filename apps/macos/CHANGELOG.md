@@ -21,6 +21,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Preserve vertical trackpad inertia while releasing sideways drags, and explain Event Posting, notification and pasteboard access in Permissions.
 - Keep Vibrant navigation on native window materials, hide the redundant keyboard area in combined control, remove duplicate tray overflow access and reflect live Edge Drop sending state.
 
 - Keep clipboard-tray history consent inside its non-activating panel, avoiding detached alerts and main-window focus handoffs.

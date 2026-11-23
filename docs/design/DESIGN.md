@@ -150,6 +150,7 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 - History: Local-only opt-in storage with configurable capacity (20/50/100 items). See [Clipboard](../features/CLIPBOARD.md).
 
 ### Settings and About
+- Permissions keeps native access names, current grant state and one short purpose visible after approval. Android lists SMS, Notification Access, Phone state, Answer phone calls, Call log, Contacts and Do Not Disturb access independently; permission actions request missing grants only. Mac identifies Event Posting, notifications and automatic pasteboard reading separately.
 - Mac Shortcuts records global tray/Floating Key bindings only while its native recorder has focus. Defaults remain ⌥⌘V and ⌥⌘K. Bindings require Command–Option plus a supported letter/number, optionally Shift; reserved system combinations are rejected. Registration failure keeps the previous binding and reports recovery. Focused editing shortcuts remain unchanged.
 - Settings defaults to All, an ordered scroll page with General, Permissions, Features and Shortcuts headings. Category controls filter that page without changing preference values; phone controls wrap instead of scrolling horizontally. Mac keeps one readable settings column and Clipboard/Messages gears open their exact category section.
 - Grouped preferences using native controls (toggles, sliders, pickers).

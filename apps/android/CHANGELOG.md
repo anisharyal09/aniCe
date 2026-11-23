@@ -11,6 +11,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Restore compact Home/Settings action faces and show granted/missing SMS, notification, call, caller-ID and DND access with their purposes.
 - Show native app-bar Back on About and apply safe drawing/keyboard insets to full-screen Mac control.
 
 ## [v0.9.0-beta.4]

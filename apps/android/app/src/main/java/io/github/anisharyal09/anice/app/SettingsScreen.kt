@@ -62,6 +62,15 @@ fun SettingsScreen(
     var showingIdentity by rememberSaveable { mutableStateOf(false) }
     if (showingIdentity) LocalIdentitySheet(identity) { showingIdentity = false }
     val app = context.applicationContext as io.github.anisharyal09.anice.AniCeApplication
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle, app.sms) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) app.sms.refreshPermissions()
+        }
+        lifecycle.addObserver(observer)
+        app.sms.refreshPermissions()
+        onDispose { lifecycle.removeObserver(observer) }
+    }
     if (navigation.destination == AppDestination.About || navigation.settingsRoute == SettingsRoute.About) {
         AboutScreen(context)
     } else if (navigation.destination == AppDestination.Settings &&
@@ -98,7 +107,7 @@ fun SettingsScreen(
                             selected = selectedCategory == category,
                             onClick = { selectedCategory = category },
                             label = { Text(category.label) },
-                            modifier = Modifier.heightIn(min = 48.dp),
+                            modifier = Modifier.defaultMinSize(minHeight = 32.dp),
                         )
                         }
                 }
@@ -250,10 +259,27 @@ fun SettingsScreen(
                     }
                     SettingsCategoryHeading(SettingsCategory.Permissions)
                     PreferenceSection("Permissions") {
-                        Text(if (app.sms.granted) "SMS access allowed" else "SMS access needed",
-                            style = MaterialTheme.typography.bodyMedium)
+                        for ((name, allowed, purpose) in listOf(
+                            Triple("Receive SMS", app.sms.permissionsState.receive, "Relay incoming SMS to Mac."),
+                            Triple("Read SMS", app.sms.permissionsState.read, "Read conversations and search on your phone."),
+                            Triple("Send SMS", app.sms.permissionsState.send, "Send replies composed on Mac."),
+                        )) {
+                            Text("$name · ${if (allowed) "Allowed" else "Not allowed"}",
+                                style = MaterialTheme.typography.bodyMedium)
+                            Text(purpose, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (!app.sms.granted) {
                         TextButton(onClick = { navigation.openFeature(AppFeature.Sms) },
-                            modifier = Modifier.heightIn(min = 48.dp)) { Text("Open Messages setup") }
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text("Open Messages setup") }
+                        }
+                        HorizontalDivider()
+                        io.github.anisharyal09.anice.features.notifications.NotificationSettings(
+                            app.notificationMirror, permissionsOnly = true)
+                        HorizontalDivider()
+                        io.github.anisharyal09.anice.features.dndsync.DndSyncSettings(
+                            app.dndSync, permissionsOnly = true)
                     }
                     SettingsCategoryHeading(SettingsCategory.Features)
                     PreferenceSection("Do Not Disturb") {
@@ -301,7 +327,8 @@ fun SettingsScreen(
                         Text("Star features for Home quick access. Long-press to reorder.",
                             style = MaterialTheme.typography.bodySmall)
                         TextButton(onClick = { navigation.select(AppDestination.Favourites, peers.isEmpty()) },
-                            modifier = Modifier.heightIn(min = 48.dp)) { Text("Manage favourites") }
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text("Manage favourites") }
                     }
                 }
                 }
