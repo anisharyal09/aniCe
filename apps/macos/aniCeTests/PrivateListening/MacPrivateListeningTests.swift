@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Verifies explicit capture readiness, stale callbacks, watchdogs and retained-channel maintenance with native capture fakes.
+import AppKit
 import Foundation
+import SwiftUI
 import XCTest
 @testable import aniCe
 
@@ -50,6 +52,131 @@ private actor ListeningCaptureFake: PrivateListeningCapturing {
 }
 
 @MainActor final class MacPrivateListeningTests: XCTestCase {
+  func testListeningControlsReflowAcrossThemesScalesAndDirectionsWithoutNativeAudio() async throws {
+    let capture = ListeningCaptureFake()
+    let clock = ListeningModelClock()
+    let forward = MacPrivateListeningModel(capture: capture, preferences: nil,
+      now: { clock.time }, automaticallyPump: false)
+    let reverse = MacPhoneAudioModel(receiver: PhoneAudioReceiver(output: ListeningSurfaceOutput()),
+      preferences: nil, localFingerprint: { "surface-local" }, now: { clock.time }, automaticTicks: false)
+    reverse.forwardActive = { forward.busy }
+    reverse.onActiveChanged = { forward.setReverseActive($0) }
+    defer { forward.shutdown(); reverse.shutdown() }
+    let channel = ListeningSurfaceChannel(try peer())
+    let suite = "anice.listening.surface." + UUID().uuidString
+    let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { preferences.removePersistentDomain(forName: suite) }
+    let folder = URL(fileURLWithPath: ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"]
+      ?? FileManager.default.temporaryDirectory.appendingPathComponent("anice-listening-ui").path)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    var renders = 0
+
+    for state in ["offline", "prepared", "forward", "reverse"] {
+      if state == "prepared" {
+        forward.available(channel)
+        reverse.available(channel)
+        try await settle { reverse.localReady }
+        _ = await forward.handle(try PrivateListeningMessage.capability(enabled: true).encode(),
+          on: channel.descriptor)
+        forward.prepareCapture()
+        try await settle { forward.capturePrepared && !forward.busy }
+      } else if state == "forward" {
+        forward.start()
+        try await settle { channel.sent.contains { $0.kind == 1 } }
+        let id = try XCTUnwrap(channel.sent.last { $0.kind == 1 }).text(0)
+        _ = await forward.handle(try PrivateListeningMessage(kind: 2,
+          fields: [.text(id), .integer(0)]).encode(), on: channel.descriptor)
+        try await settle { forward.state == 2 }
+      } else if state == "reverse" {
+        forward.stop()
+        try await settle { !forward.busy }
+        reverse.setReceiving(true)
+        _ = await reverse.handle(try PhoneAudioMessage(kind: 1, fields: [
+          .text("01234567-89ab-4cde-8fab-0123456789ab"), .integer(48000),
+          .integer(2), .integer(16), .integer(960)]).encode(), on: channel.descriptor)
+        XCTAssertTrue(reverse.active)
+      }
+
+      for dark in [false, true] {
+        for scale in [0.8, 1.2] {
+          preferences.set(scale, forKey: "ui.fontScale")
+          for width in [280.0, 600.0] {
+            let view = PrivateListeningView(model: forward, phoneAudio: reverse)
+              .defaultAppStorage(preferences)
+              .environment(\.colorScheme, dark ? .dark : .light)
+              .padding(12).frame(width: width)
+              .background(AniCePalette.background(dark ? .dark : .light))
+            let host = NSHostingView(rootView: view)
+            let size = host.fittingSize
+            XCTAssertEqual(size.width, width, accuracy: 1)
+            XCTAssertLessThan(size.height, 1500)
+            let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
+              styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            defer { window.contentView = nil; window.close() }
+            window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            window.contentView = host
+            host.setFrameSize(size)
+            try await Task.sleep(for: .milliseconds(40))
+            host.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let bytes = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            try bytes.write(to: folder.appendingPathComponent(
+              "\(state)-\(dark ? "dark" : "light")-\(Int(width))-\(Int(scale * 100)).png"))
+            renders += 1
+          }
+        }
+      }
+    }
+    XCTAssertEqual(renders, 32)
+    let preparations = await capture.prepared
+    XCTAssertEqual(preparations, 1, "Rendering never prepares or activates real capture")
+  }
+
+  func testListeningActionGroupStacksRatherThanCompressingScaledButtons() throws {
+    let suite = "anice.listening.actions." + UUID().uuidString
+    let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { preferences.removePersistentDomain(forName: suite) }
+    for scale in [0.8, 1.2] {
+      preferences.set(scale, forKey: "ui.fontScale")
+      func size(_ width: Double) -> CGSize {
+        let view = ListeningActionGroup {
+          Button("Prepare system audio…") {}.buttonStyle(AniCeButtonStyle(compact: true))
+          Button("Start listening") {}.buttonStyle(AniCeButtonStyle(prominent: true, compact: true))
+        }.defaultAppStorage(preferences).frame(width: width)
+        return NSHostingView(rootView: view).fittingSize
+      }
+      let narrow = size(160)
+      let wide = size(600)
+      XCTAssertEqual(narrow.width, 160, accuracy: 1)
+      XCTAssertEqual(wide.width, 600, accuracy: 1)
+      XCTAssertGreaterThan(narrow.height, wide.height + 16, "Actions reflow instead of squeezing labels")
+      XCTAssertGreaterThanOrEqual(wide.height, 30, "Shared compact face stays at least 30 pt tall")
+    }
+  }
+
+  func testReverseReceivingRefusesForwardPreparationAndStartWithoutStoppingIt() async throws {
+    let (model, capture, _, channel) = try await preparedModel()
+    defer { model.shutdown() }
+    model.setReverseActive(true)
+    XCTAssertFalse(model.canPrepare)
+    XCTAssertFalse(model.canStart)
+    model.prepareCapture()
+    model.start()
+    await Task.yield()
+    XCTAssertFalse(model.active)
+    XCTAssertFalse(channel.sent.contains { $0.kind == 1 })
+    let preparations = await capture.prepared
+    XCTAssertEqual(preparations, 1)
+    model.setReverseActive(false)
+    XCTAssertTrue(model.canStart)
+    model.start()
+    try await settle { channel.sent.contains { $0.kind == 1 } }
+    model.stop()
+    try await settle { !model.busy }
+  }
+
   func testCaptureBurstKeepsOnlyTheNewestUnsealedPacketsOnTheSameStream() async throws {
     let (model, capture, _, channel) = try await preparedModel()
     model.start()
@@ -269,5 +396,23 @@ private actor ListeningCaptureFake: PrivateListeningCapturing {
     XCTAssertFalse(model.capturePrepared)
     let stops = await capture.stopped
     XCTAssertGreaterThanOrEqual(stops, 1)
+  }
+}
+
+private actor ListeningSurfaceOutput: PhoneAudioOutput {
+  func prepare() throws {}
+  func offer(_ pcm: Data) -> PhoneAudioOutputAdmission { .accepted }
+  func stop() {}
+  var queuedFrames: Int { 0 }
+}
+
+@MainActor private final class ListeningSurfaceChannel: SecuredChannel {
+  let descriptor: ChannelDescriptor
+  var sent = [PrivateListeningMessage]()
+  init(_ peer: DeviceIdentity) {
+    descriptor = ChannelDescriptor(instance: "listening-surface", transport: "lan", peer: peer)
+  }
+  func sendData(_ bytes: Data) async throws {
+    if let forward = try PrivateListeningMessage.decode(bytes) { sent.append(forward) }
   }
 }

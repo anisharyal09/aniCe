@@ -14,6 +14,7 @@ struct AniCeApp: App {
   @State private var pairing: MacPairingModel
   @State private var lan: MacLanSessionModel
   @State private var privateListening: MacPrivateListeningModel
+  @State private var phoneAudio: MacPhoneAudioModel
   @State private var connectionPause: MacConnectionPauseModel
   @State private var playback: MacPlaybackModel
   @State private var clipboard: MacClipboardModel
@@ -102,6 +103,13 @@ struct AniCeApp: App {
     _lan = State(initialValue: lan)
     let privateListening = MacPrivateListeningModel(preferences: IdentityView.isTesting ? nil : .standard)
     _privateListening = State(initialValue: privateListening)
+    let phoneAudio = MacPhoneAudioModel(preferences: IdentityView.isTesting ? nil : .standard,
+      localFingerprint: { try identity.service.publicIdentity().fingerprint })
+    _phoneAudio = State(initialValue: phoneAudio)
+    phoneAudio.forwardActive = { [weak privateListening] in privateListening?.busy ?? false }
+    phoneAudio.onActiveChanged = { [weak privateListening] active in
+      privateListening?.setReverseActive(active)
+    }
     #if DEBUG && ANICE_TRANSFER_PREVIEW
     _physicalListening = State(initialValue: PrivateListeningPhysicalRunner(
       listening: privateListening, transfer: transfer,
@@ -180,6 +188,7 @@ struct AniCeApp: App {
     features.register(lan.rendezvous)
     features.register(MacCompanionSetup(advertising: { radio.setCompanionSetupAdvertising($0) }))
     features.register(playback)
+    features.register(phoneAudio)
     features.register(privateListening)
     features.register(transfer)
     features.register(findDevice)
@@ -233,6 +242,7 @@ struct AniCeApp: App {
     }
     pairing.trustRemoved = {
       privateListening.stop(reason: 7, message: "Trust changed.", notify: false)
+      phoneAudio.invalidate()
       PeerNames.shared.invalidate()
       connectionPause.clear()
       transfer.invalidate()
@@ -248,6 +258,7 @@ struct AniCeApp: App {
     }
     identity.onIdentityReset = {
       privateListening.stop(reason: 7, message: "Local identity changed.", notify: false)
+      phoneAudio.invalidate()
       PeerNames.shared.invalidate()
       connectionPause.clear()
       dndSync.removeSelections()
@@ -276,6 +287,7 @@ struct AniCeApp: App {
     guard !IdentityView.isTesting else { return }
     clipboard.installLifecycle()
     privateListening.installLifecycle()
+    phoneAudio.installLifecycle()
     session.restoreAutomatic()
     comparisonPresenter = MacComparisonPresenter(model: pairing) {
       // Keep comparison in the normal window rather than introducing a second cancellable sheet.
@@ -291,6 +303,7 @@ struct AniCeApp: App {
     hotkeyManager = hotkey
     delegate.onTerminate = {
       privateListening.shutdown()
+      phoneAudio.shutdown()
       pairing.cancel()
       comparisonPresenter?.hide()
       MacUpdateModel.shared.stopAutomaticChecks()
@@ -335,7 +348,7 @@ struct AniCeApp: App {
     Window(MacAppStorage.applicationName, id: "main") {
       MainWindowView(
         delegate: delegate, identity: identity, discovery: discovery, pairing: pairing,
-        session: session, lan: lan, privateListening: privateListening, connectionPause: connectionPause, playback: playback, transfer: transfer, edgeDrop: edgeDrop,
+        session: session, lan: lan, privateListening: privateListening, phoneAudio: phoneAudio, connectionPause: connectionPause, playback: playback, transfer: transfer, edgeDrop: edgeDrop,
         clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, sms: sms,
         keyboardTrackpad: keyboardTrackpad, phoneInput: phoneInput, smsPreferences: smsPreferences,
         onInitialRender: {

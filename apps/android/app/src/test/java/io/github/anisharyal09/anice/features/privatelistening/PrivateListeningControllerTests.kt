@@ -9,6 +9,8 @@ import io.github.anisharyal09.anice.infrastructure.connections.SecuredChannel
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.session.Cbor
 import io.github.anisharyal09.anice.infrastructure.session.SessionMaintenanceSnapshot
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.runtime.snapshots.SnapshotStateObserver
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -16,6 +18,51 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PrivateListeningControllerTests {
+    @Test fun startingListeningInvalidatesObservedControlsWithoutAnotherNavigation() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        var updates = 0
+        val observer = SnapshotStateObserver { it() }
+        observer.start()
+        try {
+            observer.observeReads(h, { updates++ }) { assertFalse(h.owner.busy) }
+            h.start()
+            Snapshot.sendApplyNotifications()
+            assertTrue("Active ownership must invalidate the opposite direction's controls", updates > 0)
+        } finally { observer.stop(); h.owner.stop() }
+    }
+
+    @Test fun consentControlIsUnavailableUntilIdentityLoadsAndAfterRetirement() = runBlocking {
+        val clock = Clock()
+        val channel = Channel(clock)
+        val local = CompletableDeferred<String>()
+        val owner = PrivateListeningController(now = { clock.now }, dispatcher = Dispatchers.Unconfined,
+            automaticTicks = false)
+        owner.loadLocalFingerprint = { local.await() }
+        assertFalse(owner.canSetConsent)
+        owner.available(channel)
+        assertFalse(owner.canSetConsent)
+        local.complete("b".repeat(64))
+        assertTrue(owner.canSetConsent)
+        owner.retired(channel.descriptor)
+        assertFalse(owner.canSetConsent)
+    }
+
+    @Test fun reverseOwnershipRefusesForwardStartWithoutStoppingTheReverseOperation() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.owner.reverseActive = { true }
+        h.start()
+        assertEquals(listOf(2L), h.results())
+        assertFalse(h.owner.active)
+        assertEquals(0, h.starts)
+        assertEquals(0, h.stopped)
+        h.owner.reverseActive = { false }
+        h.start(OTHER_ID)
+        assertTrue(h.owner.active)
+        h.owner.stop()
+    }
+
     @Test fun speakerPermissionIsFrozenForTheTicketAndRevocationStopsOutput() = runBlocking {
         val h = Harness()
         h.owner.setConsent(true)

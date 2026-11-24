@@ -101,6 +101,17 @@ Android's shared feature dispatcher offers an opt-in synchronous worker-admissio
 
 Transfer also admits authenticated chunk-shaped DATA to its existing bounded FIFO through the worker hook when there is capacity; decoding/storage/ACK progress remains feature-owned. FIFO exhaustion retains the ordinary suspending delivery path, and the same queue precedes resume/drain barriers. No valid file bytes are discarded to schedule listening.
 
+Phone Audio reverses the direction using its own `"aniCe phone audio"` envelope.
+Android's locally granted single-use MediaProjection service owns eligible
+playback capture and a shared job-scoped LAN lease, with three unsent PCM packets
+plus one send and coalesced presentation wake-ups. Mac's default-off receiving
+consent binds the local identity and full phone credential; its owner fences
+native preparation/cleanup, retired stream IDs and output-device loss. Both
+directions refuse conflicting starts, including native cleanup, rather than
+silently replacing one another. Retained-channel renewal clears obsolete audio;
+actual retirement never restarts capture. The phone is not muted and Mac output
+is not promised private. See [Phone Audio v1](protocol/private-listening/PHONE_AUDIO.md).
+
 ## Application DATA and source organization
 
 Device-owned name metadata uses [Device Names v1](protocol/device-names/README.md) over existing secured DATA. One platform-native PeerNames owner persists local publication revisions, peer name floors and credential-scoped private nicknames separately from immutable trust evidence. Ordinary current-peer surfaces resolve the latest device name unless Use nickname is enabled. Rename never starts a connection or changes EDHOC credentials; offline edits publish on reconnection.

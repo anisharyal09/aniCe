@@ -66,11 +66,11 @@ class PrivateListeningController internal constructor(
 ) : WorkerFeatureHandler {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private var channel: SecuredChannel? = null
-    private var localFingerprint: String? = null
+    private var localFingerprint by mutableStateOf<String?>(null)
     private var localLookup: Job? = null
-    private var current: PrivateListeningRequest? = null
+    private var current by mutableStateOf<PrivateListeningRequest?>(null)
     @Volatile private var audioAdmission: PrivateListeningAudioAdmission? = null
-    private var stoppingService: PrivateListeningRequest? = null
+    private var stoppingService by mutableStateOf<PrivateListeningRequest?>(null)
     private var tickJob: Job? = null
     private var sending: Job? = null
     private val outgoing = ArrayDeque<PrivateListeningMessage>()
@@ -96,6 +96,8 @@ class PrivateListeningController internal constructor(
     internal var diagnostics by mutableStateOf<ListeningPlaybackHealth?>(null)
         private set
     val active get() = current != null
+    val busy get() = active || stoppingService != null
+    internal val canSetConsent get() = channel != null && localFingerprint != null
     val streamId get() = current?.id
     internal var loadLocalFingerprint: suspend () -> String = { "" }
     internal var startupAllowed: (DeviceIdentity) -> Boolean = { false }
@@ -105,6 +107,7 @@ class PrivateListeningController internal constructor(
     internal var ownershipChanged: (Boolean) -> Unit = {}
     internal var transferReady: () -> Boolean = { true }
     internal var transferHealth: (Boolean, Long, Long) -> Unit = { _, _, _ -> }
+    internal var reverseActive: () -> Boolean = { false }
 
     fun openWorkspace() { openWorkspaceRequest = true }
     fun workspaceOpened() { openWorkspaceRequest = false }
@@ -259,6 +262,7 @@ class PrivateListeningController internal constructor(
             return
         }
         if (id in retiredIDs || exhaustedIDs) { reply(id, 2); return }
+        if (reverseActive()) { reply(id, 2); return }
         // Retain a bounded channel-local replay set; exhaustion refuses starts instead of forgetting old IDs.
         retiredIDs.add(id)
         if (retiredIDs.size >= 256) exhaustedIDs = true

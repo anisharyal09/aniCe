@@ -78,6 +78,36 @@ Channel retirement, Disconnect, trust/identity changes, service destruction, Mac
 
 ## Implementation boundaries
 
+Android-to-Mac audio is implemented behind explicit local consent, but physical
+behaviour is still being verified. [Phone Audio v1](../../protocol/private-listening/PHONE_AUDIO.md)
+uses Android's user-authorized playback-capture API, which excludes
+protected/opted-out apps, calls and other profiles and does not suppress the
+source phone's output. The reverse layer includes canonical fixtures, bounded
+packetization, graceful capture teardown, single-use MediaProjection consent, a
+`mediaProjection` foreground service, Mac receiving consent bound to the local
+identity and phone credential, stream admission that rejects duplicate, unbound
+or stale streams, shared job-scoped LAN retention, bounded control retries and
+output retirement on native device changes. Reverse
+sending and Mac-to-phone listening are mutually exclusive in app assembly to
+avoid feedback capture loops. Mac output is not promised to be private and the
+phone's own playback is never muted.
+
+In **Features → Private Listening**, enable **Allow audio from this phone** on
+Mac, then choose **Share this phone's audio** on Android and approve the native
+prompt. Each Android grant belongs to that local action and channel; cancellation,
+view disposal, channel replacement and Stop discard it. Mac's receiving choice
+persists only for the same identities. Neither reconnect nor that preference
+automatically starts capture. Background/screen-off execution remains governed by
+Android's native projection/service policy. Real LAN loss ends the stream;
+retained-channel renewal keeps the authorized operation, discards older queues
+and rechecks output/capture availability before current audio resumes.
+
+Both directions use the shared compact Start/Stop and setup controls, with the
+active direction first. Pending native consent and cleanup are labelled; Stop
+stays ahead of secondary setup and diagnostics. Android retains 48 dp interaction
+targets and whole-row receiving preferences; Mac actions reflow with text scale.
+The UI clarifies audio-only sending without replacing the native consent prompt.
+
 Application-scoped feature owners handle DATA, service/capture lifecycle and bounded logical audio queues. Connections owns LAN admission, encrypted records and renewal. The Mac C callback copies Float32 into a lock-free SPSC ring; conversion and sealing stay off that callback. Android's worker performs bounded cubic clock correction without native pitch-preserving timestretching.
 
 See [wire contract](../../protocol/private-listening/README.md), [LAN maintenance](../../protocol/lan/RENEWAL.md), [Now Playing](NOW_PLAYING.md), [performance budgets](../PERFORMANCE.md) and the [physical-test guide](../PRIVATE_LISTENING_TESTING.md). Optional read-only diagnostics require an explicit isolated preview target and do not activate listening.

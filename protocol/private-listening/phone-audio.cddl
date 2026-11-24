@@ -1,0 +1,9 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Separate reverse-direction envelope, reusing bounded PCM shapes from private-listening.cddl.
+; Load together with private-listening.cddl.
+phone-audio =
+  ["aniCe phone audio", 1, 0, capability] /
+  ["aniCe phone audio", 1, 1, start] /
+  ["aniCe phone audio", 1, 2, start-result] /
+  ["aniCe phone audio", 1, 3, audio] /
+  ["aniCe phone audio", 1, 4, stop]

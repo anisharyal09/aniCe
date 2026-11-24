@@ -17,11 +17,29 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import io.github.anisharyal09.anice.AniCeApplication
 import io.github.anisharyal09.anice.R
+import io.github.anisharyal09.anice.ui.AniCeActionButton
+import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
 
 @Composable
-fun PrivateListeningView(controller: PrivateListeningController) {
+fun PrivateListeningView(controller: PrivateListeningController, phoneAudio: PhoneAudioController? = null) {
+    val app = LocalContext.current.applicationContext as AniCeApplication
+    val reverse = phoneAudio ?: app.phoneAudio
+    // Keep the current operation and its Stop above the inactive direction's setup.
+    val directions = if (reverse.busy) listOf(true, false) else listOf(false, true)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        directions.forEachIndexed { index, sendingPhone ->
+            if (index > 0) HorizontalDivider()
+            key(sendingPhone) {
+                if (sendingPhone) PhoneAudioView(reverse, controller.busy)
+                else MacAudioReceivingView(controller, app)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MacAudioReceivingView(controller: PrivateListeningController, app: AniCeApplication) {
     val context = LocalContext.current
-    val app = context.applicationContext as AniCeApplication
     var revision by remember { mutableIntStateOf(0) }
     var confirmationError by remember { mutableStateOf(false) }
     var speakerConfirmation by remember {
@@ -34,48 +52,46 @@ fun PrivateListeningView(controller: PrivateListeningController) {
             .map { ListeningRoute(it.type, it.address.orEmpty(), it.productName.toString()) }
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(controller.peer?.deviceName ?: stringResource(R.string.listening_connect_mac),
-            style = MaterialTheme.typography.titleSmall)
-        Text(stringResource(R.string.listening_setup), style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = controller.consentEnabled, onCheckedChange = controller::setConsent,
-                enabled = controller.peer != null)
-            Text(stringResource(R.string.listening_receive))
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(stringResource(R.string.listening_from_mac), style = MaterialTheme.typography.titleSmall)
+            Text(controller.peer?.deviceName ?: stringResource(R.string.listening_connect_mac),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(controller.status, style = MaterialTheme.typography.bodyMedium)
         if (controller.active) {
-            Button(onClick = { controller.stop() }) { Text(stringResource(R.string.listening_stop)) }
+            AniCeActionButton(onClick = { controller.stop() }) { Text(stringResource(R.string.listening_stop)) }
+        } else if (controller.busy) {
+            AniCeActionButton(onClick = {}, enabled = false) { Text(stringResource(R.string.listening_stopping)) }
         }
-        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = controller.speakerFallbackEnabled,
-                enabled = controller.peer != null && (!controller.active || controller.speakerFallbackEnabled),
-                onCheckedChange = { enabled ->
-                    if (enabled) speakerConfirmation = controller.peer else controller.setSpeakerFallback(false)
-                })
-            Text(stringResource(R.string.listening_speaker_fallback), modifier = Modifier.weight(1f))
-        }
-        Text(stringResource(R.string.listening_speaker_help), style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        AutomaticConnectionToggle(checked = controller.consentEnabled, onCheckedChange = controller::setConsent,
+            enabled = controller.canSetConsent, label = stringResource(R.string.listening_receive),
+            description = stringResource(R.string.listening_setup), compact = true)
+        AutomaticConnectionToggle(checked = controller.speakerFallbackEnabled,
+            enabled = controller.canSetConsent && (!controller.busy || (controller.active && controller.speakerFallbackEnabled)),
+            onCheckedChange = { enabled ->
+                if (enabled) speakerConfirmation = controller.peer else controller.setSpeakerFallback(false)
+            }, label = stringResource(R.string.listening_speaker_fallback),
+            description = stringResource(R.string.listening_speaker_help), compact = true)
         if (speakerConfirmation != null) AlertDialog(onDismissRequest = { speakerConfirmation = null },
             title = { Text(stringResource(R.string.listening_speaker_confirm_title)) },
             text = { Text(stringResource(R.string.listening_speaker_confirm_help)) },
-            confirmButton = { TextButton(onClick = {
+            confirmButton = { TextButton(shape = MaterialTheme.shapes.small, onClick = {
                 val confirmedPeer = speakerConfirmation
                 speakerConfirmation = null
                 if (confirmedPeer == controller.peer) controller.setSpeakerFallback(true)
             }) { Text(stringResource(R.string.listening_speaker_allow)) } },
-            dismissButton = { TextButton(onClick = { speakerConfirmation = null }) { Text("Cancel") } })
+            dismissButton = { TextButton(shape = MaterialTheme.shapes.small,
+                onClick = { speakerConfirmation = null }) { Text(stringResource(R.string.cancel)) } })
         Text(stringResource(R.string.listening_buffer_mode), style = MaterialTheme.typography.titleSmall)
         Column(Modifier.selectableGroup()) {
             for (profile in ListeningBufferProfile.entries) {
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(
                     selected = controller.bufferProfile == profile,
-                    enabled = !controller.active, role = Role.RadioButton,
+                    enabled = !controller.busy, role = Role.RadioButton,
                     onClick = { controller.setBufferProfile(profile) }),
                     verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(selected = controller.bufferProfile == profile,
-                        onClick = null, enabled = !controller.active)
+                        onClick = null, enabled = !controller.busy)
                     Text(stringResource(if (profile == ListeningBufferProfile.BALANCED)
                         R.string.listening_buffer_balanced else R.string.listening_buffer_lower),
                         modifier = Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodyMedium)
@@ -105,10 +121,10 @@ fun PrivateListeningView(controller: PrivateListeningController) {
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         for (route in routes) {
             val key = route.confirmationKey
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(route.label, modifier = Modifier.weight(1f).padding(end = 8.dp),
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(route.label,
                     style = MaterialTheme.typography.bodyMedium)
-                TextButton(onClick = {
+                AniCeActionButton(onClick = {
                     if (key != null) {
                         val storage = context.getSharedPreferences("private_listening_routes", android.content.Context.MODE_PRIVATE)
                         val values = app.listeningConfirmedRoutes() + key
@@ -117,14 +133,14 @@ fun PrivateListeningView(controller: PrivateListeningController) {
                             revision++
                         } else confirmationError = true
                     }
-                }, enabled = key != null && !controller.active, modifier = Modifier.heightIn(min = 48.dp)) {
+                }, enabled = key != null && !controller.busy && key !in app.listeningConfirmedRoutes()) {
                     Text(if (key in app.listeningConfirmedRoutes()) stringResource(R.string.listening_confirmed)
                         else stringResource(R.string.listening_confirm_route))
                 }
             }
         }
         if (confirmationError) Text(stringResource(R.string.listening_confirmation_failed))
-        TextButton(onClick = { revision++ }, modifier = Modifier.heightIn(min = 48.dp)) {
+        AniCeActionButton(onClick = { revision++ }) {
             Text(stringResource(R.string.listening_refresh_outputs))
         }
     }

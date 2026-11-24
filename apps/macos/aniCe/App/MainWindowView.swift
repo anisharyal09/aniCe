@@ -12,6 +12,7 @@ struct MainWindowView: View {
   let session: MacSessionModel
   let lan: MacLanSessionModel
   let privateListening: MacPrivateListeningModel
+  let phoneAudio: MacPhoneAudioModel
   let connectionPause: MacConnectionPauseModel
   let playback: MacPlaybackModel
   let transfer: MacTransferModel
@@ -233,6 +234,7 @@ struct MainWindowView: View {
       sms: sms, keyboardTrackpad: keyboardTrackpad, smsPreferences: smsPreferences,
       findNotifier: findNotifier, peers: pairing.peers, edgeDrop: edgeDrop,
       privateListening: privateListening,
+      phoneAudio: phoneAudio,
       navigation: navigation, favouritesOnly: favouritesOnly)
   }
 

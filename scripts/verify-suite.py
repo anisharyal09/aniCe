@@ -66,6 +66,7 @@ SUITE_ORDER = (
 VECTOR_CHECKS = (
     ("Connection pause vectors", "connection-pause/generate.py", ()),
     ("Private Listening vectors", "private-listening/generate_private_listening_vectors.py", ()),
+    ("Phone Audio vectors", "phone-audio/generate.py", ()),
     ("Clipboard vectors", "clipboard/generate_clipboard_vectors.py", ()),
     ("Transfer vectors", "transfer/generate_transfer_vectors.py", ()),
     ("Media vectors", "media/generate.py", ()),
@@ -99,6 +100,9 @@ DOCUMENTED_ANDROID_SKIPS = {
     "PrivateListeningDeviceRegressionTests#audioWorkerUsesOneNativeAudioPriorityThreadAndReleasesIt",
     "PrivateListeningDeviceRegressionTests#platformPcmBufferQueryFitsTheBudgetWithoutOpeningAnAudioTrack",
     "PrivateListeningDeviceRegressionTests#credentialConsentAndStopFenceWorkerAdmissionWithoutNativePlayback",
+    # Audio-free listening layouts require their isolated emulator-only UI package.
+    "PrivateListeningSurfaceTests#bufferChoicesReflowAcrossThemesWidthsAndTextScalesWithoutStartingAudio",
+    "PrivateListeningSurfaceTests#compactActionMatchesHomeAndCheckboxLabelTogglesOnlyOnce",
     # Synthetic approval/comparison surfaces are UI-preview emulator tests, not real-device consent.
     "CompanionApprovalRequestTest#enrollmentAlwaysUsesSingleDeviceApprovalForThePinnedMac",
     "CompanionSetupPresentationTest#rotationRetainsOneApprovalAndCancelFencesItsLateResult",

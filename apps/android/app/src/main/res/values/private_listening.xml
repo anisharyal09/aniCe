@@ -9,10 +9,12 @@
     <string name="listening_speaker_allow">Allow speaker fallback</string>
     <string name="listening_speaker_active">Playing on phone speaker — not private</string>
     <string name="listening_title">Private Listening</string>
+    <string name="listening_from_mac">Listen to Mac audio</string>
+    <string name="listening_stopping">Stopping audio…</string>
     <string name="listening_stop">Stop listening</string>
     <string name="listening_notification_peer">Audio from %1$s</string>
     <string name="listening_receive">Allow audio from this Mac</string>
-    <string name="listening_setup">Connect LAN, enable receiving, then confirm headphones or explicitly allow speaker fallback. Start listening on your Mac.</string>
+    <string name="listening_setup">Connect headphones or allow speaker fallback below. Start listening on your Mac.</string>
     <string name="listening_confirm_route">These are my headphones</string>
     <string name="listening_confirmed">Headphones confirmed</string>
     <string name="listening_no_route">Connect headphones to prepare listening.</string>
@@ -31,4 +33,14 @@
     <string name="listening_native_diagnostics">Native write limit %1$d ms · effective buffer %2$d ms (not measured output delay)</string>
     <string name="listening_headphone_hint">Connect headphones to your phone; its own speaker is not used. Wired/USB headsets need no extra confirmation.</string>
     <string name="listening_recovery_diagnostics">Gap recoveries %1$d · rebufferings %2$d · largest arrival gap %3$d ms</string>
+    <string name="phone_audio_title">Send phone audio to Mac</string>
+    <string name="phone_audio_start">Share this phone\'s audio</string>
+    <string name="phone_audio_stop">Stop phone audio</string>
+    <string name="phone_audio_help">Eligible app playback only. Calls, microphones and protected or opted-out apps are excluded. The phone keeps playing; Mac output may be audible to others.</string>
+    <string name="phone_audio_consent_note">Only audio is sent. Android requires its screen-capture consent prompt each session; the grant is never saved.</string>
+    <string name="phone_audio_waiting_consent">Waiting for consent…</string>
+    <string name="phone_audio_preparing">Preparing phone audio…</string>
+    <string name="phone_audio_renewing">Renewing secure LAN…</string>
+    <string name="phone_audio_notification_active">Sending phone audio to %1$s</string>
+    <string name="phone_audio_dropped">Unsent packets dropped %1$d (not measured latency)</string>
 </resources>

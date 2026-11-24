@@ -10,6 +10,14 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
+- Add Android-to-Mac Phone Audio behind separate local consent: a single-use
+  projection prompt, `mediaProjection` foreground service, bounded sender,
+  credential-scoped Mac receiving opt-in and mutual exclusion with Mac-to-phone
+  listening; fence stale native completion and retain control messages through
+  backpressure/renewal without automatic capture restart.
+- Harden reverse Phone Audio teardown: report capture stop causes without crashing
+  the worker, keep Mac playback aligned at the bounded cap, stop on output-device
+  changes and fence duplicate or stale streams.
 - Add separately confirmed, default-off Android built-in speaker fallback for
   Mac audio, preserving receiving consent, route verification and bounded queues.
 - Add bounded, read-only Private Listening preview diagnostics and a physical comparison guide without recording audio or changing device settings; recognize native track prefixes and separate current Wi-Fi rates from capability limits.
@@ -19,6 +27,12 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Refine listening setup and Start/Stop controls with shared compact styles,
+  accessible preferences, responsive action layout and active-direction priority.
+- Record partial physical listening feedback: reverse playback works but Recents/
+  background crackling remains unresolved; phone-speaker forward delay feels
+  improved while headphones add noticeable delay. Keep audio tuning and reverse
+  local-output control deferred.
 - Let Private Listening cautiously recover from a transient high-buffer floor,
   trim stale software PCM on target reductions and keep valid Balanced health
   eligible for bounded transfer-credit recovery.

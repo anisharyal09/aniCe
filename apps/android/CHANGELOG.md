@@ -6,6 +6,17 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Add Android-to-Mac Phone Audio with an explicit single-use screen-capture
+  prompt, a `mediaProjection` foreground service, a bounded three-packet send
+  window, shared LAN work ownership and mutual exclusion with Mac-to-phone listening.
+- Bind pending projection consent to its initiating channel, coalesce capture
+  worker delivery, retain Start/Stop under backpressure and fence early/late Ready
+  and native destruction before allowing another capture.
+- Add reverse audio packetization and an externally authorized native
+  AudioPlaybackCapture primitive; the projection prompt and streaming service are
+  owned by the reverse controller.
+- Report capture Stop, revocation and failure causes without crashing the capture
+  worker; retry empty reads and count discarded partial PCM.
 - Add credential-scoped speaker opt-in, silent route recovery and non-private
   output warnings; revocation stops playback without enabling unknown routes.
 - Add isolated, non-playback device regressions for accepted audio-worker priority,
@@ -16,6 +27,10 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Align listening and phone-audio actions with Home's compact rectangular style,
+  retain 48 dp touch targets, make consent/speaker preferences whole-row controls
+  and put the active direction's Stop ahead of setup. Clarify audio-only consent
+  and native stopping states without changing capture or playback tuning.
 - Probe elevated listening buffer floors down only after sustained healthy audio
   and promptly trim obsolete software backlog when the target decreases.
 - Use a dedicated audio worker and authenticated worker-side PCM admission; lower adaptive buffering floors and avoid repeated silent priming on ordinary audio gaps.

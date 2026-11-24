@@ -6,6 +6,12 @@ Shared contract changes and compatibility implications, grouped by application v
 
 ### Added
 
+- Define separate Phone Audio v1 Android-to-Mac envelopes and explicit projection,
+  source-policy, output-consent and no-source-muting limits.
+- Add independent reverse Phone Audio fixtures for canonical envelopes, malformed
+  timelines, tag isolation and bounded Mac output resync semantics.
+- Clarify reverse single-use channel-bound consent, native cleanup exclusion,
+  bounded control retries and current-audio renewal; no additional wire fields.
 - Define Private Listening v1 LAN DATA with six bound message kinds, 960-frame stereo PCM16 packets, checked source timelines and retained-channel maintenance semantics.
 
 ### Changed

@@ -444,7 +444,7 @@ import Network
           navigation.show(destination, route: scenario?.hasPrefix("pairing") == true ? .pairing : .overview)
           if let feature { navigation.openFeature(feature) }
           let view = MainWindowView(delegate: AppDelegate(), identity: IdentityViewModel(service: service),
-            discovery: discovery, pairing: pairing, session: session, lan: lan, privateListening: MacPrivateListeningModel(preferences: nil), connectionPause: MacConnectionPauseModel(), playback: playback,
+            discovery: discovery, pairing: pairing, session: session, lan: lan, privateListening: MacPrivateListeningModel(preferences: nil), phoneAudio: MacPhoneAudioModel(preferences: nil), connectionPause: MacConnectionPauseModel(), playback: playback,
             transfer: transfer, edgeDrop: edgeDrop,
             clipboard: clipboard, findDevice: find, findNotifier: nil,
             sms: sms, keyboardTrackpad: keyboardTrackpad,

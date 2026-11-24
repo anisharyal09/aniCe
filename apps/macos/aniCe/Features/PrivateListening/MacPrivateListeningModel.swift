@@ -69,6 +69,7 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
   private(set) var capturePrepared = false
   private(set) var status = "Connect LAN and enable receiving on your phone."
   private(set) var state: Int64 = 0
+  private(set) var reverseBusy = false
   private(set) var alsoPlayThroughMacSpeakers: Bool
   var pacingChanged: (Bool) -> Void = { _ in }
   var transferReady: () -> Bool = { true }
@@ -88,10 +89,10 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
   var peer: DeviceIdentity? { channel?.descriptor.peer }
   var active: Bool { operation != nil }
   var busy: Bool { preparation != nil || cleanup != nil || active }
-  var canPrepare: Bool { !busy }
+  var canPrepare: Bool { !busy && !reverseBusy }
   var canStart: Bool {
     !busy && terminal == nil && sendTask == nil && capturePrepared && receivingEnabled &&
-      hasCapability && channel?.maintenance?.active != true
+      hasCapability && !reverseBusy && channel?.maintenance?.active != true
   }
 
   func installLifecycle() {
@@ -146,7 +147,8 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
           guard token == generation, self.channel?.descriptor == channel.descriptor else { return }
         }
         try Task.checkCancellation()
-        guard token == generation, self.channel?.descriptor == channel.descriptor, receivingEnabled else { return }
+        guard token == generation, self.channel?.descriptor == channel.descriptor,
+          receivingEnabled, !reverseBusy else { return }
         let current = Operation(channel.descriptor, now: now(),
           maintenance: channel.maintenance?.elapsedMillis ?? 0)
         operation = current
@@ -159,6 +161,9 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
       }
     }
   }
+
+  /// Reverse receiving is mutually exclusive with forwarding to prevent a feedback capture loop.
+  func setReverseActive(_ active: Bool) { reverseBusy = active }
 
   func setAlsoPlayThroughMacSpeakers(_ enabled: Bool) {
     alsoPlayThroughMacSpeakers = enabled

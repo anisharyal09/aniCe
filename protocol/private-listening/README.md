@@ -2,6 +2,8 @@
 <!-- Defines private audio admission, bounded PCM timelines and retained-channel LAN maintenance behavior. -->
 # Private Listening v1
 
+The reverse Android-to-Mac direction is defined separately in
+[Phone Audio v1](PHONE_AUDIO.md); it does not reinterpret these v1 messages.
 Mac system audio travels to one authenticated Android peer through existing secured LAN DATA. This contract adds no pairing, transport, key exchange or BLE feature messages. Each feature message uses deterministic CBOR, is at most 4,000 bytes, and has exactly the shape defined in [private-listening.cddl](private-listening.cddl).
 
 ## Messages and format

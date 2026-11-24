@@ -36,6 +36,98 @@ Keep a separate row for each mode and condition. Do not label a brief Buffering 
 
 For the HAVIT 360BT Bluetooth path, record its measured/perceived delay separately from the app backlog. If no wired/USB output is available, leave that comparison not checked; do not infer its performance. Verify receiving file bytes with a digest or equivalent integrity check, not only the progress UI.
 
+## Partial physical feedback — 2026-11-24
+
+These are user-reported observations from the refreshed Transfer Previews, not
+instrumented acceptance results. Source apps, buffering mode, run duration and
+queue/underrun counters were not recorded.
+
+| Direction / condition | Observation | Acceptance status |
+| --- | --- | --- |
+| Android → Mac, ordinary playback | Audio reaches the Mac and plays on both devices; some delay remains. | Basic playback observed; broader capture-policy checks remain open. |
+| Android → Mac, Recents / background | Significant crackling, stuttering and lag, beginning when entering Recents even before Home. | Background audio quality is not accepted; cause is not diagnosed. |
+| Android → Mac, consent | The Android prompt looks like screen sharing. | The implementation uses native playback capture with MediaProjection consent, without a virtual display or transmitted screen pixels. Prompt appearance alone does not indicate video capture. |
+| Mac → phone, explicitly enabled phone speaker | Delay feels substantially better and acceptable, subjectively close to lip-sync. | Positive speaker-path feedback only; no measured latency or general lip-sync claim. |
+| Mac → phone, connected headphones | Delay becomes much more noticeable than the phone speaker, while ordinary local phone playback through those headphones feels imperceptibly delayed. | Headphone-path delay remains unresolved; route/codec, mode and measured latency were not recorded. |
+
+The remaining checklist items are still unverified. Speaker fallback remains a
+separate audible/non-private opt-in. Reverse source-phone playback is currently
+not muted; playback capture provides no automatic source-output suppression.
+
+### Follow-up scope, deferred
+
+- Reproduce the Recents/background transition with one known capture-eligible
+  source; correlate capture reads, sender drops, LAN delivery and Mac output
+  resyncs/underruns before selecting a fix.
+- The basic UI refinement explains audio-only sending, matches shared compact
+  controls and keeps active Stop ahead of setup. Verify native focus, wrapping and
+  accessible touch targets separately from audio acceptance.
+- Compare the speaker and headphone paths on the same source/mode, correlating
+  app/native backlog with Bluetooth output delay. Ordinary local video playback
+  can compensate for its own audio output; forwarded Mac video has no shared
+  timing compensation. This does not establish the cause of this report.
+- Evaluate the requested default-off local phone playback with an **Also play on
+  this phone** toggle. This is not implemented: media-volume suppression can
+  affect capture and must not be presented as safe independent muting without
+  device evidence and reliable restoration.
+- Continue forward listening checks for background/screen-off, Stop, route loss
+  and transfer coexistence; the initial speaker result does not cover them.
+
+This is a basic physical smoke test only. It is not a full acceptance pass, a
+latency measurement or evidence that the background/headphone issues are fixed.
+
+## Reverse Phone Audio (Android → Mac)
+
+Reverse streaming is exposed behind explicit local consent. On the Mac, enable
+"Allow audio from this phone"; on the phone, open Private Listening, choose
+"Share this phone's audio" and approve the system audio-capture prompt. The
+projection grant is single-use and is never saved. Verify:
+
+- [ ] A source app that permits capture plays on the Mac and keeps playing on the phone.
+- [ ] An opted-out/protected app yields silence without a crash or error loop.
+- [ ] Call/microphone audio never appears in the captured stream; valid silence alone does not prove source capture policy.
+- [ ] Revoking projection from the system UI stops locally and never auto-restarts.
+- [ ] Stop, service kill, Mac sleep and Mac Quit release the projection and native output.
+- [ ] Background, screen-off and Doze either retain the user-authorized operation under native policy or stop honestly; they never reuse a revoked projection.
+- [ ] Bluetooth/A2DP changes do not disturb capture; Mac output re-prepare is required after a device change.
+- [ ] Actual Wi-Fi/LAN loss stops both ends; reconnect never auto-restarts capture.
+- [ ] Retained-channel renewal keeps the authorized operation and resumes only current audio without replay.
+- [ ] Reverse Start is rejected while Mac-to-phone listening is active, and vice versa.
+- [ ] Start without Mac receiving consent is refused, and disabling consent stops an active stream.
+- [ ] A second phone Start while one stream is live is refused without replacing the bound stream.
+- [ ] Cancelled consent, rotation/view disposal and LAN replacement cannot retarget a late projection grant.
+- [ ] Rapid Stop/Start and notification Stop leave no orphaned service/record or reused stream.
+- [ ] Queue overflow is reported as local drops/resyncs, not as measured latency.
+- [ ] A concurrent transfer records audio drop rate and transfer deadline honestly.
+- [ ] A 60-minute run keeps memory flat and leaves no orphaned native record.
+
+Do not claim private output or source muting: Android playback capture does not
+silence the phone, and Mac speakers are not private.
+
+### Checklist B automated coverage
+
+Controller/receiver fakes cover single-use and channel-bound consent, default-off
+credential-scoped Mac preferences, early/late Ready, native preparation retirement,
+bounded PCM and coalesced worker delivery, control-message backpressure, Stop,
+output loss, sleep, replay fencing, mutual exclusion and retained-channel renewal.
+The host Android gate also compiles instrumentation and checks the manifest with
+lint; the Mac gate builds Release and runs hosted tests. These checks do not prove
+the physical capture prompt, audio audibility, route changes, Doze, output-device
+behaviour or end-to-end delay.
+
+Audio-free UI regressions check compact action sizing, whole-row preference
+activation, active Stop visibility, narrow-width reflow and both themes at
+80%–120% text scale. Android runs only in the isolated listening UI emulator
+package; Mac uses capture/output fakes. Native screen-capture permission and
+physical audio remain separate acceptance checks.
+
+Checklist C has only the partial feedback recorded above and still needs physical
+evidence for the remaining items. Assisted checks can inspect isolated
+preview service/projection ownership, Stop/revocation, queue and memory counters
+after explicit authorization. The user must approve native prompts and judge
+audibility/source policy. No deployment, permission/trust changes, playback or
+test-file sends are implied by running the host gates.
+
 ## Optional read-only snapshots
 
 While manually testing, run this from the repository root with an explicit phone serial:

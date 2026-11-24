@@ -980,10 +980,11 @@ class VectorGateTests(unittest.TestCase):
         generators = {path.resolve() for path in vectors.rglob("generate*.py")}
         selected = {vectors / path for _, path, _ in suite.VECTOR_CHECKS}
         self.assertEqual(generators, {path.resolve() for path in selected})
-        self.assertEqual(len(suite.VECTOR_CHECKS), 20)
+        self.assertEqual(len(suite.VECTOR_CHECKS), 21)
         self.assertIn(("SAS pairing vectors", "generate_sas_vectors.py", ()), suite.VECTOR_CHECKS)
         self.assertIn(("Private Listening vectors",
                        "private-listening/generate_private_listening_vectors.py", ()), suite.VECTOR_CHECKS)
+        self.assertIn(("Phone Audio vectors", "phone-audio/generate.py", ()), suite.VECTOR_CHECKS)
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
             with patch.object(suite, 'run_step', return_value=artifacts / 'oracle.log') as command, \
@@ -1000,7 +1001,7 @@ class VectorGateTests(unittest.TestCase):
         self.assertIn('test_*oracle.py', calls[-1].args[1])
         self.assertIn('-u', calls[-1].args[1])
         parse.assert_called_once_with(artifacts / 'oracle.log', minimum=5, label='Session crypto oracle')
-        self.assertEqual(result, {'checks': 20, 'oracle_tests': 5})
+        self.assertEqual(result, {'checks': 21, 'oracle_tests': 5})
 
     def test_fixture_checks_reject_drift_under_optimized_python_without_rewriting(self):
         root = suite.ROOT / "protocol/test-vectors"

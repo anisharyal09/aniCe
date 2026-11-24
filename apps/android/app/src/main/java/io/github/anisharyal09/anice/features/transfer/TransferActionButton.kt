@@ -3,10 +3,9 @@
 package io.github.anisharyal09.anice.features.transfer
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import io.github.anisharyal09.anice.ui.AniCeActionButton
 
 @Composable
 internal fun TransferActionButton(
@@ -16,16 +15,6 @@ internal fun TransferActionButton(
     prominent: Boolean = false,
     content: @Composable RowScope.() -> Unit,
 ) {
-    // Material reserves the 48 dp interaction area around Home's smaller button face.
-    val buttonModifier = modifier.defaultMinSize(minHeight = 32.dp)
-    val padding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
-    if (prominent) {
-        Button(onClick = onClick, modifier = buttonModifier, enabled = enabled,
-            shape = MaterialTheme.shapes.small, contentPadding = padding, content = content)
-    } else {
-        OutlinedButton(onClick = onClick, modifier = buttonModifier, enabled = enabled,
-            shape = MaterialTheme.shapes.small, contentPadding = padding,
-            colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            content = content)
-    }
+    AniCeActionButton(onClick = onClick, modifier = modifier, enabled = enabled,
+        prominent = prominent, content = content)
 }

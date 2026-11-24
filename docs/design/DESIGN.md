@@ -129,6 +129,16 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 - Centered track metadata (title, artist, album), fixed-dimension artwork placeholder to prevent layout shifts, transport controls (play/pause/skip), and volume slider.
 
 ### Private Listening
+- Use the shared compact rectangular action style for preparation, Start, Stop,
+  route confirmation and output refresh. Keep native Android 48 dp interaction
+  targets; Mac actions reflow vertically when their scaled labels do not fit.
+  Emphasize only the next primary preparation/Start action, not every button.
+- Present the active audio direction first with status and Stop before setup and
+  diagnostics. Receiving preferences are whole accessible checkbox rows, and
+  pending consent/cleanup is labelled rather than looking like a working Start.
+- Explain that Phone Audio sends audio only despite Android's native
+  screen-capture consent prompt, and that the phone is not muted. Do not add an
+  unimplemented local-output toggle or imply private Mac speaker output.
 - Phone speaker fallback is a separate default-off, credential-scoped checkbox
   with explicit audible/non-private confirmation before enabling. Keep it below
   Stop and above diagnostics. Permit revocation during playback by stopping;
