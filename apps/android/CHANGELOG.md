@@ -6,6 +6,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Place Find Mac below Desk Deck status with independent capability/readiness and peer-scoped feedback; move incoming Find Phone notification recovery to Permissions and keep its native ringing service/receiver unchanged.
+- Redirect saved Find Device routes, order and favourites into one Desk Deck entry; preserve explicitly empty favourites, wrap Mac choices and keep compact last-reading timestamps visible.
 - Add direct SIM-selection permission recovery and refresh choices on conversation resume; serialize local/remote SIM-list reads off the UI thread and fence obsolete request results.
 - Use compact, softly filled capsule switches with fuller inset thumbs for persistent preferences, preserving one accessible touch row and unchanged confirmation flows.
 - Use themed Clipboard segments with accent selection, muted inactive faces, native hover/focus/ripple feedback and 48 dp interaction targets.

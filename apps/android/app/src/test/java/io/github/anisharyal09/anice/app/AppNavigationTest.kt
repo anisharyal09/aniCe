@@ -136,11 +136,12 @@ class AppNavigationTest {
     @Test fun featuresBackAndSavedWorkspacePreserveOtherRoutes() {
         assertEquals(listOf("Home", "Devices", "Features", "Favourites", "Settings"), AppDestination.primary.map { it.label })
         val state=AppNavigation(AppDestination.Features,DeviceRoute.Discovery,"mac-x")
-        state.findDetails=true
+        state.openFeature(AppFeature.DeskDeck)
         val scope=androidx.compose.runtime.saveable.SaverScope { true }
         val saved=with(AppNavigation.saver) { scope.save(state) }!!
         val restored=AppNavigation.saver.restore(saved)!!
-        assertTrue(restored.findDetails);restored.back();assertEquals(AppDestination.Features,restored.destination);assertFalse(restored.findDetails)
+        assertEquals(AppFeature.DeskDeck, restored.featurePanel)
+        restored.back();assertEquals(AppDestination.Features,restored.destination);assertNull(restored.featurePanel)
         restored.back();assertEquals(AppDestination.Home,restored.destination);assertEquals(DeviceRoute.Discovery,restored.route);assertEquals("mac-x",restored.focusedPeer)
     }
 
@@ -158,12 +159,12 @@ class AppNavigationTest {
         assertEquals(AppDestination.Home, state.destination)
     }
 
-    @Test fun olderSavedNavigationWithoutFindDetailsRestoresAndNestedBackStaysLocal() {
+    @Test fun olderSavedNavigationWithoutFeaturePanelRestoresAndNestedBackStaysLocal() {
         val restored = AppNavigation.saver.restore(listOf("Features", "Discovery", "mac-a", "Overview", "false"))!!
-        assertFalse(restored.findDetails)
-        restored.findDetails = true
+        assertNull(restored.featurePanel)
+        restored.openFeature(AppFeature.DeskDeck)
         restored.back()
-        assertFalse(restored.findDetails)
+        assertNull(restored.featurePanel)
         assertEquals(AppDestination.Features, restored.destination)
         assertEquals(DeviceRoute.Discovery, restored.route)
         assertEquals("mac-a", restored.focusedPeer)
@@ -173,8 +174,8 @@ class AppNavigationTest {
         assertEquals(listOf(AppFeature.Files, AppFeature.Playback), AppFeature.favourites("Files,Files,unknown,Playback"))
         assertTrue(AppFeature.favourites("unknown").isEmpty())
         assertEquals("Playback", AppFeature.Files.toggled("Files,unknown,Playback"))
-        assertEquals("Files,FindDevice", AppFeature.FindDevice.toggled("Files,Files"))
-        assertEquals(7, AppFeature.entries.size)
+        assertEquals("Files,DeskDeck", AppFeature.DeskDeck.toggled("Files,Files"))
+        assertEquals(6, AppFeature.entries.size)
         AppFeature.entries.forEach { feature ->
             assertEquals(listOf(feature), AppFeature.favourites(feature.toggled("")))
             assertEquals("", feature.toggled(feature.toggled("")))
@@ -193,8 +194,8 @@ class AppNavigationTest {
     @Test fun favouriteRoutingAndAboutBackPreservePeerAndSavedPreferences() {
         val state = AppNavigation(AppDestination.Devices, DeviceRoute.Discovery, "mac-a")
         state.favouriteFeatures = "Playback,FindDevice"
-        state.openFeature(AppFeature.FindDevice)
-        assertTrue(state.findDetails)
+        state.openFeature(AppFeature.stored("FindDevice")!!)
+        assertEquals(AppFeature.DeskDeck, state.featurePanel)
         state.back()
         assertEquals(AppDestination.Features, state.destination)
         state.openFeature(AppFeature.Playback)
@@ -206,12 +207,12 @@ class AppNavigationTest {
         val scope = androidx.compose.runtime.saveable.SaverScope { true }
         val saved = with(AppNavigation.saver) { scope.save(state) }!!
         val restored = AppNavigation.saver.restore(saved)!!
-        assertEquals("Playback,FindDevice", restored.favouriteFeatures)
+        assertEquals("Playback,DeskDeck", restored.favouriteFeatures)
         assertEquals(SettingsRoute.About, restored.settingsRoute)
         restored.back()
         assertEquals(SettingsRoute.Overview, restored.settingsRoute)
         assertEquals("mac-a", restored.focusedPeer)
-        assertEquals("Playback,FindDevice", restored.favouriteFeatures)
+        assertEquals("Playback,DeskDeck", restored.favouriteFeatures)
     }
 
     @Test fun featurePanelsReturnToTheirOwnSectionAndSurviveRestoration() {
@@ -236,6 +237,90 @@ class AppNavigationTest {
         }
         val older = AppNavigation.saver.restore(listOf("Features", "Overview", "", "Overview", "false", "false", ""))!!
         assertNull(older.featurePanel)
+    }
+
+    @Test fun retiredFindLauncherMigratesShortcutsOnceAtTheirFirstSavedPosition() {
+        val cases = mapOf(
+            "FindDevice" to "DeskDeck",
+            "FindDevice,Files,DeskDeck,Clipboard" to "DeskDeck,Files,Clipboard",
+            "Files,DeskDeck,Clipboard,FindDevice" to "Files,DeskDeck,Clipboard",
+            "unknown,FindDevice,FindDevice,Files,DeskDeck" to "unknown,DeskDeck,Files",
+            "" to "",
+        )
+        for ((old, migrated) in cases) {
+            assertEquals(migrated, AppFeature.migrateStored(old))
+            assertEquals(migrated, AppFeature.migrateStored(migrated))
+            assertEquals(1, AppFeature.ordered(old).count { it == AppFeature.DeskDeck })
+            assertEquals(AppFeature.entries.toSet(), AppFeature.ordered(old).toSet())
+            assertFalse(AppFeature.ordered(old).any { it.name == "FindDevice" })
+        }
+        assertEquals("Files,Clipboard", AppFeature.DeskDeck.toggled("FindDevice,Files,DeskDeck,Clipboard"))
+        assertEquals("DeskDeck,Files,Clipboard", AppFeature.moved(AppFeature.DeskDeck,
+            AppFeature.favourites("Files,FindDevice,Clipboard,DeskDeck"), -1))
+        assertEquals(AppFeature.DeskDeck, AppFeature.stored("FindDevice"))
+        assertNull(AppFeature.stored("unknown"))
+    }
+
+    @Test fun preferenceMigrationPreservesExplicitlyEmptyFavouritesAcrossRestarts() {
+        assertEquals(AppFeature.DEFAULT_FAVOURITES, AppFeature.favouritePreference(null))
+        assertEquals("", AppFeature.favouritePreference(""))
+        assertEquals("unknown", AppFeature.favouritePreference("unknown"))
+        assertEquals("Files,DeskDeck", AppFeature.favouritePreference("Files,FindDevice,DeskDeck"))
+        val state = AppNavigation().also { it.favouriteFeatures = "" }
+        val scope = androidx.compose.runtime.saveable.SaverScope { true }
+        val saved = with(AppNavigation.saver) { scope.save(state) }!!
+        assertEquals("", AppNavigation.saver.restore(saved)!!.favouriteFeatures)
+        assertEquals(AppFeature.DEFAULT_FAVOURITES,
+            AppNavigation.saver.restore(listOf("Home", "Overview", "", "Overview", "false"))!!.favouriteFeatures)
+    }
+
+    @Test fun migrationDoesNotEraseUnrecognizedSavedShortcutsFromAnotherBuild() {
+        val original = AppNavigation().also {
+            it.favouriteFeatures = "futureFeature,FindDevice,Files,DeskDeck"
+            it.featureOrder = "Files,futureFeature,FindDevice,DeskDeck"
+        }
+        val scope = androidx.compose.runtime.saveable.SaverScope { true }
+        val saved = with(AppNavigation.saver) { scope.save(original) }!!
+        val restored = AppNavigation.saver.restore(saved)!!
+        assertEquals("futureFeature,DeskDeck,Files", restored.favouriteFeatures)
+        assertEquals("Files,futureFeature,DeskDeck", restored.featureOrder)
+        assertEquals(listOf(AppFeature.DeskDeck, AppFeature.Files), AppFeature.favourites(restored.favouriteFeatures))
+        assertEquals(listOf(AppFeature.Files, AppFeature.DeskDeck), AppFeature.ordered(restored.featureOrder).take(2))
+    }
+
+    @Test fun legacyFindRoutesRedirectToDeskDeckWithoutLosingBackOriginOrPeerContext() {
+        val scope = androidx.compose.runtime.saveable.SaverScope { true }
+        for (origin in listOf(AppDestination.Home, AppDestination.Features, AppDestination.Favourites)) {
+            for (legacyDetails in listOf("true", "false")) {
+                val restored = AppNavigation.saver.restore(listOf(
+                    "Features", "Discovery", "mac-a", "Identity", "true", legacyDetails,
+                    "Files,FindDevice,DeskDeck", "FindDevice", origin.name, "Files,FindDevice,Clipboard,DeskDeck",
+                ))!!
+                assertEquals(AppFeature.DeskDeck, restored.featurePanel)
+                assertEquals("Files,DeskDeck", restored.favouriteFeatures)
+                assertEquals("Files,DeskDeck,Clipboard", restored.featureOrder)
+                assertTrue(restored.mediaDetails)
+                assertEquals(SettingsRoute.Identity, restored.settingsRoute)
+                assertTrue(showsAppBarBack(restored.destination, restored.route, restored.settingsRoute, restored.featurePanel))
+                val saved = with(AppNavigation.saver) { scope.save(restored) }!! as List<*>
+                assertEquals("false", saved[5])
+                assertEquals("DeskDeck", saved[7])
+                assertFalse(saved.any { it is String && it.contains("FindDevice") })
+                restored.back()
+                assertEquals(origin, restored.destination)
+                assertNull(restored.featurePanel)
+                assertEquals("mac-a", restored.focusedPeer)
+                assertEquals(DeviceRoute.Discovery, restored.route)
+            }
+        }
+        val detailsOnly = AppNavigation.saver.restore(listOf("Features", "Overview", "", "Overview", "false", "true"))!!
+        assertEquals(AppFeature.DeskDeck, detailsOnly.featurePanel)
+        detailsOnly.back()
+        assertEquals(AppDestination.Features, detailsOnly.destination)
+        val newerPanel = AppNavigation.saver.restore(listOf(
+            "Features", "Overview", "", "Overview", "false", "true", "", "Playback",
+        ))!!
+        assertEquals(AppFeature.Playback, newerPanel.featurePanel)
     }
 
 }

@@ -49,12 +49,18 @@ class FindDeviceController(
     val busy get() = pending != null
     private fun peerKey(d: ChannelDescriptor) = d.peer.deviceId + ":" + d.peer.fingerprint
     private fun live(d: ChannelDescriptor) = links[d.transport]?.channel?.descriptor == d
+    private fun samePeer(first: DeviceIdentity, second: DeviceIdentity) =
+        first.deviceId == second.deviceId && first.fingerprint == second.fingerprint
     private fun selected(peer: DeviceIdentity) = sequenceOf("lan", "ble").mapNotNull { links[it] }.firstOrNull {
-        it.capable && it.channel.descriptor.peer.deviceId == peer.deviceId && it.channel.descriptor.peer.fingerprint == peer.fingerprint
+        it.capable && samePeer(it.channel.descriptor.peer, peer)
     }
-    fun connected(peer: DeviceIdentity) = links.values.any { it.channel.descriptor.peer.deviceId == peer.deviceId && it.channel.descriptor.peer.fingerprint == peer.fingerprint }
+    fun connected(peer: DeviceIdentity) = links.values.any { samePeer(it.channel.descriptor.peer, peer) }
     fun supports(peer: DeviceIdentity) = selected(peer) != null
     fun canFind(peer: DeviceIdentity) = !busy && selected(peer) != null
+    fun isFinding(peer: DeviceIdentity) = pending?.descriptor?.peer?.let { samePeer(it, peer) } == true
+    fun feedbackFor(peer: DeviceIdentity): String? = feedbackKey.takeIf {
+        it != "find_idle" && feedbackPeer?.let { previous -> samePeer(previous, peer) } == true
+    }
     override fun available(channel: SecuredChannel) {
         val d = channel.descriptor
         if (live(d)) return

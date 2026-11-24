@@ -68,7 +68,7 @@ Drop files to your screen edge to share them, sync clipboards instantly, reply t
 - **[Messages](docs/features/SMS.md):** Browse and search Android SMS conversations, receive Mac alerts and send replies, with an active SIM choice where available. RCS and MMS sending are unsupported.
 - **[Now Playing](docs/features/NOW_PLAYING.md):** Control your Mac’s playback from your phone with live track details, album artwork, automatic or manual player selection, and supported play/pause, skip and seek controls. Adjust supported player and Mac output volume, including with the phone’s volume buttons. Use the full player or Android notification/lock-screen controls when background ownership permits; optionally show playback in the Mac companion. Artwork uses LAN; audio keeps playing on the Mac.
 - **[Do Not Disturb sync](docs/features/DND_SYNC.md):** Relay phone DND changes to configured Mac Shortcuts.
-- **[Find Device](docs/features/FIND_DEVICE.md):** Ring a connected phone or notify a connected Mac through an existing trusted connection.
+- **[Find Device](docs/features/FIND_DEVICE.md):** Ring a connected phone from Mac, or notify a connected Mac from Android Desk Deck's Find Mac control, through an existing trusted connection.
 
 ## Technical foundation & security
 

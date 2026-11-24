@@ -66,10 +66,12 @@ fun SettingsScreen(
     var notificationPermissions by remember(context) {
         mutableStateOf(io.github.anisharyal09.anice.features.notifications.notificationPermissionSnapshot(context))
                     }
+    var findPhoneNotificationsAllowed by remember(context) { mutableStateOf(app.findDeviceNotification.permitted()) }
     fun refreshPermissions() {
         app.sms.refreshPermissions()
         app.dndSync.refreshAccess()
         notificationPermissions = io.github.anisharyal09.anice.features.notifications.notificationPermissionSnapshot(context)
+        findPhoneNotificationsAllowed = app.findDeviceNotification.permitted()
     }
     DisposableEffect(lifecycle, app.sms, app.dndSync, context) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -89,7 +91,8 @@ fun SettingsScreen(
         var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.All) }
         val activeCategory = selectedCategory.takeIf { it in SettingsCategory.visibleEntries } ?: SettingsCategory.All
         val showGrantedPermissions = activeCategory == SettingsCategory.Permissions
-        val hasMissingPermissions = !app.sms.granted || !notificationPermissions.allAllowed || !app.dndSync.granted
+        val hasMissingPermissions = !app.sms.granted || !notificationPermissions.allAllowed ||
+            !app.dndSync.granted || !findPhoneNotificationsAllowed
         val scrollState = rememberScrollState()
         LaunchedEffect(selectedCategory) {
             if (selectedCategory !in SettingsCategory.visibleEntries) selectedCategory = SettingsCategory.All
@@ -289,6 +292,9 @@ fun SettingsScreen(
                             }
                             io.github.anisharyal09.anice.features.sms.SmsSimPermissionSettings(
                                 notificationPermissions.phoneState, showGrantedPermissions,
+                                onPermissionsChanged = ::refreshPermissions)
+                            io.github.anisharyal09.anice.features.finddevice.FindDevicePermissionSettings(
+                                findPhoneNotificationsAllowed, showGrantedPermissions,
                                 onPermissionsChanged = ::refreshPermissions)
                             io.github.anisharyal09.anice.features.notifications.NotificationSettings(
                                 app.notificationMirror, permissionsOnly = true,

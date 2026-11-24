@@ -39,7 +39,7 @@ internal fun showsAppBarBack(destination: AppDestination, route: DeviceRoute,
 // Only local presentation identifiers are persisted; feature support remains with its owner.
 enum class AppFeature(val label: String) {
     PhoneInput("Control Mac"), DeskDeck("Mac Desk Deck"), Files("Send files"), Clipboard("Clipboard"),
-    Playback("Now Playing"), Sms("Messages"), FindDevice("Find Device");
+    Playback("Now Playing"), Sms("Messages");
     fun toggled(value: String): String {
         val saved = favourites(value).toMutableList()
         if (!saved.remove(this)) saved.add(this)
@@ -47,11 +47,18 @@ enum class AppFeature(val label: String) {
     }
     companion object {
         const val DEFAULT_FAVOURITES = "PhoneInput,DeskDeck,Clipboard"
+        // The former launcher is a local route alias, not a new Find Device protocol action.
+        fun stored(name: String?): AppFeature? =
+            if (name == "FindDevice") DeskDeck else entries.firstOrNull { it.name == name }
         fun favourites(value: String): List<AppFeature> {
-            return value.split(',').mapNotNull { name -> entries.firstOrNull { it.name == name } }.distinct()
+            return value.split(',').mapNotNull(::stored).distinct()
         }
+        // Keep unrecognized saved identifiers; rendering ignores them without erasing another build's shortcuts.
+        fun migrateStored(value: String): String = value.split(',').filter(String::isNotEmpty)
+            .map { if (it == "FindDevice") DeskDeck.name else it }.distinct().joinToString(",")
+        fun favouritePreference(value: String?): String = migrateStored(value ?: DEFAULT_FAVOURITES)
         fun ordered(value: String): List<AppFeature> {
-            val saved = value.split(',').mapNotNull { name -> entries.firstOrNull { it.name == name } }.distinct()
+            val saved = favourites(value)
             return saved + entries.filterNot(saved::contains)
         }
         fun moved(feature: AppFeature, rows: List<AppFeature>, offset: Int): String {
@@ -74,7 +81,6 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
     var featurePanel by mutableStateOf<AppFeature?>(null)
     var featureOrigin by mutableStateOf(AppDestination.Features)
     var mediaDetails by mutableStateOf(false)
-    var findDetails by mutableStateOf(false)
     var settingsRoute by mutableStateOf(settingsRoute)
     var favouriteFeatures by mutableStateOf(AppFeature.DEFAULT_FAVOURITES)
     var featureOrder by mutableStateOf("")
@@ -92,14 +98,13 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
             }
         }
         featurePanel = feature
-        findDetails = feature == AppFeature.FindDevice
         destination = AppDestination.Features
     }
-    fun closeFeature() { featurePanel = null; findDetails = false; destination = featureOrigin }
+    fun closeFeature() { featurePanel = null; destination = featureOrigin }
 
     fun select(page: AppDestination, unpaired: Boolean) {
         destination = page
-        if (page == AppDestination.Features || page == AppDestination.Favourites) { featurePanel = null; findDetails = false }
+        if (page == AppDestination.Features || page == AppDestination.Favourites) featurePanel = null
         if (page == AppDestination.Home) route = DeviceRoute.Overview
         if (page == AppDestination.Devices && unpaired) route = DeviceRoute.Pairing
     }
@@ -109,14 +114,14 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
     fun back() {
         if (destination == AppDestination.Devices && route != DeviceRoute.Overview) route = DeviceRoute.Overview
         else if (destination == AppDestination.Features && featurePanel != null) closeFeature()
-        else if (destination == AppDestination.Features && findDetails) findDetails=false
         else if (destination == AppDestination.Home && mediaDetails) mediaDetails=false
         else if (destination == AppDestination.Settings && settingsRoute != SettingsRoute.Overview) settingsRoute = SettingsRoute.Overview
         else destination = AppDestination.Home
     }
     companion object {
         val saver = listSaver<AppNavigation, String>(
-            save = { listOf(it.destination.name, it.route.name, it.focusedPeer.orEmpty(), it.settingsRoute.name, it.mediaDetails.toString(), it.findDetails.toString(), it.favouriteFeatures, it.featurePanel?.name.orEmpty(), it.featureOrigin.name, it.featureOrder) },
+            // Keep the retired findDetails slot so older saved fields do not shift.
+            save = { listOf(it.destination.name, it.route.name, it.focusedPeer.orEmpty(), it.settingsRoute.name, it.mediaDetails.toString(), "false", AppFeature.migrateStored(it.favouriteFeatures), it.featurePanel?.name.orEmpty(), it.featureOrigin.name, AppFeature.migrateStored(it.featureOrder)) },
             restore = { saved ->
                 // Older saved state can still point at the removed Permissions destination.
                 val settingsRoute = SettingsRoute.entries.firstOrNull { it.name == saved.getOrNull(3) }
@@ -128,12 +133,13 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
                     settingsRoute,
                 ).also { value ->
                     value.mediaDetails = saved.getOrNull(4) == "true"
-                    value.findDetails = saved.getOrNull(5) == "true"
-                    value.favouriteFeatures = saved.getOrNull(6).orEmpty()
-                    value.featurePanel = AppFeature.entries.firstOrNull { feature -> feature.name == saved.getOrNull(7) }
+                    value.favouriteFeatures = AppFeature.favouritePreference(saved.getOrNull(6))
+                    val panel = saved.getOrNull(7)
+                    value.featurePanel = AppFeature.stored(panel)
+                        ?: AppFeature.DeskDeck.takeIf { panel.isNullOrEmpty() && saved.getOrNull(5) == "true" }
                     value.featureOrigin = AppDestination.entries.firstOrNull { page -> page.name == saved.getOrNull(8) }
                         ?: AppDestination.Features
-                    value.featureOrder = saved.getOrNull(9).orEmpty()
+                    value.featureOrder = AppFeature.migrateStored(saved.getOrNull(9).orEmpty())
                 }
             }
         )

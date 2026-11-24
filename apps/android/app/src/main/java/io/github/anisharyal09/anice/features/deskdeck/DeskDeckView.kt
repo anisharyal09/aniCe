@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Presents live Mac meters and explicit controls in a responsive phone-first deck.
+// Presents live Mac meters, subscription controls and independently gated Find Mac in one deck.
 package io.github.anisharyal09.anice.features.deskdeck
 import io.github.anisharyal09.anice.infrastructure.connections.displayName
 
@@ -8,7 +8,6 @@ import android.text.format.DateUtils
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -25,8 +24,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -35,6 +36,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import io.github.anisharyal09.anice.R
+import io.github.anisharyal09.anice.features.finddevice.FindDeviceController
+import io.github.anisharyal09.anice.features.finddevice.findDeviceFeedbackText
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
@@ -46,6 +50,7 @@ import java.util.Locale
 fun DeskDeckView(
     owner: DeskDeckController,
     power: DevicePowerController,
+    findDevice: FindDeviceController,
     peers: List<PeerTrustRecord>,
     trustedPeersLoaded: Boolean,
     onConnect: (DeviceIdentity) -> Unit,
@@ -98,6 +103,7 @@ fun DeskDeckView(
         if (!trustedPeersLoaded && owner.snapshot != null) {
             DeskDeckGrid(
                 owner = owner,
+                findDevice = findDevice,
                 target = null,
                 sample = owner.snapshot,
                 connected = false,
@@ -120,18 +126,21 @@ fun DeskDeckView(
             }
         } else {
             if (peers.size > 1) {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     peers.forEach { record ->
                         FilterChip(
                             selected = record.peer.deviceId == selectedID,
                             onClick = { selectedID = record.peer.deviceId },
-                            label = { Text(record.peer.displayName, maxLines = 1) },
+                            label = { Text(record.peer.displayName) },
+                            modifier = Modifier.heightIn(min = 48.dp),
                         )
                     }
                 }
             }
             DeskDeckGrid(
                 owner = owner,
+                findDevice = findDevice,
                 target = target,
                 sample = owner.snapshot,
                 connected = target?.let(owner::connected) == true,
@@ -150,6 +159,7 @@ private data class DeckAction(val title: String, val detail: String, val action:
 @Composable
 private fun DeskDeckGrid(
     owner: DeskDeckController,
+    findDevice: FindDeviceController,
     target: DeviceIdentity?,
     sample: DeskDeckSnapshot?,
     connected: Boolean,
@@ -221,7 +231,7 @@ private fun DeskDeckGrid(
     }
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val wide = maxWidth >= 600.dp
-        val columns = if (wide) 4 else 2
+        val columns = if (wide) 4 else if (maxWidth < 280.dp * LocalDensity.current.fontScale) 1 else 2
         LazyVerticalGrid(
             columns = GridCells.Fixed(columns), modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 12.dp),
@@ -231,19 +241,37 @@ private fun DeskDeckGrid(
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(target?.displayName ?: "Mac", style = MaterialTheme.typography.titleSmall,
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(connectionSummary(owner, connected, sample), style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        BoxWithConstraints(Modifier.fillMaxWidth()) {
+                            val compact = maxWidth < 360.dp
+                            val summary: @Composable (Modifier) -> Unit = { summaryModifier ->
+                                Column(summaryModifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(target?.displayName ?: "Mac", style = MaterialTheme.typography.titleSmall)
+                                    Text(connectionSummary(owner, connected, sample), style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                             }
-                            if (!connected && target != null) {
-                                TextButton(onClick = onConnect, modifier = Modifier.heightIn(min = 48.dp)) { Text("Connect") }
-                            } else if (owner.connectionState in setOf(DeskDeckConnectionState.STALE, DeskDeckConnectionState.FAILED)) {
-                                TextButton(onClick = owner::refresh, modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh") }
+                            val actions: @Composable () -> Unit = {
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    if (!connected && target != null) {
+                                        TextButton(onClick = onConnect, modifier = Modifier.heightIn(min = 48.dp)) { Text("Connect") }
+                                    } else if (owner.connectionState in setOf(DeskDeckConnectionState.STALE, DeskDeckConnectionState.FAILED)) {
+                                        TextButton(onClick = owner::refresh, modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh") }
+                                    }
+                                    TextButton(onClick = { showDetails = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Details") }
+                                }
                             }
-                            TextButton(onClick = { showDetails = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Details") }
+                            if (compact) {
+                                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    horizontalAlignment = Alignment.End) {
+                                    summary(Modifier.fillMaxWidth())
+                                    actions()
+                                }
+                            } else {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    summary(Modifier.weight(1f))
+                                    actions()
+                                }
+                            }
                         }
                         HorizontalDivider()
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -252,6 +280,9 @@ private fun DeskDeckGrid(
                         }
                     }
                 }
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                FindMacCard(findDevice, target)
             }
             item {
                 MeterCard("CPU", sample?.let { if (it.cpuPercent < 0) "Collecting…" else "${it.cpuPercent}%" } ?: "Waiting…",
@@ -490,9 +521,32 @@ private fun HistoryChart(points: List<DeskDeckHistoryPoint>, memory: Boolean) {
 }
 
 @Composable
-private fun MacroCard(title: String, detail: String, enabled: Boolean, onClick: () -> Unit) {
+private fun FindMacCard(owner: FindDeviceController, target: DeviceIdentity?) {
+    val feedback = target?.let(owner::feedbackFor)
+    val detail = when {
+        target == null -> stringResource(R.string.find_mac_choose)
+        owner.isFinding(target) -> findDeviceFeedbackText("find_waiting")
+        !owner.connected(target) -> if (feedback in setOf("find_disconnected", "find_timeout", "find_failed")) {
+            findDeviceFeedbackText(feedback!!)
+        } else stringResource(R.string.find_mac_connect)
+        !owner.supports(target) -> stringResource(R.string.find_mac_not_advertised)
+        owner.busy -> stringResource(R.string.find_mac_other_pending)
+        feedback != null -> findDeviceFeedbackText(feedback)
+        else -> stringResource(R.string.find_idle)
+    }
+    val title = stringResource(R.string.find_mac_title)
+    val description = listOfNotNull(title, target?.displayName, detail).joinToString(". ")
+    // Find Device has no subscription or telemetry-freshness requirement.
+    MacroCard(title, detail, target?.let(owner::canFind) == true, description) {
+        target?.let(owner::find)
+    }
+}
+
+@Composable
+private fun MacroCard(title: String, detail: String, enabled: Boolean,
+    description: String = "$title. $detail", onClick: () -> Unit) {
     OutlinedCard(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp)
-        .semantics { contentDescription = "$title. $detail" }) {
+        .semantics { contentDescription = description }) {
         Column(
             Modifier.fillMaxWidth().padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),

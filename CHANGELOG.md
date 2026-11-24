@@ -10,6 +10,7 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Merge Android Find Mac into Desk Deck, migrate saved shortcuts and routes, and retain independent Find Phone reception without changing the alert contract.
 - Align persistent preference switches across Mac and Android, preserving existing consent, permission and saved-state behavior.
 - Share one theme-aware segmented control for mutually exclusive navigation and filters on both platforms.
 - Keep permission status and purpose details in the dedicated category on both platforms, with missing-access recovery in All and feature settings.
