@@ -177,8 +177,6 @@ fun NotificationSettings(
                 "Read selected phone alerts for mirroring to Mac.", showGranted, notificationAction)
             if (showGranted || !permissions.phoneAccess) {
                 Column(Modifier.fillMaxWidth()) {
-                    PermissionStatusRow("Phone state", permissions.phoneState,
-                        "Detect ringing SIM calls and list SIM choices.", showGranted)
                     PermissionStatusRow("Answer phone calls", permissions.answerCalls,
                         "Answer or decline ringing SIM calls from Mac; audio stays on the phone.", showGranted)
                     if (!permissions.phoneAccess) phoneAction()

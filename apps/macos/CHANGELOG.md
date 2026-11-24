@@ -16,6 +16,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Keep SIM-selection recovery in the affected Messages conversation, distinguish permission/provider/timeout outcomes and refresh choices on the current connection without changing default sending.
 - Use compact, softly filled capsule switches with fuller inset thumbs, clickable labels and native accessibility for persistent preferences while retaining explicit consent controls.
 - Use content-sized themed segments for glass style and Clipboard navigation/filters, roomier Share/History tabs and stronger theme-aware hover, pressed and focus feedback.
 - Confine granted-access descriptions to Permissions, align glass/pause controls and support broader global shortcut combinations while preserving native system/editing keys and legacy bindings.

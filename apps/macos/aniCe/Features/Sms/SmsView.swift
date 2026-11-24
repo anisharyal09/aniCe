@@ -70,6 +70,7 @@ struct SmsView: View {
   @State private var expanded: Set<String> = []
   @State private var submittedDraft: String?
   @State private var controlsOpen = false
+  @State private var simRecoveryContext: String?
   @FocusState private var composerFocused: Bool
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.colorScheme) private var scheme
@@ -157,6 +158,7 @@ struct SmsView: View {
     .onChange(of: peers.map { model.connected($0.peer) }) { _, _ in select() }
     // Opening a conversation is an invitation to type; the draft is one Return away.
     .onChange(of: address) { _, next in
+      simRecoveryContext = nil
       composerFocused = !next.isEmpty
       if let peer { model.selectConversation(peer, address: next) }
       if let peer, !next.isEmpty { draft = model.draft(peer, address: next) }
@@ -175,6 +177,7 @@ struct SmsView: View {
 
   private func selectPhone(_ key: String) {
     guard key != peerKey else { return }
+    simRecoveryContext = nil
     if let peer, !address.isEmpty { model.saveDraft(draft, peer: peer, address: address) }
     peerKey = key
     address = peer.map { model.selectedConversation($0) } ?? ""
@@ -319,7 +322,10 @@ struct SmsView: View {
         }
         Text(card?.address ?? address).font(.headline).lineLimit(1).truncationMode(.middle)
         Spacer(minLength: 4)
-        Button("Refresh") { model.refreshMessages(peer, address: address) }
+        Button("Refresh") {
+          model.refreshMessages(peer, address: address)
+          model.requestSims(peer)
+        }
           .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small).disabled(!model.supports(peer))
         if showBack { gear(peer) }
       }
@@ -419,6 +425,11 @@ struct SmsView: View {
     .padding(10)
     .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(AniCePalette.surface(scheme)))
     .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(AniCePalette.separator(scheme)))
+    if simRecoveryContext == peerKey + "|" + address, model.simSelectionNeedsRecovery(peer) {
+      SmsSimRecoveryView(status: model.simListingStatus(peer), enabled: model.supports(peer)) {
+        model.requestSims(peer)
+      }
+    }
     if currentDraft.count > 1000 {
       Text("Long messages may be rejected by the carrier; Unicode text reaches the limit sooner.")
         .font(.caption).foregroundStyle(AniCePalette.warning(scheme))
@@ -444,6 +455,12 @@ struct SmsView: View {
         }
       }.labelsHidden().controlSize(.small).frame(maxWidth: 180)
         .help("Send from").accessibilityLabel("Send from")
+    } else if model.supports(peer), model.simSelectionNeedsRecovery(peer) {
+      Button("Choose SIM…") {
+        simRecoveryContext = peerKey + "|" + address
+        model.requestSims(peer)
+      }
+      .buttonStyle(AniCeButtonStyle(quiet: true, compact: true))
     }
   }
 
@@ -485,4 +502,40 @@ struct SmsView: View {
   }
 
   private func date(_ millis: Int64) -> Date { Date(timeIntervalSince1970: Double(millis) / 1000) }
+}
+
+struct SmsSimRecoveryView: View {
+  let status: SmsSimListingStatus
+  let enabled: Bool
+  let refresh: () -> Void
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
+  @Environment(\.colorScheme) private var scheme
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      if let guidance {
+        Text(guidance).font(.system(size: 12 * fontScale))
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Button(status == .checking ? "Checking SIMs…" : "Refresh SIMs", action: refresh)
+        .buttonStyle(AniCeButtonStyle(quiet: true, compact: true))
+        .disabled(!enabled || status == .checking)
+        .help("Read SIM choices again on the current connection. Phone default sends remain available.")
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private var guidance: String? {
+    switch status {
+    case .permissionRequired:
+      "To choose a SIM, allow Phone access on your phone: aniCe → Settings → Permissions → SIM selection."
+    case .failed:
+      "SIM choices could not be read on your phone. Phone default sending remains available."
+    case .unanswered:
+      "Your phone did not answer the SIM request. Refresh SIMs on the current connection."
+    case .unknown, .checking, .ready:
+      nil
+    }
+  }
 }

@@ -287,6 +287,9 @@ fun SettingsScreen(
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                     modifier = Modifier.defaultMinSize(minHeight = 32.dp)) { Text("Open Messages setup") }
                             }
+                            io.github.anisharyal09.anice.features.sms.SmsSimPermissionSettings(
+                                notificationPermissions.phoneState, showGrantedPermissions,
+                                onPermissionsChanged = ::refreshPermissions)
                             io.github.anisharyal09.anice.features.notifications.NotificationSettings(
                                 app.notificationMirror, permissionsOnly = true,
                                 showGranted = showGrantedPermissions, onPermissionsChanged = ::refreshPermissions)

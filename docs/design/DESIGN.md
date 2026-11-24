@@ -142,6 +142,7 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 ### Messages (SMS relay)
 - Scoped to connected phone. Threaded conversation list with chronological messages.
 - Composer: Multi-line input at bottom; explicit SIM selector; byte counter near capacity limits.
+- Mac SIM recovery stays in the affected conversation after Choose SIM: direct the user to the phone’s Permissions → SIM selection row and offer Refresh SIMs on the current connection. Keep default sending available; distinguish denied, failed and unanswered listings without inferring dual-SIM state. Successful empty/single-SIM listings omit setup reminders.
 - Notifications: macOS notification previews with sound mute toggle under Settings.
 
 ### Clipboard
@@ -152,7 +153,7 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 
 ### Settings and About
 - The dedicated Permissions category shows native access names, grant status and one short purpose per row. All contains missing-access actions only and omits the permission group when no access is missing. Feature settings retain recovery actions while blocked but never repeat granted-access descriptions. Permission rows share a name/status baseline, a 6 pt/dp purpose gap and visible space between permissions; no general settings button follows granted rows.
-- Android lists SMS, Notification Access, Phone state, Answer phone calls, Call log, Contacts and Do Not Disturb access independently. Mac identifies Event Posting, notifications and automatic pasteboard reading separately. Grant actions request missing permissions only and returning from native settings refreshes their state.
+- Android lists SMS, Notification Access, SIM selection (Phone state access), Answer phone calls, Call log, Contacts and Do Not Disturb access independently. SIM selection requests only READ_PHONE_STATE; call setup may request that shared grant with ANSWER_PHONE_CALLS. Mac identifies Event Posting, notifications and automatic pasteboard reading separately. Grant actions request missing permissions only and returning from native settings refreshes their state.
 - Mac Shortcuts records global tray/Floating Key bindings only while its native recorder has focus. Defaults remain ⌥⌘V and ⌥⌘K. Command, Control, Option and Shift combinations, punctuation, navigation keys and function keys are supported. Plain typing, ordinary editing and enabled system hotkeys remain reserved. Registration failure keeps the previous binding. Labels follow the current keyboard layout.
 - Settings defaults to All, an ordered scroll page with General, Permissions and Features headings; Mac also includes Shortcuts. Category controls filter without changing preferences, and phone controls wrap instead of scrolling horizontally. Android keeps tile/Share-sheet setup beside Clipboard rather than a keyboard-shortcut category. Mac uses one readable column, with Clipboard/Messages gears opening their exact category section.
 - Mac Appearance aligns the Native Glass switch and style picker on the trailing edge; narrow layouts reflow without squeezing labels. Clipboard history pause sits beside collection status, with a trailing action and a separate line when needed.

@@ -6,6 +6,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Add direct SIM-selection permission recovery and refresh choices on conversation resume; serialize local/remote SIM-list reads off the UI thread and fence obsolete request results.
 - Use compact, softly filled capsule switches with fuller inset thumbs for persistent preferences, preserving one accessible touch row and unchanged confirmation flows.
 - Use themed Clipboard segments with accent selection, muted inactive faces, native hover/focus/ripple feedback and 48 dp interaction targets.
 - Keep granted-access details in Permissions only, space permission rows consistently and remove the phone keyboard-shortcut category; tile setup remains in Clipboard.

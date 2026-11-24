@@ -21,6 +21,11 @@ Android requests only the missing SMS permissions from its Messages panel:
 | SEND_SMS | Replies |
 | READ_PHONE_STATE | Optional active-SIM listing |
 
+**Settings → Permissions → SIM selection** requests only missing Phone state
+access; it does not request SMS sending, call answering or Contacts access.
+Returning from Android settings refreshes the grant. Permanently denied access
+uses **Open app settings**.
+
 The SMS permission block disappears once all three SMS grants are present and returns when a grant is revoked. Settings shows a short missing-permission hint rather than a second permission flow. After a permanent denial, the panel links to App info and explains Android's **Allow restricted settings** option for sideloaded apps. SMS permissions are Play-restricted; store distribution is outside this build's scope.
 
 Live relay works with RECEIVE_SMS alone. Without READ_SMS, messages use `live:` IDs and `addr:` conversation identities, with no provider history or unread counts. SIM listing is optional: receive, history, search and replies on the phone default work without READ_PHONE_STATE. A missing required permission returns result 1; a provider failure returns result 5.
@@ -36,6 +41,19 @@ The Mac paints a provisional **Sending** row using the wall-clock submit time; d
 Result 0 means every multipart `sentIntent` reported radio acceptance, not recipient delivery. Android can show a system confirmation for third-party sends; cancellation, carrier rejection or an expired confirmation window can produce result 5. An uncertain reply reads **Not confirmed; it may have been sent** and is never automatically resent.
 
 Replies use the phone's default SMS subscription unless an active one is explicitly chosen. Unknown or inactive choices fail with result 4 and never fall back to another SIM. Notification inline replies always use the phone default. Choices remain in memory. A conversation labels message origins only when it contains two or more known subscriptions.
+
+On Mac, **Choose SIM…** in a conversation requests the optional listing. If the
+phone reports missing permission, the conversation directs to **aniCe →
+Settings → Permissions → SIM selection** on the phone. **Refresh SIMs** reads
+again over the existing secured connection without reconnecting or requesting
+LAN. Provider failure and an unanswered request have separate recovery text;
+successful empty/single-SIM listings stay quiet. Default-SIM replies remain
+available throughout. A denied listing does not establish the active SIM count,
+and configured Android modem count is not treated as subscription inventory.
+Android serializes local/remote SIM-list requests off the presentation thread,
+discards results from replaced or retired requests, and rereads when the
+conversation resumes after a permission change. This Phone state grant is shared
+with incoming SIM-call detection; call answering keeps its own separate grant.
 
 Conversations group by normalized address, including trimmed uppercase alphanumeric senders. A live-only conversation and its later provider thread share one card. Provider copies replace matching live rows one-to-one using address, direction, body digest, a five-second timestamp tolerance and compatible subscriptions. Two SIM copies retain separate rows. Messages sent from the phone's other messaging apps and incoming text MMS appear on the next refresh.
 
