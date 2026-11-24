@@ -74,11 +74,11 @@ class PhoneAudioService : Service() {
                 .getMediaProjection(resultCode, projection)
                 ?: throw IllegalStateException("MediaProjection was not available")
             val native = try {
-                PhoneAudioCapture(this, mediaProjection) { cause ->
+                PhoneAudioCapture(this, mediaProjection, onStopped = { cause ->
                     handler.post {
                         if (request === ticket) controller.captureStopped(ticket, cause)
                     }
-                }
+                }, diagnostics = ticket.diagnostics)
             } catch (error: Exception) {
                 mediaProjection.stop()
                 throw error

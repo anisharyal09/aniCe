@@ -69,6 +69,33 @@ private actor PhoneModelOutput: PhoneAudioOutput {
 @MainActor final class MacPhoneAudioModelTests: XCTestCase {
   private let streamID = "01234567-89ab-4cde-8fab-0123456789ab"
 
+  func testOptInDiagnosticsKeepLocalArrivalCountsAndIgnoreStaleStreams() async throws {
+    let (model, _, channel) = try await harness()
+    defer { model.shutdown() }
+    var time: Int64 = 0
+    var reports = [MacPhoneAudioDiagnosticReport]()
+    model.diagnosticsEnabled = true
+    model.diagnosticNanoTime = { time }
+    model.diagnosticSink = { reports.append($0) }
+    model.setReceiving(true)
+    _ = await model.handle(try start().encode(), on: channel.descriptor)
+    time = 20_000_000
+    _ = await model.handle(try audio(1).encode(), on: channel.descriptor)
+    time = 120_000_000
+    _ = await model.handle(try audio(4).encode(), on: channel.descriptor)
+    model.tick()
+    XCTAssertEqual(reports.count, 1)
+    XCTAssertEqual(reports.first?.fields["arrival_interval_max_us"] as? Int64, 100_000)
+    XCTAssertEqual(reports.first?.fields["sequence_missing_packets"] as? Int64, 2)
+    model.stop()
+    _ = await model.handle(try audio(5).encode(), on: channel.descriptor)
+    XCTAssertEqual(reports.count, 2)
+    XCTAssertEqual(reports.last?.fields["accepted_packets"] as? Int64, 2)
+    let text = String(data: try JSONSerialization.data(withJSONObject: reports.last!.fields), encoding: .utf8)!
+    XCTAssertFalse(text.contains(streamID))
+    XCTAssertFalse(text.contains(channel.descriptor.peer.publicKey))
+  }
+
   func testStartWithoutConsentRepliesDisabledAndKeepsNoOperation() async throws {
     let (model, _, channel) = try await harness()
     defer { model.shutdown() }

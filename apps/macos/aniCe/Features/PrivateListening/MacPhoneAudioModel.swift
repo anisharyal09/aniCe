@@ -16,7 +16,9 @@ import Observation
     var maintenanceActive = false
     var refreshingOutput = false
     var ready = false
-    init(id: String, descriptor: ChannelDescriptor, now: Int64, maintenance: Int64) {
+    let diagnostics: MacPhoneAudioDiagnostics?
+    init(id: String, descriptor: ChannelDescriptor, now: Int64, maintenance: Int64,
+      diagnostics: MacPhoneAudioDiagnostics? = nil) {
       self.id = id
       self.descriptor = descriptor
       startedAt = now
@@ -24,6 +26,7 @@ import Observation
       lastPacketAt = now
       packetMaintenance = maintenance
       maintenanceTotal = maintenance
+      self.diagnostics = diagnostics
     }
   }
 
@@ -48,6 +51,10 @@ import Observation
   private var retiredIDs = Set<String>()
   private var exhaustedIDs = false
   private var sleepObserver: NSObjectProtocol?
+  private var diagnosticRun: Int64 = 0
+  var diagnosticsEnabled = false
+  var diagnosticNanoTime: () -> Int64 = { Int64(DispatchTime.now().uptimeNanoseconds) }
+  var diagnosticSink: (MacPhoneAudioDiagnosticReport) -> Void = { _ in }
   private(set) var receivingEnabled = false
   private(set) var localReady = false
   private(set) var state: Int64 = 0
@@ -210,6 +217,7 @@ import Observation
     state = 0
     status = message
     queuedOutputFrames = 0
+    if let old { reportDiagnostics(old, terminal: true) }
     // Close admission before awaiting native prepare/Stop. Cleanup keeps the other direction excluded.
     receiver.invalidate()
     if cleanup == nil {
@@ -272,8 +280,10 @@ import Observation
       status = "Stop listening to this phone before receiving its audio."
       return .handled
     }
+    diagnosticRun += 1
     let current = Operation(id: id, descriptor: descriptor, now: now(),
-      maintenance: channel?.maintenance?.elapsedMillis ?? 0)
+      maintenance: channel?.maintenance?.elapsedMillis ?? 0,
+      diagnostics: diagnosticsEnabled ? MacPhoneAudioDiagnostics(run: diagnosticRun, nanoTime: diagnosticNanoTime) : nil)
     operation = current
     acceptedPackets = 0
     gapPackets = 0
@@ -325,8 +335,10 @@ import Observation
     reflectMaintenance()
     guard let current = operation, current.ready, message.text(0) == current.id,
       !current.maintenanceActive, !current.refreshingOutput else { return .discarded }
+    let admissionStarted = current.diagnostics?.arrived(sequence: message.number(1))
     let reception = await receiver.receive(message, on: descriptor)
     guard operation === current, matches(descriptor) else { return .discarded }
+    current.diagnostics?.admitted(start: admissionStarted, accepted: reception == .accepted)
     switch reception {
     case .accepted:
       acceptedPackets = receiver.acceptedPackets
@@ -337,6 +349,7 @@ import Observation
       guard operation === current, matches(descriptor) else { return .discarded }
       outputResyncs = diagnostics.resyncs
       queuedOutputFrames = diagnostics.queuedFrames
+      current.diagnostics?.observedOutput(diagnostics)
       return .handled
     case .outputUnavailable:
       stop(reason: 6, message: "Mac audio output stopped. Start phone audio again.", notify: true)
@@ -360,6 +373,7 @@ import Observation
 
   func tick() {
     guard let current = operation else { return }
+    reportDiagnostics(current)
     reflectMaintenance()
     guard operation === current, channel?.maintenance?.active != true else { return }
     let total = channel?.maintenance?.elapsedMillis ?? 0
@@ -380,6 +394,7 @@ import Observation
     let active = channel.maintenance?.active == true
     let completed = !active && total > current.maintenanceTotal
     guard active != current.maintenanceActive || completed else { return }
+    current.diagnostics?.resetArrivalBaseline()
     current.maintenanceActive = active
     current.maintenanceTotal = total
     state = active ? 4 : (current.ready ? 2 : 1)
@@ -398,6 +413,13 @@ import Observation
       queuedOutputFrames = 0
       if !available { stop(reason: 6, message: "Mac audio output ended during LAN renewal.") }
     }
+  }
+
+  private func reportDiagnostics(_ current: Operation, terminal: Bool = false) {
+    guard let diagnostics = current.diagnostics, terminal || diagnostics.enabled,
+      let report = diagnostics.report(state: state,
+      maintenance: channel?.maintenance?.active == true, terminal: terminal) else { return }
+    diagnosticSink(report)
   }
 
   private func reply(_ id: String, _ code: Int64) {

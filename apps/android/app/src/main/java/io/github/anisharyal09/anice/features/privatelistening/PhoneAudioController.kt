@@ -39,7 +39,7 @@ internal interface PhoneAudioCaptureControl {
     val available: Boolean get() = true
 }
 
-internal data class PhoneAudioPacket(val sequence: Long, val pcm: ByteArray)
+internal data class PhoneAudioPacket(val sequence: Long, val pcm: ByteArray, val capturedAtNanos: Long? = null)
 
 /** Keeps three unsent packets plus at most one in-flight send; overflow drops the oldest unsealed PCM. */
 internal class PhoneAudioSendWindow(private val capacity: Int = UNSENT_CAPACITY) {
@@ -69,6 +69,7 @@ internal class PhoneAudioRequest(
     val descriptor: ChannelDescriptor,
     val startedAt: Long,
     val maintenanceAtStart: Long,
+    val diagnostics: PhoneAudioDiagnostics? = null,
 ) {
     @Volatile var ready = false
     var captureStarted = false
@@ -103,6 +104,11 @@ class PhoneAudioController internal constructor(
     private var sendJob: Job? = null
     private var tickJob: Job? = null
     private var generation = 0
+    private var diagnosticRun = 0L
+    internal var diagnosticsEnabled = false
+    internal var diagnosticNanoTime: () -> Long = System::nanoTime
+    internal var diagnosticSink: (PhoneAudioDiagnosticReport) -> Unit = {}
+    internal var diagnosticActivity: () -> Triple<Boolean?, Boolean?, Boolean?> = { Triple(null, null, null) }
 
     var state by mutableStateOf(0L)
         private set
@@ -164,7 +170,8 @@ class PhoneAudioController internal constructor(
             if (!authorization.unused || !admitStart()) return
             val channel = channel ?: return
             val request = PhoneAudioRequest(java.util.UUID.randomUUID().toString(), channel.descriptor,
-                now(), channel.maintenance?.elapsedMillis ?: 0)
+                now(), channel.maintenance?.elapsedMillis ?: 0,
+                if (diagnosticsEnabled) PhoneAudioDiagnostics(++diagnosticRun, diagnosticNanoTime) else null)
             synchronized(lock) { current = request }
             active = true
             state = 1
@@ -223,6 +230,7 @@ class PhoneAudioController internal constructor(
             terminal = reverse(PrivateListeningMessage(4, listOf(Cbor.Text(request.id), Cbor.Integer(reason))))
             pump()
         }
+        if (request != null) reportDiagnostics(request, terminal = true)
         reflectControlPending()
     }
 
@@ -343,22 +351,28 @@ class PhoneAudioController internal constructor(
 
     /** Called from the capture worker; never blocks on LAN and never touches presentation state. */
     internal fun capturePacket(request: PhoneAudioRequest, sequence: Long, pcm: ByteArray) {
+        var wakeScheduledAt: Long? = null
         synchronized(lock) {
             if (current !== request || !request.ready || pcm.size != PrivateListeningMessage.PCM_BYTES) return
             if (sequence <= request.lastCapturedSequence) return
             request.lastCapturedSequence = sequence
+            val capturedAt = request.diagnostics?.captured()
             if (channel?.maintenance?.active == true) {
                 request.droppedPackets += 1
+                request.diagnostics?.maintenanceDiscarded(1)
             } else {
                 val before = window.dropped
-                window.offer(PhoneAudioPacket(sequence, pcm))
+                window.offer(PhoneAudioPacket(sequence, pcm, capturedAt))
                 request.droppedPackets += window.dropped - before
+                request.diagnostics?.queued(window.size, window.dropped - before)
             }
             // At most one Main wake-up is outstanding, even when the capture worker keeps running.
             if (packetWakeScheduled) return
             packetWakeScheduled = true
+            wakeScheduledAt = request.diagnostics?.timestamp()
         }
         scope.launch {
+            if (current === request) request.diagnostics?.presentationReady(wakeScheduledAt)
             synchronized(lock) {
                 packetWakeScheduled = false
                 current?.let { droppedPackets = it.droppedPackets }
@@ -459,6 +473,7 @@ class PhoneAudioController internal constructor(
         request.maintenanceTotal = total
         synchronized(lock) {
             request.droppedPackets += window.size
+            request.diagnostics?.maintenanceDiscarded(window.size)
             window.clear()
             droppedPackets = request.droppedPackets
         }
@@ -488,6 +503,7 @@ class PhoneAudioController internal constructor(
 
     internal fun tick() {
         val request = current ?: return
+        reportDiagnostics(request)
         reflectMaintenance()
         if (current !== request) return
         if (channel?.maintenance?.active != true && (!request.ready || !request.capturePrepared)) {
@@ -523,28 +539,41 @@ class PhoneAudioController internal constructor(
                 while (token == generation && this@PhoneAudioController.channel === channel) {
                     if (channel.maintenance?.active == true) break
                     val request = current
+                    var capturedAt: Long? = null
                     val message = synchronized(lock) {
                         val boundary = terminal
                         if (boundary != null) { terminal = null; boundary }
                         else outgoing.removeFirstOrNull()
                             ?: window.take()?.let { packet ->
                                 if (request?.ready == true) {
+                                    capturedAt = packet.capturedAtNanos
                                     reverse(PrivateListeningMessage.audio(request.id, packet.sequence, packet.pcm))
                                 } else null
                             }
                     } ?: break
                     inFlightKind = message.kind
                     reflectControlPending()
+                    val diagnostics = if (message.kind == 3L) request?.diagnostics else null
+                    diagnostics?.dequeued(capturedAt)
+                    val encodeStarted = diagnostics?.timestamp()
+                    val encoded = message.encode()
+                    diagnostics?.encoded(encodeStarted)
+                    val submissionStarted = diagnostics?.timestamp()
                     try {
-                        channel.sendData(message.encode())
+                        channel.sendData(encoded)
+                        diagnostics?.submitted(submissionStarted, succeeded = true)
                         if (token == generation && message.kind == 3L && request != null) request.sentPackets += 1
                     } catch (_: SessionBackpressure) {
+                        diagnostics?.submitted(submissionStarted, succeeded = false)
+                        diagnostics?.backpressured()
                         if (token == generation) {
                             retainControlOrDropAudio(message, request)
                             waitingForCapacity = true
                         }
                         break
                     } catch (error: CancellationException) {
+                        diagnostics?.submitted(submissionStarted, succeeded = false)
+                        diagnostics?.sendCancelled()
                         if (token == generation) retainControlOrDropAudio(message, request)
                         throw error
                     } finally {
@@ -591,6 +620,21 @@ class PhoneAudioController internal constructor(
     private fun reflectControlPending() {
         controlPending = terminal != null || outgoing.isNotEmpty() ||
             (inFlightKind != null && inFlightKind != 3L)
+    }
+
+    private fun reportDiagnostics(request: PhoneAudioRequest, terminal: Boolean = false) {
+        val diagnostics = request.diagnostics ?: return
+        if (!terminal && !diagnostics.enabled) return
+        // Observational failures must never stop capture, change consent or block native teardown.
+        try {
+            val activity = diagnosticActivity()
+            val context = synchronized(lock) {
+                PhoneAudioDiagnosticContext(state, window.size, inFlightKind == 3L,
+                    channel?.maintenance?.active == true, request.control?.available,
+                    activity.first, activity.second, activity.third)
+            }
+            diagnostics.report(context, terminal)?.let(diagnosticSink)
+        } catch (_: Exception) {}
     }
 
     private fun reverse(message: PrivateListeningMessage) = PhoneAudioMessage.from(message)

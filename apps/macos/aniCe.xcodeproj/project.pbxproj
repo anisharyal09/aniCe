@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E90800000000000000000001 /* MacPhoneAudioDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90800000000000000000002; };
+		E90800000000000000000003 /* MacPhoneAudioDiagnosticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90800000000000000000004; };
 		E90700000000000000000001 /* PhoneAudioWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90700000000000000000002; };
 		E90700000000000000000003 /* MacPhoneAudioOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90700000000000000000004; };
 		E90700000000000000000005 /* PhoneAudioWireTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90700000000000000000006; };
@@ -223,6 +225,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		E90800000000000000000002 /* MacPhoneAudioDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/PrivateListening/MacPhoneAudioDiagnostics.swift"; sourceTree = SOURCE_ROOT; };
+		E90800000000000000000004 /* MacPhoneAudioDiagnosticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/PrivateListening/MacPhoneAudioDiagnosticsTests.swift"; sourceTree = SOURCE_ROOT; };
 		E90700000000000000000002 /* PhoneAudioWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/PrivateListening/PhoneAudioWire.swift"; sourceTree = SOURCE_ROOT; };
 		E90700000000000000000004 /* MacPhoneAudioOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/PrivateListening/MacPhoneAudioOutput.swift"; sourceTree = SOURCE_ROOT; };
 		E90700000000000000000006 /* PhoneAudioWireTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/PrivateListening/PhoneAudioWireTests.swift"; sourceTree = SOURCE_ROOT; };
@@ -574,6 +578,7 @@
 				E90700000000000000000006 /* PhoneAudioWireTests.swift */,
 				E9070000000000000000000A /* PhoneAudioReceiverTests.swift */,
 				E90700000000000000000010 /* MacPhoneAudioModelTests.swift */,
+				E90800000000000000000004 /* MacPhoneAudioDiagnosticsTests.swift */,
 				D10000000000000000000012 /* KeyboardTrackpadTests */,
 				AC0100000000000000000004 /* ../../protocol/test-vectors/session/control-vectors.json */,
 				0B60CA9C769D5F9AC88A702A /* ../../protocol/test-vectors/session/record-vectors.json */,
@@ -667,6 +672,7 @@
 				E90700000000000000000004 /* MacPhoneAudioOutput.swift */,
 				E90700000000000000000008 /* PhoneAudioReceiver.swift */,
 				E9070000000000000000000E /* MacPhoneAudioModel.swift */,
+				E90800000000000000000002 /* MacPhoneAudioDiagnostics.swift */,
 				D1000000000000000000000A /* KeyboardTrackpad */,
 				D50000000000000000000003 /* DeskDeck */,
                 D70000000000000000000007 /* DndSync */,
@@ -1034,6 +1040,7 @@
 				E90700000000000000000003 /* MacPhoneAudioOutput.swift in Sources */,
 				E90700000000000000000007 /* PhoneAudioReceiver.swift in Sources */,
 				E9070000000000000000000D /* MacPhoneAudioModel.swift in Sources */,
+				E90800000000000000000001 /* MacPhoneAudioDiagnostics.swift in Sources */,
 				E90200000000000000000001 /* MacAudioTapEngine.swift in Sources */,
 				E90200000000000000000003 /* PrivateListeningRing.c in Sources */,
 				E90200000000000000000005 /* PrivateListeningPacketizer.swift in Sources */,
@@ -1097,6 +1104,7 @@
 				E90700000000000000000005 /* PhoneAudioWireTests.swift in Sources */,
 				E90700000000000000000009 /* PhoneAudioReceiverTests.swift in Sources */,
 				E9070000000000000000000F /* MacPhoneAudioModelTests.swift in Sources */,
+				E90800000000000000000003 /* MacPhoneAudioDiagnosticsTests.swift in Sources */,
 				E90200000000000000000009 /* PrivateListeningCaptureTests.swift in Sources */,
 				E90300000000000000000005 /* MacPrivateListeningTests.swift in Sources */,
 				D40000000000000000000003 /* MacPhoneInputTests.swift in Sources */,

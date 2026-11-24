@@ -21,6 +21,59 @@ import org.junit.Test
 import kotlin.coroutines.CoroutineContext
 
 class PhoneAudioControllerTests {
+    @Test fun passiveDiagnosticsIdentifyPresentationStallAndNeverCarryAudioOrPeerMetadata() = runBlocking {
+        val dispatcher = QueuedDispatcher()
+        val h = Harness(dispatcher)
+        var nanos = 0L
+        val reports = mutableListOf<PhoneAudioDiagnosticReport>()
+        h.owner.diagnosticsEnabled = true
+        h.owner.diagnosticNanoTime = { nanos }
+        h.owner.diagnosticSink = { reports.add(it) }
+        h.enable()
+        h.begin()
+        dispatcher.drain()
+        val ticket = requireNotNull(h.request)
+        h.owner.serviceAttached(ticket, h, Control())
+        h.owner.handle(h.channel.descriptor, result(ticket.id, 0))
+        h.owner.capturePrepared(ticket)
+        for (sequence in 1L..10L) {
+            nanos = sequence * 20_000_000
+            h.owner.capturePacket(ticket, sequence, ByteArray(3840))
+        }
+        nanos = 300_000_000
+        dispatcher.drain()
+        h.owner.tick()
+        val row = reports.single().fields
+        assertEquals(10L, row["captured_packets"])
+        assertEquals(7L, row["queue_replaced_packets"])
+        assertEquals(280_000L, row["presentation_wait_max_us"])
+        assertEquals(20_000L, row["capture_interval_max_us"])
+        assertEquals(3L, row["submitted_packets"])
+        assertEquals(140_000L, row["queue_age_max_us"])
+        h.owner.stop()
+        dispatcher.drain()
+        assertEquals(2, reports.size)
+        assertEquals(true, reports.last().fields["terminal"])
+        assertFalse(reports.toString().contains("Fixture Mac"))
+        assertFalse(reports.toString().contains(ticket.id))
+    }
+
+    @Test fun diagnosticSinkFailureCannotRetireOrReviveCapture() = runBlocking {
+        val h = Harness()
+        h.owner.diagnosticsEnabled = true
+        h.owner.diagnosticSink = { error("diagnostic failure") }
+        h.enable()
+        h.begin()
+        val ticket = requireNotNull(h.request)
+        h.owner.serviceAttached(ticket, h, Control())
+        h.owner.handle(h.channel.descriptor, result(ticket.id, 0))
+        h.owner.capturePrepared(ticket)
+        h.owner.tick()
+        assertTrue(h.owner.active)
+        h.owner.stop()
+        assertFalse(h.owner.active)
+    }
+
     @Test fun sendWindowKeepsThreeUnsentAndDropsTheOldest() {
         val window = PhoneAudioSendWindow()
         for (sequence in 1L..5L) window.offer(PhoneAudioPacket(sequence, ByteArray(4)))

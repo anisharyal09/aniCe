@@ -151,6 +151,61 @@ Queries themselves can perturb scheduling. Restricted `/proc` or unsupported/ven
 
 This tool cannot prove speaker privacy, physical audibility, source-to-ear delay or file throughput. See [Private Listening behavior](features/PRIVATE_LISTENING.md) and [performance limits](PERFORMANCE.md).
 
+## Opt-in reverse-path timing evidence
+
+Android-to-Mac Phone Audio can emit bounded local timing counters without
+recording audio. Both platforms require an explicit opt-in and the exact Transfer
+Preview identity; ordinary and production builds emit nothing.
+
+On Android, set the preview's diagnostic log tag before the process starts:
+
+```sh
+adb -s PHONE_SERIAL shell setprop log.tag.aniCePhoneAudioDiag DEBUG
+adb -s PHONE_SERIAL shell am force-stop io.github.anisharyal09.anice.preview.transfer
+adb -s PHONE_SERIAL logcat -c
+adb -s PHONE_SERIAL logcat -s aniCePhoneAudioDiag:D > build/reverse-android.log
+```
+
+On the Mac, launch the preview with `ANICE_PHONE_AUDIO_DIAGNOSTICS=1` and collect
+its unified log by the fixed prefix:
+
+```sh
+/usr/bin/log stream --predicate 'eventMessage CONTAINS "phone_audio_diag "' > build/reverse-mac.log
+```
+
+Use the absolute `/usr/bin/log`: zsh's `log` builtin shadows it in some shells.
+
+Start capture before beginning the operation; both collection commands run until you
+stop them with Ctrl-C, so start them before the phone operation and stop them after
+Stop. An operation emits at most one
+report per second, at most 600 reports, and no further reports after ten minutes,
+plus one terminal report at Stop. Unknown rows and oversized inputs are rejected
+rather than repaired. Summarize both logs into a new file; existing files and
+symlinks are refused and the result is owner-readable only:
+
+```sh
+python3 scripts/summarize-phone-audio.py \
+  --android-log build/reverse-android.log --mac-log build/reverse-mac.log \
+  --output build/reverse-timing.json
+```
+
+The summary keeps only allowlisted counters, booleans and local maxima: Android
+read time, capture interval, main-thread presentation wait, queue age, encode and
+submission; Mac arrival interval, receiver admission, sequence gaps and native
+output backlog/resync/completion counters. It drops source titles, peer or stream
+identifiers, addresses and raw lines. Each sample carries per-window maxima and
+counter deltas, so a report alone does not identify the phase; pair it with your
+own notes for foreground, Recents, Home and screen-off.
+
+These are local observations, not a diagnosis. Phone and Mac clocks are not
+synchronized, so arrival intervals cannot be subtracted from capture intervals.
+Submission completion is not authenticated remote delivery, and Mac empty-queue
+transitions and resyncs are not directly measured audible gaps. Capture can be
+starved by platform scheduling, the sender can be delayed by main-thread work, and
+the output can underrun on its own; only the combination plus a listening report
+identifies the bottleneck. Diagnostics themselves can perturb scheduling, and
+these counters never establish acceptance or measured source-to-ear delay.
+
 ## Non-playback device regressions
 
 `PrivateListeningDeviceRegressionTests` requires the explicitly selected Android

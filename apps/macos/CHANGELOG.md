@@ -6,6 +6,9 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Add opt-in, payload-free reverse arrival and output evidence: packet arrival
+  intervals, receiver admission, sequence gaps, backlog, resyncs and playback
+  callbacks, bounded per operation and emitted only in the exact preview.
 - Add Android-to-Mac Phone Audio receiving behind default-off consent bound to the
   local identity and full phone credential, with bounded capability/result sending
   and mutual exclusion with Mac-to-phone listening through native cleanup.

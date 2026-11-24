@@ -87,3 +87,8 @@ sending and Mac-to-phone listening are mutually exclusive in app assembly.
 Physical device behaviour remains to be verified with the
 [reverse checklist](../../docs/PRIVATE_LISTENING_TESTING.md); this stage is not
 evidence of a physical pass, private Mac output or source-app muting.
+
+The preview may additionally emit bounded local timing counters on each side.
+They add no envelope kind or field, never carry PCM or peer/stream identity, stop
+after ten minutes and do not change consent, routing or acceptance. Their local
+clocks are not synchronized, so they identify where time is lost, not why.

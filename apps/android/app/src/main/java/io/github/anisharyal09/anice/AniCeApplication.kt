@@ -24,6 +24,7 @@ class AniCeApplication : Application() {
 
     private val mediaNotification by lazy { io.github.anisharyal09.anice.features.nowplaying.MediaNotification(this,nowPlaying) }
     private var startedActivities = 0
+    private var resumedActivities = 0
     override fun onCreate() {
         startupMark("application_on_create")
         super.onCreate()
@@ -31,8 +32,8 @@ class AniCeApplication : Application() {
             override fun onActivityStarted(activity: android.app.Activity) { startedActivities++; updates.foregroundStarted() }
             override fun onActivityStopped(activity: android.app.Activity) { startedActivities = maxOf(0, startedActivities - 1); updates.foregroundStopped() }
             override fun onActivityCreated(activity: android.app.Activity, state: android.os.Bundle?) = Unit
-            override fun onActivityResumed(activity: android.app.Activity) = Unit
-            override fun onActivityPaused(activity: android.app.Activity) = Unit
+            override fun onActivityResumed(activity: android.app.Activity) { resumedActivities++ }
+            override fun onActivityPaused(activity: android.app.Activity) { resumedActivities = maxOf(0, resumedActivities - 1) }
             override fun onActivitySaveInstanceState(activity: android.app.Activity, state: android.os.Bundle) = Unit
             override fun onActivityDestroyed(activity: android.app.Activity) = Unit
         })
@@ -211,6 +212,17 @@ class AniCeApplication : Application() {
     val privateListening get() = listeningOwner.value
     private val phoneAudioOwner: Lazy<io.github.anisharyal09.anice.features.privatelistening.PhoneAudioController> = lazy {
         io.github.anisharyal09.anice.features.privatelistening.PhoneAudioController().also { reverse ->
+            val probe = io.github.anisharyal09.anice.features.privatelistening.PhoneAudioDiagnostics
+            reverse.diagnosticsEnabled = probe.allowed(
+                applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0,
+                packageName, android.util.Log.isLoggable(probe.TAG, android.util.Log.DEBUG))
+            reverse.diagnosticActivity = {
+                Triple(startedActivities > 0, resumedActivities > 0,
+                    getSystemService(android.os.PowerManager::class.java).isInteractive)
+            }
+            reverse.diagnosticSink = { report ->
+                android.util.Log.d(probe.TAG, probe.PREFIX + org.json.JSONObject(report.fields).toString())
+            }
             reverse.forwardActive = {
                 listeningOwner.isInitialized() && listeningOwner.value.busy
             }

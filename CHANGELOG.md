@@ -10,6 +10,10 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
+- Add opt-in, payload-free Phone Audio timing evidence for the prepaid reverse
+  path: bounded Android capture/sender and Mac arrival/output counters, plus a
+  filtered summarizer, so Recents/background stutter can be attributed without
+  recording audio or changing routing.
 - Add Android-to-Mac Phone Audio behind separate local consent: a single-use
   projection prompt, `mediaProjection` foreground service, bounded sender,
   credential-scoped Mac receiving opt-in and mutual exclusion with Mac-to-phone

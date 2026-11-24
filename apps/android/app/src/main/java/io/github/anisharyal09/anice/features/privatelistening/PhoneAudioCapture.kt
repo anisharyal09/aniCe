@@ -45,6 +45,7 @@ internal class PhoneAudioCapture(
     private val context: Context,
     private val projection: MediaProjection,
     private val onStopped: (PhoneAudioStopCause) -> Unit = {},
+    private val diagnostics: PhoneAudioDiagnostics? = null,
 ) : AutoCloseable {
     private val stopped = AtomicBoolean(false)
     private val notified = AtomicBoolean(false)
@@ -94,6 +95,10 @@ internal class PhoneAudioCapture(
             native.startRecording()
             check(native.recordingState == AudioRecord.RECORDSTATE_RECORDING)
             record = native
+            diagnostics?.let {
+                val effective = try { native.bufferSizeInFrames } catch (_: Exception) { null }
+                it.prepared(maxOf(minimum, 15360) / 4, effective)
+            }
         } catch (error: Exception) {
             native.release()
             finishLocked(PhoneAudioStopCause.FAILURE)
@@ -113,12 +118,15 @@ internal class PhoneAudioCapture(
         var consecutiveErrors = 0
         try {
             while (true) {
+                val readStarted = diagnostics?.timestamp()
                 val count = try {
                     native.read(scratch, 0, scratch.size, AudioRecord.READ_BLOCKING)
                 } catch (_: IllegalStateException) {
+                    diagnostics?.readFinished(readStarted, -1, stopped.get())
                     if (!stopped.get()) readErrors++
                     break
                 }
+                diagnostics?.readFinished(readStarted, count, stopped.get())
                 when (PhoneAudioReadPolicy.decide(stopped.get(), count)) {
                     PhoneAudioReadDecision.CONTINUE -> {
                         emptyReads = 0
@@ -130,6 +138,7 @@ internal class PhoneAudioCapture(
                                     packets++
                                 } catch (_: Exception) {
                                     emissionFailures++
+                                    diagnostics?.emissionFailed()
                                 }
                             }
                         }

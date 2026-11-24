@@ -103,8 +103,17 @@ struct AniCeApp: App {
     _lan = State(initialValue: lan)
     let privateListening = MacPrivateListeningModel(preferences: IdentityView.isTesting ? nil : .standard)
     _privateListening = State(initialValue: privateListening)
-    let phoneAudio = MacPhoneAudioModel(preferences: IdentityView.isTesting ? nil : .standard,
+    let phoneAudioDiagnostics = !IdentityView.isTesting && MacPhoneAudioDiagnostics.runtimeEnabled
+    let phoneAudio = MacPhoneAudioModel(
+      receiver: PhoneAudioReceiver(output: MacPhoneAudioOutput(diagnosticsEnabled: phoneAudioDiagnostics)),
+      preferences: IdentityView.isTesting ? nil : .standard,
       localFingerprint: { try identity.service.publicIdentity().fingerprint })
+    phoneAudio.diagnosticsEnabled = phoneAudioDiagnostics
+    phoneAudio.diagnosticSink = { report in
+      guard let data = try? JSONSerialization.data(withJSONObject: report.fields, options: [.sortedKeys]),
+        let value = String(data: data, encoding: .utf8) else { return }
+      NSLog("%@", MacPhoneAudioDiagnostics.prefix + value)
+    }
     _phoneAudio = State(initialValue: phoneAudio)
     phoneAudio.forwardActive = { [weak privateListening] in privateListening?.busy ?? false }
     phoneAudio.onActiveChanged = { [weak privateListening] active in

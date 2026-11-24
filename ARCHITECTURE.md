@@ -110,7 +110,10 @@ native preparation/cleanup, retired stream IDs and output-device loss. Both
 directions refuse conflicting starts, including native cleanup, rather than
 silently replacing one another. Retained-channel renewal clears obsolete audio;
 actual retirement never restarts capture. The phone is not muted and Mac output
-is not promised private. See [Phone Audio v1](protocol/private-listening/PHONE_AUDIO.md).
+is not promised private. The exact preview can emit bounded local timing counters
+and the repository can summarize them without audio; these add no envelope field,
+and their local clocks and queue states do not attribute a root cause. See
+[Phone Audio v1](protocol/private-listening/PHONE_AUDIO.md).
 
 ## Application DATA and source organization
 

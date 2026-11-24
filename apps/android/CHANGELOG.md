@@ -6,6 +6,9 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
+- Add opt-in, payload-free reverse diagnostic counters for capture reads,
+  capture intervals, main-thread presentation delay, queue age, encoding and
+  submission; limit each operation to 600 one-second reports and ten minutes.
 - Add Android-to-Mac Phone Audio with an explicit single-use screen-capture
   prompt, a `mediaProjection` foreground service, a bounded three-packet send
   window, shared LAN work ownership and mutual exclusion with Mac-to-phone listening.

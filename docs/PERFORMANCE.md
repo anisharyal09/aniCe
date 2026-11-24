@@ -159,6 +159,25 @@ rather than treating every healthy buffer above an arbitrary 200 ms as unhealthy
 Fresh advancing health, underrun/staleness contraction, negotiated file limits
 and existing delayed-path qualification remain authoritative.
 
+## Phone Audio sender and receiver
+
+Android playback capture reads 960-frame PCM16 packets on an audio-priority
+service thread and offers them to a three-packet unsent window plus at most one
+submission. Coalesced presentation wake-ups and the send loop currently share
+`Dispatchers.Main.immediate`, so UI-thread delay can replace queued packets; the
+capture worker itself never blocks on LAN. Mac admits newest-audio packets and
+keeps the newest 60 ms after a receiver stall, bounded by callback capacity.
+Neither path persists PCM.
+
+The preview's opt-in counters separate capture read time, capture interval,
+main-thread presentation wait, queue age at dequeue, encoding and submission on
+Android, and arrival interval, receiver admission, sequence gaps and native
+output backlog/resync/completion on the Mac. All values are local elapsed
+intervals; phone and Mac clocks are not synchronized, submission completion is
+not measured delivery, and Mac empty-queue transitions are not measured audible
+gaps. Correlating them with manual phase notes can show which stage stalls, not
+why, and the instrumentation itself can perturb scheduling.
+
 ## Observed costs
 
 Measured on Debug builds, the optional Mac Home/companion Now Playing display used about 15–20% of one app CPU during playback, peaking near 35% with a concurrent phone-to-Mac transfer. Treat these as observations from earlier builds, not targets.

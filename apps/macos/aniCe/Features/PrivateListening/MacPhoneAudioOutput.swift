@@ -11,6 +11,10 @@ struct PhoneAudioOutputDiagnostics: Equatable, Sendable {
   let queuedFrames: Int
   let resyncs: Int
   let unavailableDrops: Int
+  var scheduledPackets: Int64? = nil
+  var playedBackCallbacks: Int64? = nil
+  var emptyPendingTransitions: Int64? = nil
+  var completionMaximumMicros: Int64? = nil
 }
 
 protocol PhoneAudioOutput: Actor {
@@ -30,6 +34,7 @@ extension PhoneAudioOutput {
 }
 
 actor MacPhoneAudioOutput: PhoneAudioOutput {
+  private let diagnosticsEnabled: Bool
   private static let maximumPending = 6
   private let engine = AVAudioEngine()
   private let player = AVAudioPlayerNode()
@@ -42,6 +47,13 @@ actor MacPhoneAudioOutput: PhoneAudioOutput {
   private(set) var resyncs = 0
   private(set) var unavailableDrops = 0
   private let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2)!
+  private var scheduledPackets: Int64 = 0
+  private var playedBackCallbacks: Int64 = 0
+  private var emptyPendingTransitions: Int64 = 0
+  private var completionMaximumMicros: Int64?
+  private var diagnosticStartedAt: UInt64?
+
+  init(diagnosticsEnabled: Bool = false) { self.diagnosticsEnabled = diagnosticsEnabled }
 
   func prepare() throws {
     stop()
@@ -55,6 +67,11 @@ actor MacPhoneAudioOutput: PhoneAudioOutput {
       prepared = true
       resyncs = 0
       unavailableDrops = 0
+      scheduledPackets = 0
+      playedBackCallbacks = 0
+      emptyPendingTransitions = 0
+      completionMaximumMicros = nil
+      diagnosticStartedAt = diagnosticsEnabled ? DispatchTime.now().uptimeNanoseconds : nil
       let configurationEpoch = configurationGeneration
       observer = NotificationCenter.default.addObserver(
         forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
@@ -100,15 +117,33 @@ actor MacPhoneAudioOutput: PhoneAudioOutput {
       resyncs += 1
     }
     let epoch = generation
+    let scheduledAt: UInt64?
+    if let diagnosticStartedAt {
+      let time = DispatchTime.now().uptimeNanoseconds
+      if time - diagnosticStartedAt <= 600_000_000_000 {
+        scheduledAt = time
+        scheduledPackets += 1
+      } else {
+        self.diagnosticStartedAt = nil
+        scheduledAt = nil
+      }
+    } else { scheduledAt = nil }
     pending += 1
     player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-      Task { await self?.completed(epoch) }
+      Task { await self?.completed(epoch, scheduledAt: scheduledAt) }
     }
     return .accepted
   }
 
-  private func completed(_ epoch: Int) {
-    if epoch == generation { pending = max(0, pending - 1) }
+  private func completed(_ epoch: Int, scheduledAt: UInt64?) {
+    guard epoch == generation else { return }
+    if let scheduledAt {
+      playedBackCallbacks += 1
+      if pending == 1 { emptyPendingTransitions += 1 }
+      let duration = Int64((DispatchTime.now().uptimeNanoseconds - scheduledAt) / 1000)
+      completionMaximumMicros = max(completionMaximumMicros ?? 0, duration)
+    }
+    pending = max(0, pending - 1)
   }
 
   /// Retained-channel renewal discards old output without acquiring a new device or permission.
@@ -147,6 +182,10 @@ actor MacPhoneAudioOutput: PhoneAudioOutput {
   var queuedFrames: Int { pending * 960 }
   var diagnostics: PhoneAudioOutputDiagnostics {
     PhoneAudioOutputDiagnostics(queuedFrames: queuedFrames, resyncs: resyncs,
-      unavailableDrops: unavailableDrops)
+      unavailableDrops: unavailableDrops,
+      scheduledPackets: diagnosticsEnabled ? scheduledPackets : nil,
+      playedBackCallbacks: diagnosticsEnabled ? playedBackCallbacks : nil,
+      emptyPendingTransitions: diagnosticsEnabled ? emptyPendingTransitions : nil,
+      completionMaximumMicros: completionMaximumMicros)
   }
 }
