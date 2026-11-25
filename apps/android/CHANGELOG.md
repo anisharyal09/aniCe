@@ -6,6 +6,9 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
+- Refine Android Mac Desk Deck layout: keep the status header **Details** action on one row until narrow/large-text widths require wrapping, surface **Ping Mac** alongside **Find Mac**, and group **Output device** (full-width selector with active checkmark menu and dedicated refresh action) with the **Output volume** card and percentage pill.
+- Bound release-note Markdown blocks, lines and inline spans in linear time, add horizontal rules and duplicate version-heading suppression on Android, and dismiss update review on activity termination or stale notification intents without cancelling active downloads.
+- Expand native transfer progress with current-file context and private visibility, update state/job actions immediately and open only the original active transfer from a notice; bind legacy Bluetooth continuation to that operation.
 - Place Find Mac below Desk Deck status with independent capability/readiness and peer-scoped feedback; move incoming Find Phone notification recovery to Permissions and keep its native ringing service/receiver unchanged.
 - Redirect saved Find Device routes, order and favourites into one Desk Deck entry; preserve explicitly empty favourites, wrap Mac choices and keep compact last-reading timestamps visible.
 - Add direct SIM-selection permission recovery and refresh choices on conversation resume; serialize local/remote SIM-list reads off the UI thread and fence obsolete request results.

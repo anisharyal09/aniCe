@@ -1,6 +1,6 @@
 # Find Device
 
-Request a native alert on a connected trusted peer. On Android, open **Features → Mac Desk Deck → Find Mac** for the selected trusted Mac; the standalone Find Device launcher has been removed. On Mac, use **Features → Find Device** to ring the phone. LAN is preferred when both channels support the feature; otherwise BLE is used. Find Device does not establish a connection or track location.
+Request a native alert on a connected trusted peer. On Android, open **Features → Mac Desk Deck → Find Mac** (**Ping Mac**) for the selected trusted Mac; the standalone Find Device launcher has been removed. On Mac, use **Features → Find Device** to ring the phone. LAN is preferred when both channels support the feature; otherwise BLE is used. Find Device does not establish a connection or track location.
 
 Find Mac readiness is separate from Desk Deck readings: it needs its own advertised capability on an already-secured connection, not a telemetry subscription or fresh sample. Old Android Find Device routes and saved shortcuts redirect to Desk Deck and deduplicate at the first saved position. Refreshing Desk Deck readings does not repeat a Find request.
 

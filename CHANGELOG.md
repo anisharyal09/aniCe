@@ -10,6 +10,8 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Bound release-note Markdown parsing and native inline styling across Mac and Android, and prevent dismissed, closed, terminated or stale-notification update reviews from resurrecting or duplicating.
+- Refine native notification attribution, quiet updates and original-operation actions for mirrored alerts, Messages and file transfers without new wire messages or notification history.
 - Merge Android Find Mac into Desk Deck, migrate saved shortcuts and routes, and retain independent Find Phone reception without changing the alert contract.
 - Align persistent preference switches across Mac and Android, preserving existing consent, permission and saved-state behavior.
 - Share one theme-aware segmented control for mutually exclusive navigation and filters on both platforms.

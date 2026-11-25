@@ -15,6 +15,8 @@ private final class MirrorNotificationCenterSpy: MacMirrorNotificationCenter, @u
   var addError: Error?
   var delayNextCategoryRead = false
   var pendingCategoryRead: (@Sendable (MacMirrorCategorySnapshot) -> Void)?
+  var holdAdds = false
+  var pendingAdds: [@Sendable (Error?) -> Void] = []
 
   func mirrorPendingIdentifiers(completionHandler: @escaping @Sendable ([String]) -> Void) { completionHandler(pending.map(\.identifier)) }
   func mirrorDeliveredIdentifiers(completionHandler: @escaping @Sendable ([String]) -> Void) { completionHandler(delivered.map { $0.request.identifier }) }
@@ -34,7 +36,8 @@ private final class MirrorNotificationCenterSpy: MacMirrorNotificationCenter, @u
   func setMirrorCategories(_ categories: Set<UNNotificationCategory>) { registered = categories }
   func add(_ request: UNNotificationRequest, withCompletionHandler completionHandler: (@Sendable (Error?) -> Void)?) {
     added.append(request)
-    completionHandler?(addError)
+    if holdAdds, let completionHandler { pendingAdds.append(completionHandler) }
+    else { completionHandler?(addError) }
   }
   func removeDeliveredNotifications(withIdentifiers identifiers: [String]) { removedDelivered.append(identifiers) }
   func removePendingNotificationRequests(withIdentifiers identifiers: [String]) { removedPending.append(identifiers) }
@@ -172,6 +175,82 @@ final class NotificationMirrorTests: XCTestCase {
     await waitFor("notification with source icon") { center.added.count == 1 }
     let request = try XCTUnwrap(center.added.first)
     XCTAssertEqual(request.content.attachments.map(\.identifier), ["source-app-icon"])
+  }
+
+  func testNativeForegroundPresentationKeepsPassiveUpdatesQuietAcrossFeatures() {
+    for category in [MacSmsNotifier.category, MacSmsNotifier.resultCategory,
+      MacTransferNotifier.Category.offer, MacTransferNotifier.Category.result,
+      MacNotificationMirrorNotifier.categoryPrefix + "test"] {
+      let content = UNMutableNotificationContent()
+      content.categoryIdentifier = category
+      content.interruptionLevel = .active
+      content.sound = .default
+      XCTAssertEqual(AppDelegate.presentationOptions(for: content), [.banner, .list, .sound])
+      content.sound = nil
+      XCTAssertEqual(AppDelegate.presentationOptions(for: content), [.banner, .list])
+      content.interruptionLevel = .passive
+      content.sound = .default
+      XCTAssertEqual(AppDelegate.presentationOptions(for: content), [.list])
+    }
+    let unrelated = UNMutableNotificationContent()
+    unrelated.categoryIdentifier = "unrelated"
+    XCTAssertTrue(AppDelegate.presentationOptions(for: unrelated).isEmpty)
+  }
+
+  func testMirroredSourceAndDeviceAttributionUsesIndependentNativeGroups() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let notifier = MacNotificationMirrorNotifier(center: center)
+    let value = MirroredNotification(snapshotToken: "", id: id, epoch: epoch, sequence: 1,
+      packageName: "com.example.chat", appName: "Chat", title: "Review alert", body: "Disposable content",
+      sourceIcon: nil, actions: [])
+    await notifier.post(peerKey: "first", peerName: "Phone A", value: value)
+    await notifier.post(peerKey: "second", peerName: "Phone B", value: value)
+    XCTAssertEqual(center.added.map(\.content.subtitle), ["Chat · Phone A", "Chat · Phone B"])
+    XCTAssertNotEqual(center.added[0].content.threadIdentifier, center.added[1].content.threadIdentifier)
+    XCTAssertNotEqual(center.added[0].identifier, center.added[1].identifier)
+    XCTAssertEqual(center.added[0].content.body, "Disposable content")
+  }
+
+  func testSameRevisionIconEnrichmentCannotReenableAnAlreadyConsumedAction() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let notifier = MacNotificationMirrorNotifier(center: center)
+    func value(_ token: String) -> MirroredNotification {
+      MirroredNotification(snapshotToken: token, id: id, epoch: epoch, sequence: 1,
+        packageName: "com.example.chat", appName: "Chat", title: "Review", body: "",
+        sourceIcon: nil, actions: [.init(index: 0, title: "Reply", replyPlaceholder: "Message")])
+    }
+    await notifier.post(peerKey: "peer", value: value(""))
+    let first = try XCTUnwrap(center.added.last)
+    let category = try XCTUnwrap(center.registered.first { $0.identifier == first.content.categoryIdentifier })
+    try exportNotificationReview(first, category: category, name: "mirror-live")
+    var replies = 0
+    notifier.onAction = { _, _, _, _, action in if case .invoke = action { replies += 1 } }
+    XCTAssertTrue(notifier.handleAction(category: first.content.categoryIdentifier, action: "ANICE_MIRROR_ACTION_0",
+      identifier: first.identifier, userText: "One reply", sourceEpoch: epoch, sourceSequence: 1))
+    await notifier.post(peerKey: "peer", value: value("icon-refresh"))
+    let enriched = try XCTUnwrap(center.added.last)
+    try exportNotificationReview(enriched, category: category, name: "mirror-passive")
+    XCTAssertFalse(notifier.handleAction(category: enriched.content.categoryIdentifier, action: "ANICE_MIRROR_ACTION_0",
+      identifier: enriched.identifier, userText: "Duplicate", sourceEpoch: epoch, sourceSequence: 1))
+    XCTAssertEqual(replies, 1)
+    XCTAssertEqual(enriched.content.interruptionLevel, .passive)
+  }
+
+  func testLateSuccessfulNativeAddCannotReviveADismissedOrRetiredAlert() async throws {
+    let center = MirrorNotificationCenterSpy()
+    center.holdAdds = true
+    let notifier = MacNotificationMirrorNotifier(center: center)
+    let value = MirroredNotification(snapshotToken: "", id: id, epoch: epoch, sequence: 1,
+      packageName: "com.example.chat", appName: "Chat", title: "Disposable review", body: "",
+      sourceIcon: nil, actions: [])
+    await notifier.post(peerKey: "peer", value: value)
+    let request = try XCTUnwrap(center.added.last)
+    notifier.clear(peerKey: "peer")
+    let clears = center.removedDelivered.count
+    center.pendingAdds[0](nil)
+    await waitFor("late submission cleanup") { center.removedDelivered.count > clears }
+    XCTAssertFalse(notifier.handleAction(category: request.content.categoryIdentifier, action: UNNotificationDefaultActionIdentifier,
+      identifier: request.identifier, userText: "", sourceEpoch: epoch, sourceSequence: 1))
   }
 
   func testSourceAppIconsAreRejectedOverBluetooth() async throws {

@@ -10,17 +10,10 @@ import io.github.anisharyal09.anice.AniCeApplication
 class TransferActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val app = context.applicationContext as? AniCeApplication ?: return
+        val operationId = intent.getStringExtra(EXTRA_OPERATION_ID) ?: return
         when (intent.action) {
-            ACTION_CANCEL -> {
-                val operationId = intent.getStringExtra(EXTRA_OPERATION_ID) ?: return
-                val interruptedOfferId = (app.transfer.interruptedOffer as? TransferState.IncomingOffer)
-                    ?.batch?.id?.let { runCatching { java.util.UUID.fromString(it).toString() }.getOrNull() }
-                val activeOperationMatches = app.transfer.isBusy && operationId == app.transfer.operationID.toString()
-                if (activeOperationMatches || operationId == interruptedOfferId) {
-                    app.transfer.cancelTransfer()
-                }
-            }
-            ACTION_RESUME_BLE -> app.transfer.resumeOverBluetooth()
+            ACTION_CANCEL -> app.transfer.cancelFromNotification(operationId)
+            ACTION_RESUME_BLE -> app.transfer.resumeFromNotification(operationId)
         }
     }
 

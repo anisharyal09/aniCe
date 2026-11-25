@@ -20,11 +20,13 @@ import UserNotifications
   private(set) var installError: String?
   var installProblem: String? { MacUpdateInstall.problem() }
   private var installTask: Task<Void, Never>?
+  private var refreshTask: Task<Void, Never>?
+  private var terminating = false
+  private var installLaunched = false
   var reviewing = false {
     didSet {
       if !reviewing {
         scheduleNextCheck()
-        if oldValue { Task { [weak self] in await self?.refreshAutomatic() } }
       }
     }
   }
@@ -42,6 +44,7 @@ import UserNotifications
   var scheduledAutomaticCheck: Date? { timer?.fireDate }
   static let notificationCategory = "ANICE_UPDATE"
   private static let notificationIdentifier = "anice.update"
+  nonisolated static let notificationTagKey = "anice.update.tag"
   var automaticChecks: Bool {
     didSet {
       guard automaticChecks != oldValue else { return }
@@ -55,11 +58,11 @@ import UserNotifications
       discovery.includeBeta = includeBeta
       if !includeBeta { clearNotification() }
       if !includeBeta, release?.version.prerelease == true {
-        release = nil; reviewing = false; clearNotification()
+        release = nil; dismissReview(refreshAutomatic: false); clearNotification()
       }
-      if automaticChecks {
+      if automaticChecks && !terminating {
         Task { [weak self] in
-          guard let self, self.automaticChecks else { return }
+          guard let self, self.automaticChecks, !self.terminating else { return }
           await self.check(force: true, userInitiated: false)
         }
       }
@@ -74,9 +77,10 @@ import UserNotifications
   }
 
   func startAutomaticChecks() {
-    guard !automaticStarted, automaticLifecycleEnabled else { return }
+    guard !terminating, !automaticStarted, automaticLifecycleEnabled else { return }
     automaticStarted = true
     restoreCachedRelease()
+    if release == nil { clearNotification() }
     startAutomaticMonitoring()
   }
 
@@ -104,7 +108,21 @@ import UserNotifications
 
   func stopAutomaticChecks() {
     automaticStarted = false
+    refreshTask?.cancel(); refreshTask = nil
     stopAutomaticMonitoring()
+  }
+
+  /// Dismisses any presented review sheet and cancels unlaunched work before window teardown.
+  func prepareForTermination() {
+    terminating = true
+    automaticStarted = false
+    refreshTask?.cancel(); refreshTask = nil
+    stopAutomaticMonitoring()
+    checkAgain = false
+    checkAgainUserInitiated = false
+    checkTask?.cancel()
+    if !installLaunched { installTask?.cancel() }
+    dismissReview(refreshAutomatic: false)
   }
 
   private func stopAutomaticMonitoring() {
@@ -119,7 +137,7 @@ import UserNotifications
   }
 
   private func refreshAutomatic(generation: Int? = nil) async {
-    guard automaticStarted, automaticChecks,
+    guard !terminating, automaticStarted, automaticChecks,
       generation == nil || generation == automaticGeneration else { return }
     if network?.currentPath.status == .satisfied { await check() }
     else { scheduleNextCheck() }
@@ -127,7 +145,7 @@ import UserNotifications
 
   private func scheduleNextCheck() {
     timer?.invalidate(); timer = nil
-    guard automaticStarted, automaticChecks, !checking, (!reviewing || release == nil) else { return }
+    guard !terminating, automaticStarted, automaticChecks, !checking, (!reviewing || release == nil) else { return }
     let now = Date()
     let next = installing ? UpdateSchedule.latestEvening(now).addingTimeInterval(UpdateSchedule.day)
       : discovery.nextAutomaticCheck(now: now)
@@ -187,10 +205,13 @@ import UserNotifications
     }
     switch result {
     case .available(let found):
-      guard discovery.isEligible(found) else { release = nil; reviewing = false; status = ""; return }
+      guard discovery.isEligible(found) else {
+        release = nil; dismissReview(refreshAutomatic: false); status = ""; clearNotification(); return
+      }
       release = found; status = "Update \(found.version.tag) is available."
       await notifyIfNeeded(found)
-    case .upToDate: release = nil; reviewing = false; status = "You’re up to date."; clearNotification()
+    case .upToDate:
+      release = nil; dismissReview(refreshAutomatic: false); status = "You’re up to date."; clearNotification()
     case .deferred: status = ""
     case .failed(let message): status = message
     }
@@ -204,34 +225,60 @@ import UserNotifications
     status = "Update \(cached.version.tag) is available."
   }
 
-  func review() {
+  @discardableResult
+  func review(expectedTag: String? = nil) -> Bool {
+    guard !terminating else { return false }
     restoreCachedRelease()
-    guard release != nil else { return }
+    guard let release, discovery.isEligible(release) else {
+      clearNotification()
+      return false
+    }
+    if let expectedTag, release.version.tag != expectedTag {
+      clearNotification()
+      return false
+    }
+    refreshTask?.cancel(); refreshTask = nil
     reviewing = true
     clearNotification()
+    return true
   }
+
+  func dismissReview(refreshAutomatic shouldRefresh: Bool = true) {
+    let wasReviewing = reviewing
+    reviewing = false
+    refreshTask?.cancel(); refreshTask = nil
+    guard wasReviewing, shouldRefresh, !terminating, automaticStarted, automaticChecks, !installing, release != nil else { return }
+    let generation = automaticGeneration
+    refreshTask = Task { [weak self] in await self?.refreshAutomatic(generation: generation) }
+  }
+
+  func windowClosed() {
+    dismissReview(refreshAutomatic: false)
+  }
+
   func skip(_ version: UpdateVersion) {
     guard !installing, release?.version == version else { return }
     if let release { discovery.skip(release.version.tag) }
-    release = nil; reviewing = false; status = ""; clearNotification()
+    release = nil; dismissReview(refreshAutomatic: false); status = ""; clearNotification()
   }
 
   private func notifyIfNeeded(_ found: AvailableMacRelease) async {
-    guard !IdentityView.isTesting, !MacAppStorage.isPreview, !NSApp.isActive, discovery.shouldNotify(found) else { return }
+    guard !terminating, !IdentityView.isTesting, !MacAppStorage.isPreview, !NSApp.isActive, discovery.shouldNotify(found) else { return }
     let center = UNUserNotificationCenter.current()
     let settings = await center.notificationSettings()
-    guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional,
+    guard !terminating, settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional,
       settings.notificationCenterSetting == .enabled || settings.alertSetting == .enabled,
       !NSApp.isActive, release == found, discovery.shouldNotify(found) else { return }
     let content = UNMutableNotificationContent()
     content.title = "aniCe \(found.version.tag) is available"
     content.body = "Review release notes when you’re ready."
     content.categoryIdentifier = Self.notificationCategory
+    content.userInfo = [Self.notificationTagKey: found.version.tag]
     content.interruptionLevel = .passive
     do {
       try await center.add(UNNotificationRequest(identifier: Self.notificationIdentifier, content: content, trigger: nil))
       discovery.markNotified(found)
-      if !automaticChecks || release != found || (!includeBeta && found.version.prerelease) { clearNotification() }
+      if terminating || !automaticChecks || release != found || (!includeBeta && found.version.prerelease) { clearNotification() }
     } catch {
       // The persistent in-app notice remains available when system notification delivery fails.
     }
@@ -251,17 +298,25 @@ import UserNotifications
   }
 
   func install(_ version: UpdateVersion) {
-    guard installTask == nil, let release, release.version == version, !installing, !checking else { return }
-    installing = true; installError = nil; progress = 0
+    guard !terminating, installTask == nil, let release, release.version == version, !installing, !checking else { return }
+    installing = true; installLaunched = false; installError = nil; progress = 0
+    refreshTask?.cancel(); refreshTask = nil
     installTask = Task {
-      defer { installing = false; installTask = nil; scheduleNextCheck() }
+      defer {
+        installing = false
+        installTask = nil
+        if !terminating { scheduleNextCheck() }
+      }
       do {
         try await MacUpdateInstall.launch(release) { received, total in
           guard let total, total > 0 else { return }
           await MainActor.run { self.progress = min(1, Double(received) / Double(total)) }
         }
         await MainActor.run {
-          self.reviewing = false
+          self.installLaunched = true
+          self.terminating = true
+          self.dismissReview(refreshAutomatic: false)
+          self.stopAutomaticMonitoring()
           NSApplication.shared.terminate(nil)
         }
         try? await Task.sleep(for: .milliseconds(200))
@@ -353,46 +408,93 @@ struct MacUpdateNotice: View {
   @Bindable var model: MacUpdateModel
   @Environment(\.colorScheme) private var scheme
   var body: some View {
-    if let release = model.release {
-      PendingRequestRow(title: "Update \(release.version.tag) available", detail: "Review release notes and install") { model.review() }
-        .sheet(isPresented: $model.reviewing) {
-          VStack(alignment: .leading, spacing: 16) {
-            Text("Update \(release.version.tag)").font(.title3.weight(.semibold))
-            ScrollView {
-              ReleaseNotesView(notes: release.notes, version: release.version.tag).padding(12)
-            }
-            .frame(height: 280)
-            .background(RoundedRectangle(cornerRadius: 8).fill(AniCePalette.secondarySurface(scheme)))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(AniCePalette.separator(scheme)).allowsHitTesting(false))
-            .scrollIndicators(.visible)
-            HStack {
-              Button("Skip version") { model.skip(release.version) }.buttonStyle(AniCeButtonStyle())
-                .disabled(model.installing || model.checking)
-              Spacer()
-              Button("Later") { model.reviewing = false }.buttonStyle(AniCeButtonStyle())
-                .keyboardShortcut(.cancelAction)
-              Button("Open release on GitHub") { NSWorkspace.shared.open(release.pageURL) }
-                .buttonStyle(AniCeButtonStyle())
-              if model.installProblem != nil {
-                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL]) }
-                  .buttonStyle(AniCeButtonStyle())
-              }
-              if model.installProblem == nil {
-                Button("Install Update") { model.install(release.version) }
-                  .buttonStyle(AniCeButtonStyle(prominent: true))
-                  .keyboardShortcut(.defaultAction).disabled(model.installing || model.checking)
-              }
-            }
-            if model.installing {
-              HStack {
-                ProgressView(value: model.progress) { Text("Downloading…") }
-                Button("Cancel") { model.cancelInstall() }.buttonStyle(AniCeButtonStyle())
-              }
-            }
-            if let error = model.installError { Text(error).font(.caption).foregroundStyle(.red) }
-            if let problem = model.installProblem { Text(problem).font(.caption).foregroundStyle(.secondary) }
-          }.padding(24).frame(minWidth: 440, idealWidth: 520)
+    VStack(spacing: 0) {
+      if let release = model.release {
+        PendingRequestRow(title: "Update \(release.version.tag) available", detail: "Review release notes and install") {
+          _ = model.review()
         }
+      }
     }
+    .sheet(isPresented: Binding(
+      get: { model.reviewing && model.release != nil },
+      set: { if !$0 { model.dismissReview() } }
+    )) {
+      if let release = model.release {
+        MacUpdateReviewSheetContent(model: model, release: release)
+          .preferredColorScheme(scheme)
+      }
+    }
+  }
+}
+
+struct MacUpdateReviewSheetContent: View {
+  @Bindable var model: MacUpdateModel
+  let release: AvailableMacRelease
+  @Environment(\.colorScheme) private var scheme
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Text("Update \(release.version.tag)").font(.title3.weight(.semibold))
+      ScrollView {
+        ReleaseNotesView(notes: release.notes, version: release.version.tag).padding(12)
+      }
+      .id(release.version.tag)
+      .frame(height: 280)
+      .background(RoundedRectangle(cornerRadius: 8).fill(AniCePalette.secondarySurface(scheme)))
+      .overlay(RoundedRectangle(cornerRadius: 8).stroke(AniCePalette.separator(scheme)).allowsHitTesting(false))
+      .scrollIndicators(.visible)
+      ViewThatFits(in: .horizontal) {
+        HStack {
+          Button("Skip version") { model.skip(release.version) }.buttonStyle(AniCeButtonStyle())
+            .disabled(model.installing || model.checking)
+          Spacer()
+          Button("Later") { model.dismissReview() }.buttonStyle(AniCeButtonStyle())
+            .keyboardShortcut(.cancelAction)
+          Button("Open release on GitHub") { NSWorkspace.shared.open(release.pageURL) }
+            .buttonStyle(AniCeButtonStyle())
+          if model.installProblem != nil {
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL]) }
+              .buttonStyle(AniCeButtonStyle())
+          }
+          if model.installProblem == nil {
+            Button("Install Update") { model.install(release.version) }
+              .buttonStyle(AniCeButtonStyle(prominent: true))
+              .keyboardShortcut(.defaultAction).disabled(model.installing || model.checking)
+          }
+        }
+        VStack(alignment: .trailing, spacing: 8) {
+          HStack {
+            Button("Skip version") { model.skip(release.version) }.buttonStyle(AniCeButtonStyle())
+              .disabled(model.installing || model.checking)
+            Spacer()
+            Button("Later") { model.dismissReview() }.buttonStyle(AniCeButtonStyle())
+              .keyboardShortcut(.cancelAction)
+          }
+          HStack {
+            Spacer()
+            Button("Open release on GitHub") { NSWorkspace.shared.open(release.pageURL) }
+              .buttonStyle(AniCeButtonStyle())
+            if model.installProblem != nil {
+              Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL]) }
+                .buttonStyle(AniCeButtonStyle())
+            }
+            if model.installProblem == nil {
+              Button("Install Update") { model.install(release.version) }
+                .buttonStyle(AniCeButtonStyle(prominent: true))
+                .keyboardShortcut(.defaultAction).disabled(model.installing || model.checking)
+            }
+          }
+        }
+      }
+      if model.installing {
+        HStack {
+          ProgressView(value: model.progress) { Text("Downloading…") }
+          Button("Cancel") { model.cancelInstall() }.buttonStyle(AniCeButtonStyle())
+        }
+      }
+      if let error = model.installError { Text(error).font(.caption).foregroundStyle(.red) }
+      if let problem = model.installProblem { Text(problem).font(.caption).foregroundStyle(.secondary) }
+    }
+    .padding(24).frame(minWidth: 440, idealWidth: 520)
   }
 }

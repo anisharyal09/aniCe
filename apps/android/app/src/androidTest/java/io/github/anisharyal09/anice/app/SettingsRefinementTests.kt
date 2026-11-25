@@ -730,7 +730,7 @@ class SettingsRefinementTests {
         assumeEmulator()
         val runner = InstrumentationRegistry.getInstrumentation()
         val release = AvailableRelease(requireNotNull(UpdateVersion.parse("v0.9.0-beta.2")),
-            "<!-- anice-source:fixture -->\n## What’s changed\n" +
+            "<!-- anice-source:fixture -->\n# aniCe v0.9.0-beta.2\n## What’s changed\n---\n" +
                 (1..40).joinToString("\n") { "- **Change $it:** A readable release note with enough text to wrap." },
             "https://github.com/anisharyal09/aniCe/releases/download/v0.9.0-beta.2/aniCe-android.apk", 3_000_000)
         var captures = 0
@@ -767,6 +767,7 @@ class SettingsRefinementTests {
                     idle()
                     awaitLabel("Cancel download")
                     awaitLabel("What’s changed")
+                    assertNull(find(root(), "aniCe v0.9.0-beta.2"))
                     assertNull(find(root(), "anice-source"))
                     val textHeight = bounds(find(root(), "Cancel download")).height()
                     assertTrue("Sheet text must grow with the requested $scale scale", textHeight > previousTextHeight)
@@ -997,6 +998,42 @@ class SettingsRefinementTests {
             resume.countDown()
             review?.join()
             check?.join()
+            assertTrue(preferences.edit().clear().commit())
+        }
+    }
+
+    @Test fun updateReviewTerminationAndStaleNotificationTagPreventResurrection() = runBlocking {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        val preferences = runner.targetContext.getSharedPreferences("update-test-${UUID.randomUUID()}", 0)
+        val installed = runner.targetContext.packageManager.getPackageInfo(runner.targetContext.packageName, 0).versionName.orEmpty()
+        val tag = "v${installed.substringBefore(".").toInt() + 1}.0.0"
+        val body = """[{"tag_name":"$tag","draft":false,"prerelease":false,"body":"Notes","assets":[{"name":"aniCe-android.apk","state":"uploaded","size":50,"browser_download_url":"https://github.com/anisharyal09/aniCe/releases/download/$tag/aniCe-android.apk"}]}]"""
+        val calls = AtomicInteger()
+        lateinit var manager: AndroidUpdateManager
+        var check: Job? = null
+        try {
+            runner.runOnMainSync {
+                manager = AndroidUpdateManager(runner.targetContext, ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ ->
+                    calls.incrementAndGet()
+                    ReleaseResponse(200, body, "fixture")
+                }))
+                check = manager.check(force = true)
+            }
+            withTimeout(5000) { check!!.join() }
+            runner.runOnMainSync {
+                manager.review(expectedTag = "v0.8.0")
+                assertFalse("A stale notification tag must not open a different release", manager.reviewing.value)
+                manager.review(expectedTag = tag)
+                assertTrue(manager.reviewing.value)
+                manager.hostDestroyed(changingConfigurations = true)
+                assertTrue("Rotation preserves an active review", manager.reviewing.value)
+                manager.hostDestroyed(changingConfigurations = false)
+                assertFalse("Activity termination dismisses review so later launches do not resurrect it", manager.reviewing.value)
+                manager.dismissReview()
+            }
+            assertEquals(1, calls.get())
+        } finally {
             assertTrue(preferences.edit().clear().commit())
         }
     }

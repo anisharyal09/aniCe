@@ -62,7 +62,6 @@ struct SmsView: View {
   let model: MacSmsModel
   let peers: [PeerTrustRecord]
   let preferences: SmsPreferences
-  var openSettings: (() -> Void)? = nil
   @State private var peerKey = ""
   @State private var address = ""
   @State private var draft = ""
@@ -81,7 +80,10 @@ struct SmsView: View {
   /// A picker only helps when more than one phone can serve the panel; a single connected phone is used directly.
   private var selectable: [PeerTrustRecord] {
     let connected = peers.filter { model.connected($0.peer) }
-    return connected.count > 1 ? connected : (connected.isEmpty ? peers : connected)
+    if connected.isEmpty { return peers }
+    return peers.filter {
+      model.connected($0.peer) || $0.peer.deviceId + ":" + $0.peer.fingerprint == model.notificationPhoneKey
+    }
   }
 
   var body: some View {
@@ -156,6 +158,20 @@ struct SmsView: View {
       model.retainDrafts(for: peers.map(\.peer)); select()
     }
     .onChange(of: peers.map { model.connected($0.peer) }) { _, _ in select() }
+    .onChange(of: model.notificationNavigationRevision) { _, _ in
+      selectPhone(model.selectedPhoneKey)
+      address = peer.map { model.selectedConversation($0) } ?? ""
+      draft = peer.map { model.draft($0, address: address) } ?? ""
+      query = ""
+      submittedDraft = nil
+      simRecoveryContext = nil
+      if let peer, !address.isEmpty, model.messages(peer, address: address).isEmpty {
+        model.requestMessages(peer, address: address)
+      }
+    }
+    .onChange(of: peer.map { model.draft($0, address: address) } ?? "") { _, value in
+      draft = value
+    }
     // Opening a conversation is an invitation to type; the draft is one Return away.
     .onChange(of: address) { _, next in
       simRecoveryContext = nil
@@ -168,7 +184,7 @@ struct SmsView: View {
 
   private func select() {
     let options = selectable
-    let preferred = peerKey.isEmpty ? model.selectedPhoneKey : peerKey
+    let preferred = model.selectedPhoneKey.isEmpty ? peerKey : model.selectedPhoneKey
     let next = options.first { $0.peer.deviceId + ":" + $0.peer.fingerprint == preferred }
       ?? options.first { model.connected($0.peer) } ?? options.first
     let key = next.map { $0.peer.deviceId + ":" + $0.peer.fingerprint } ?? ""
@@ -176,7 +192,11 @@ struct SmsView: View {
   }
 
   private func selectPhone(_ key: String) {
-    guard key != peerKey else { return }
+    guard key != peerKey else {
+      address = peer.map { model.selectedConversation($0) } ?? ""
+      draft = peer.map { model.draft($0, address: address) } ?? ""
+      return
+    }
     simRecoveryContext = nil
     if let peer, !address.isEmpty { model.saveDraft(draft, peer: peer, address: address) }
     peerKey = key
@@ -466,9 +486,7 @@ struct SmsView: View {
 
   /** Toggles the notification controls that sit directly under this row; they never leave the window. */
   @ViewBuilder private func gear(_ peer: DeviceIdentity) -> some View {
-    Button {
-      if let openSettings { openSettings() } else { controlsOpen.toggle() }
-    } label: { Label("Notification settings", systemImage: "gearshape") }
+    Button { controlsOpen.toggle() } label: { Label("Notification settings", systemImage: "gearshape") }
       .labelStyle(.iconOnly).frame(width: 24, height: 24)
       .buttonStyle(.borderless).aniCeControlFeedback().controlSize(.small)
       .help("Notification settings for \(peer.displayName)")
@@ -481,10 +499,15 @@ struct SmsView: View {
       Text(peer.displayName).font(.subheadline.weight(.medium))
       SmsNotificationControls(preferences: preferences, peer: peer)
       DisclosureGroup("Connection details") {
-        Text(model.status(peer)).font(.caption)
-        if !model.diagnostics(peer).isEmpty { Text(model.diagnostics(peer)).font(.caption).textSelection(.enabled) }
+        VStack(alignment: .leading, spacing: 4) {
+          Text(model.status(peer)).font(.caption).fixedSize(horizontal: false, vertical: true)
+          if !model.diagnostics(peer).isEmpty {
+            Text(model.diagnostics(peer)).font(.caption).textSelection(.enabled)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
       }
-
     }
     .padding(10)
     .frame(maxWidth: .infinity, alignment: .leading)

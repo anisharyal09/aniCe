@@ -45,6 +45,9 @@ internal class AndroidUpdateManager(
     private var checkingAutomatically = false
     // Cached reads cannot replace results from newer checks or preference changes.
     private var selectionGeneration = 0L
+    private var reviewGeneration = 0L
+    private var reviewRestoreJob: Job? = null
+    private var dismissRefreshJob: Job? = null
     private var foregroundActivities = 0
     private var downloadJob: Job? = null
     private var downloaded: File? = null
@@ -74,6 +77,7 @@ internal class AndroidUpdateManager(
         if (!automaticLifecycleEnabled) return
         scope.launch {
             restoreCachedRelease()
+            if (_available.value == null) notification.clear()
             if (_automaticChecks.value && discovery.nextAutomaticCheck() <= System.currentTimeMillis()) check()?.join()
             scheduleNextCheck()
         }
@@ -89,19 +93,49 @@ internal class AndroidUpdateManager(
     }
 
     fun foregroundStopped() { foregroundActivities = (foregroundActivities - 1).coerceAtLeast(0) }
-    fun review(): Job? {
+
+    fun review(expectedTag: String? = null): Job? {
         notification.clear()
-        _reviewing.value = true
-        if (_available.value != null) return null
-        return scope.launch {
-            val generation = selectionGeneration
-            restoreCachedRelease()
-            if (generation == selectionGeneration && _available.value == null) _reviewing.value = false
+        val myReviewGen = ++reviewGeneration
+        reviewRestoreJob?.cancel()
+        reviewRestoreJob = null
+        dismissRefreshJob?.cancel()
+        dismissRefreshJob = null
+        val current = _available.value
+        if (current != null) {
+            if (expectedTag != null && current.version.tag != expectedTag) return null
+            _reviewing.value = true
+            return null
         }
+        _reviewing.value = true
+        val job = scope.launch {
+            restoreCachedRelease()
+            val found = _available.value
+            if (reviewGeneration != myReviewGen) {
+                if (found == null) _reviewing.value = false
+                return@launch
+            }
+            if (found == null || (expectedTag != null && found.version.tag != expectedTag)) {
+                _reviewing.value = false
+            }
+        }
+        reviewRestoreJob = job
+        return job
     }
-    fun dismissReview() {
+
+    fun dismissReview(refreshAutomatic: Boolean = true) {
+        reviewGeneration++
+        reviewRestoreJob?.cancel()
+        reviewRestoreJob = null
+        val wasReviewing = _reviewing.value
         _reviewing.value = false
-        scope.launch { check()?.join(); scheduleNextCheck() }
+        if (!wasReviewing || !refreshAutomatic || !_automaticChecks.value) return
+        dismissRefreshJob?.cancel()
+        dismissRefreshJob = scope.launch { check()?.join(); scheduleNextCheck() }
+    }
+
+    fun hostDestroyed(changingConfigurations: Boolean) {
+        if (!changingConfigurations) dismissReview(refreshAutomatic = false)
     }
 
     fun stopBackgroundCheck(job: Job?) {
@@ -133,11 +167,19 @@ internal class AndroidUpdateManager(
         }
         if ((!force && _reviewing.value && _available.value != null) || downloadJob?.isActive == true || _status.value == UpdateStatus.Installing ||
             _status.value is UpdateStatus.AwaitingConfirmation || _status.value == UpdateStatus.PermissionRequired) return null
-        selectionGeneration++
+        if (force) selectionGeneration++
         checkingAutomatically = !userInitiated
         // Publish ownership before immediate/cached completion or a queued check can replace it.
         val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
+                if (!force) {
+                    reviewRestoreJob?.join()
+                    if (_reviewing.value && _available.value != null) {
+                        _status.value = UpdateStatus.Idle
+                        return@launch
+                    }
+                    selectionGeneration++
+                }
                 val current = currentVersion
                 if (current == null) { _status.value = UpdateStatus.Failed("Installed version is not supported for update checks."); return@launch }
                 restoreCachedRelease()
@@ -153,13 +195,13 @@ internal class AndroidUpdateManager(
                     is DiscoveryResult.Available -> {
                         val found = result.release.takeIf(discovery::isEligible)
                         _available.value = found
-                        if (found == null) _reviewing.value = false
+                        if (found == null) dismissReview(refreshAutomatic = false)
                         _status.value = UpdateStatus.Idle
                         if (found != null && foregroundActivities == 0 && app.packageName == "io.github.anisharyal09.anice" &&
                             discovery.shouldNotify(found) && notification.post(found)) discovery.markNotified(found)
                     }
                     DiscoveryResult.UpToDate -> {
-                        _available.value = null; _reviewing.value = false
+                        _available.value = null; dismissReview(refreshAutomatic = false)
                         _status.value = UpdateStatus.UpToDate; notification.clear()
                     }
                     DiscoveryResult.Deferred -> _status.value = UpdateStatus.Idle
@@ -186,6 +228,8 @@ internal class AndroidUpdateManager(
         discovery.automaticChecks = value
         _automaticChecks.value = value
         if (!value) {
+            dismissRefreshJob?.cancel()
+            dismissRefreshJob = null
             if (checkingAutomatically) {
                 checkJob?.cancel()
                 if (_status.value == UpdateStatus.Checking) _status.value = UpdateStatus.Idle
@@ -208,7 +252,7 @@ internal class AndroidUpdateManager(
         if (!value) notification.clear()
         if (!value && _available.value?.version?.prerelease == true && _status.value != UpdateStatus.Installing &&
             _status.value !is UpdateStatus.AwaitingConfirmation) {
-            cancel(); _available.value = null; _reviewing.value = false; notification.clear()
+            cancel(); _available.value = null; dismissReview(refreshAutomatic = false); notification.clear()
         }
         if (_automaticChecks.value) check(force = true, userInitiated = false)
     }
@@ -217,7 +261,7 @@ internal class AndroidUpdateManager(
         if (_status.value == UpdateStatus.Installing || _status.value is UpdateStatus.AwaitingConfirmation) return
         selectionGeneration++
         _available.value?.let { discovery.skip(it.version.tag) }
-        cancel(); _available.value = null; _reviewing.value = false; notification.clear()
+        cancel(); _available.value = null; dismissReview(refreshAutomatic = false); notification.clear()
         scheduleNextCheck()
     }
     fun cancel() {
@@ -381,7 +425,8 @@ internal class AndroidUpdateManager(
             PackageInstaller.STATUS_SUCCESS -> {
                 selectionGeneration++
                 prefs.edit().remove("installer_session").apply()
-                downloaded?.delete(); downloaded = null; _available.value = null; _reviewing.value = false
+                downloaded?.delete(); downloaded = null; _available.value = null
+                dismissReview(refreshAutomatic = false)
                 notification.clear()
                 _status.value = UpdateStatus.Idle
             }

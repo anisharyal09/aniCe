@@ -31,6 +31,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         startupApp.startupMark("activity_super")
         mediaNavigation(intent)
+        transferNavigation(intent)
         updateNavigation(intent)
         startupApp.startupMark("media_navigation")
         enableEdgeToEdge()
@@ -116,10 +117,22 @@ class MainActivity : ComponentActivity() {
         }
     }
     private val remoteVolumeKeys=mutableSetOf<Int>()
+    private fun transferNavigation(intent: Intent?) {
+        if (intent?.action != io.github.anisharyal09.anice.features.transfer.TransferNotification.OPEN) return
+        intent.getStringExtra(io.github.anisharyal09.anice.features.transfer.TransferActionReceiver.EXTRA_OPERATION_ID)?.let {
+            (application as AniCeApplication).transfer.openFromNotification(it)
+        }
+        intent.removeExtra(io.github.anisharyal09.anice.features.transfer.TransferActionReceiver.EXTRA_OPERATION_ID)
+        intent.action = null
+    }
     private fun updateNavigation(intent: Intent?) {
-        if (intent?.getBooleanExtra(io.github.anisharyal09.anice.update.UpdateNotification.OPEN_REVIEW, false) == true) {
-            (application as AniCeApplication).updates.review()
+        if (intent == null || (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return
+        if (intent.getBooleanExtra(io.github.anisharyal09.anice.update.UpdateNotification.OPEN_REVIEW, false)) {
+            val tag = intent.getStringExtra(io.github.anisharyal09.anice.update.UpdateNotification.EXTRA_VERSION_TAG)
+            (application as AniCeApplication).updates.review(expectedTag = tag)
             intent.removeExtra(io.github.anisharyal09.anice.update.UpdateNotification.OPEN_REVIEW)
+            intent.removeExtra(io.github.anisharyal09.anice.update.UpdateNotification.EXTRA_VERSION_TAG)
+            if (intent.data?.scheme == "anice-update") intent.data = null
         }
     }
 
@@ -136,7 +149,7 @@ class MainActivity : ComponentActivity() {
         if(remoteVolumeKeys.remove(keyCode)) return true
         return super.onKeyUp(keyCode,event)
     }
-    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent);mediaNavigation(intent);updateNavigation(intent) }
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent);mediaNavigation(intent);transferNavigation(intent);updateNavigation(intent) }
 
     override fun onStart() {
         super.onStart()
@@ -161,5 +174,10 @@ class MainActivity : ComponentActivity() {
         if (!isChangingConfigurations && ::pairing.isInitialized) pairing.background()
         if (::session.isInitialized) session.background(this, isChangingConfigurations)
         if (!isChangingConfigurations) (application as AniCeApplication).transfer.applicationBackgrounded()
+    }
+
+    override fun onDestroy() {
+        (application as AniCeApplication).updates.hostDestroyed(isChangingConfigurations)
+        super.onDestroy()
     }
 }

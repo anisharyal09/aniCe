@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Delivers native SMS notifications with an inline reply and per-peer text preview control.
 import AppKit
+import CryptoKit
 import Foundation
 import Observation
 import UserNotifications
@@ -33,8 +34,7 @@ extension UNUserNotificationCenter: SmsNotificationCenter {
   }
 }
 
-// Per-peer notification controls: delivery, sound and message-text preview. Bodies stay hidden until the
-// user enables preview, and a disabled phone posts nothing at all — banner, sound or failure note.
+// Per-peer delivery, sound and message-text preview; explicit opt-outs survive app updates.
 @Observable @MainActor final class SmsPreferences {
   private let storage: UserDefaults?
   private var previews: [String: Bool]
@@ -74,14 +74,15 @@ extension UNUserNotificationCenter: SmsNotificationCenter {
 
 @Observable @MainActor final class MacSmsNotifier: NSObject, SmsNotifying {
   nonisolated static let category = "ANICE_SMS"
+  nonisolated static let resultCategory = "ANICE_SMS_RESULT"
   nonisolated static let replyAction = "ANICE_SMS_REPLY"
   var onReply: (SmsReplyRequest) -> Void = { _ in }
-  var onOpenMessages: () -> Void = {}
+  var onOpenConversation: (SmsConversationTarget) -> Void = { _ in }
   private struct Target {
-    let peerKey: String
-    let peerName: String
-    let address: String
-    let threadId: String
+    let conversation: SmsConversationTarget
+    let category: String
+    let token: UUID
+    var consumedActions = Set<String>()
   }
   private let center: any SmsNotificationCenter
   private let preferences: SmsPreferences
@@ -93,9 +94,10 @@ extension UNUserNotificationCenter: SmsNotificationCenter {
   private var generations: [String: Int] = [:]
   private var inFlight: [String: UUID] = [:]
   private var completions: [String: CheckedContinuation<Bool, Never>] = [:]
+  private var addTimeouts: [String: Task<Void, Never>] = [:]
   private var pendingPeers: [String: String] = [:]
   private var hasRequestedAuth = false
-  private var identifiers = Set<String>()
+  private var identifiers: [String: String] = [:]
   private var targets: [String: Target] = [:]
 
   init(preferences: SmsPreferences, center: any SmsNotificationCenter = UNUserNotificationCenter.current()) {
@@ -125,6 +127,10 @@ extension UNUserNotificationCenter: SmsNotificationCenter {
         textInputButtonTitle: "Send", textInputPlaceholder: "Message")],
       intentIdentifiers: [], options: [.customDismissAction])
   }
+  // An uncertain send offers review only, not another inline send action.
+  static var resultNotificationCategory: UNNotificationCategory {
+    UNNotificationCategory(identifier: resultCategory, actions: [], intentIdentifiers: [], options: [.customDismissAction])
+  }
 
   func refreshSettings() async {
     let access = await withCheckedContinuation { continuation in
@@ -141,26 +147,30 @@ extension UNUserNotificationCenter: SmsNotificationCenter {
 
   func clear(peerKey: String) {
     generations[peerKey, default: 0] += 1
-    for (identifier, target) in targets where target.peerKey == peerKey { clear(identifier: identifier) }
+    for identifier in identifiers.filter({ $0.value == peerKey }).map(\.key) { clear(identifier: identifier) }
     for identifier in pendingPeers.filter({ $0.value == peerKey }).map(\.key) { clear(identifier: identifier) }
   }
 
   func post(_ note: SmsNotification) async -> SmsPostOutcome {
     // A phone the user silenced posts nothing; the panel keeps its counts and the relay keeps running.
     guard preferences.notifications(note.peerKey) else { return .muted }
-    guard !identifiers.contains(note.identifier) else { return .duplicate }
+    guard identifiers[note.identifier] == nil else { return .duplicate }
     guard inFlight[note.identifier] == nil else { return .cancelled }
     let token = UUID(), generation = generations[note.peerKey, default: 0]
     inFlight[note.identifier] = token
     pendingPeers[note.identifier] = note.peerKey
     defer {
-      if inFlight[note.identifier] == token { inFlight[note.identifier] = nil; pendingPeers[note.identifier] = nil }
+      if inFlight[note.identifier] == token {
+        inFlight[note.identifier] = nil; pendingPeers[note.identifier] = nil
+        addTimeouts.removeValue(forKey: note.identifier)?.cancel()
+      }
     }
     await startupCleanup?.value
     requestAuthIfNeeded()
     if authorizationPending { await withCheckedContinuation { authorizationWaiters.append($0) } }
     await refreshSettings()
     guard generations[note.peerKey, default: 0] == generation, inFlight[note.identifier] == token else { return .cancelled }
+    guard preferences.notifications(note.peerKey) else { return .muted }
     switch access {
     case .authorized: break
     case .denied: return .denied
@@ -169,11 +179,14 @@ extension UNUserNotificationCenter: SmsNotificationCenter {
     }
     let content = UNMutableNotificationContent()
     content.title = note.failure ? "Reply not confirmed" : note.address
+    content.subtitle = note.peerName
     content.body = note.failure
       ? "Message to \(note.address) was not confirmed; it may have been sent"
       : preferences.preview(note.peerKey) ? note.body : "New message"
-    content.categoryIdentifier = Self.category
-    content.threadIdentifier = note.threadIdentifier
+    content.categoryIdentifier = note.failure ? Self.resultCategory : Self.category
+    content.userInfo = ["anice.sms.token": token.uuidString.lowercased()]
+    let group = Data((note.peerKey + "\u{0}" + note.threadIdentifier).utf8)
+    content.threadIdentifier = "anice-sms-thread-" + SHA256.hash(data: group).map { String(format: "%02x", $0) }.joined()
     content.sound = preferences.sound(note.peerKey) ? .default : nil
     let accepted = await withCheckedContinuation { continuation in
       completions[note.identifier] = continuation
@@ -183,40 +196,56 @@ extension UNUserNotificationCenter: SmsNotificationCenter {
           guard let self else { return }
           if self.inFlight[note.identifier] == token {
             self.completions.removeValue(forKey: note.identifier)?.resume(returning: accepted)
-          } else if accepted {
+          } else if accepted, self.inFlight[note.identifier] == nil, self.identifiers[note.identifier] == nil {
             self.center.removeDeliveredNotifications(withIdentifiers: [note.identifier])
             self.center.removePendingNotificationRequests(withIdentifiers: [note.identifier])
           }
         }
       }
-      Task { @MainActor [weak self] in
+      addTimeouts[note.identifier] = Task { @MainActor [weak self] in
         do { try await Task.sleep(for: .seconds(30)) } catch { return }
         guard let self, self.inFlight[note.identifier] == token else { return }
         self.completions.removeValue(forKey: note.identifier)?.resume(returning: false)
       }
     }
     guard generations[note.peerKey, default: 0] == generation, inFlight[note.identifier] == token else { return .cancelled }
+    guard preferences.notifications(note.peerKey) else {
+      center.removeDeliveredNotifications(withIdentifiers: [note.identifier])
+      center.removePendingNotificationRequests(withIdentifiers: [note.identifier])
+      return .muted
+    }
     guard accepted else { status = "macOS did not accept the SMS notification"; return .failed }
-    identifiers.insert(note.identifier)
-    targets[note.identifier] = Target(peerKey: note.peerKey, peerName: note.peerName, address: note.address, threadId: note.threadId)
+    identifiers[note.identifier] = note.peerKey
+    targets[note.identifier] = Target(conversation: SmsConversationTarget(peerKey: note.peerKey,
+      peerName: note.peerName, address: note.address, threadId: note.threadId), category: content.categoryIdentifier, token: token)
     return .submitted
   }
 
   // Oversized replies go to the existing composer without sending a truncated prefix.
-  func handleAction(category: String, action: String, identifier: String, userText: String = "") -> Bool {
-    guard category == Self.category else { return false }
+  func handleAction(category: String, action: String, identifier: String, userText: String = "", sourceToken: String? = nil) -> Bool {
+    guard category == Self.category || category == Self.resultCategory else { return false }
+    guard var target = targets[identifier], target.category == category else { return true }
+    guard target.token.uuidString.lowercased() == sourceToken else { return true }
     switch action {
     case Self.replyAction:
-      guard let target = targets[identifier] else { return true }
+      guard category == Self.category else { return false }
       let text = smsSanitizeText(userText)
       guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
-      onReply(SmsReplyRequest(peerKey: target.peerKey, peerName: target.peerName, address: target.address, threadId: target.threadId, text: text))
-      if text.utf8.count > Int(SmsMessage.maxBodyBytes) { onOpenMessages() }
+      guard target.consumedActions.insert(action).inserted else { return true }
+      targets[identifier] = target
+      let conversation = target.conversation
+      onReply(SmsReplyRequest(peerKey: conversation.peerKey, peerName: conversation.peerName,
+        address: conversation.address, threadId: conversation.threadId, text: text))
+      if text.utf8.count > Int(SmsMessage.maxBodyBytes) { onOpenConversation(conversation) }
       return true
     case UNNotificationDefaultActionIdentifier:
-      onOpenMessages()
+      guard target.consumedActions.insert(action).inserted else { return true }
+      targets[identifier] = target
+      onOpenConversation(target.conversation)
       return true
     case UNNotificationDismissActionIdentifier:
+      // Keep successful-submission deduplication while revoking the dismissed alert's action target.
+      targets[identifier] = nil
       return true
     default:
       return false
@@ -227,13 +256,14 @@ extension UNUserNotificationCenter: SmsNotificationCenter {
     inFlight[identifier] = nil
     pendingPeers[identifier] = nil
     completions.removeValue(forKey: identifier)?.resume(returning: false)
-    identifiers.remove(identifier)
+    addTimeouts.removeValue(forKey: identifier)?.cancel()
+    identifiers[identifier] = nil
     targets[identifier] = nil
     center.removeDeliveredNotifications(withIdentifiers: [identifier])
     center.removePendingNotificationRequests(withIdentifiers: [identifier])
   }
 
-  func clearAll() { for identifier in Set(identifiers).union(inFlight.keys) { clear(identifier: identifier) } }
+  func clearAll() { for identifier in Set(identifiers.keys).union(inFlight.keys) { clear(identifier: identifier) } }
 
   private func requestAuthIfNeeded() {
     guard !hasRequestedAuth else { return }

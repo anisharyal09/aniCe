@@ -71,9 +71,12 @@ struct AniCeApp: App {
     _transfer = State(initialValue: transfer)
     let edgeDrop = MacEdgeDropController(model: transfer, preferences: EdgeDropPreferences(storage: .standard))
     _edgeDrop = State(initialValue: edgeDrop)
+    let navigation = ConnectionNavigation()
+    _navigation = State(initialValue: navigation)
     let transferNotifier = MacTransferNotifier(
       model: transfer,
-      openMainWindow: {
+      openMainWindow: { [weak navigation] in
+        navigation?.openFeature(.files)
         for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "aniCe" || window.title == MacAppStorage.applicationName {
           window.deminiaturize(nil)
           window.makeKeyAndOrderFront(nil)
@@ -86,8 +89,6 @@ struct AniCeApp: App {
       transferNotifier?.handle(event)
       edgeDrop?.handle(event)
     }
-    let navigation = ConnectionNavigation()
-    _navigation = State(initialValue: navigation)
     let radio = CoreBluetoothPeripheralAdapter()
     let discovery = MacDiscoveryModel(adapter: radio)
     _identity = State(initialValue: identity)
@@ -124,7 +125,9 @@ struct AniCeApp: App {
     let floatingKeyboard = FloatingKeyboardController(model: keyboardTrackpad, preferences: .standard)
     _floatingKeyboard = State(initialValue: floatingKeyboard)
     sms.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
-    smsNotifier.onOpenMessages = { [weak navigation] in
+    smsNotifier.onOpenConversation = { [weak navigation, weak sms, weak pairing] target in
+      guard let sms, let pairing,
+        sms.openNotificationConversation(target, trustedPeers: pairing.peers.map(\.peer)) else { return }
       navigation?.openFeature(.messages)
       for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "aniCe" || window.title == MacAppStorage.applicationName {
         window.deminiaturize(nil)
@@ -263,11 +266,15 @@ struct AniCeApp: App {
     hotkey.onPasteTray = { PasteTrayController.shared.toggle() }
     hotkey.onToggleKeyboard = { [weak floatingKeyboard] in floatingKeyboard?.toggleVisibility() }
     hotkeyManager = hotkey
+    delegate.onPrepareTerminate = {
+      MacUpdateModel.shared.prepareForTermination()
+    }
     delegate.onTerminate = {
       pairing.cancel()
       comparisonPresenter?.hide()
-      MacUpdateModel.shared.stopAutomaticChecks()
+      MacUpdateModel.shared.prepareForTermination()
       findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); notificationMirrorNotifier.clearAll()
+      transferNotifier?.clearAll()
       floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); phonePower.shutdown(); edgeDrop.shutdown(); deskDeck.shutdown(); dndSync.shutdown()
       PasteTrayController.shared.hide()
     }

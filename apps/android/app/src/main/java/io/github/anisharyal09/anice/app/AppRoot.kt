@@ -87,6 +87,9 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     LaunchedEffect(session.media.openWorkspaceRequest) {
         if(session.media.openWorkspaceRequest) { navigation.openFeature(AppFeature.Playback);session.media.workspaceOpened() }
     }
+    LaunchedEffect(session.transfer.openWorkspaceRequest) {
+        if (session.transfer.workspaceOpened()) navigation.openFeature(AppFeature.Files)
+    }
     LaunchedEffect(identity.state.snapshot?.identity?.fingerprint) {
         if (identity.state.snapshot != null) pairing.refresh()
     }

@@ -24,6 +24,7 @@
     <string name="identity_crypto_failure">The identity could not complete its signing check. Try again, or reset it to create a replacement.</string>
     <string name="find_title">Find Device</string>
     <string name="find_mac_title">Find Mac</string>
+    <string name="find_mac_ping_label">Ping Mac</string>
     <string name="find_mac_choose">Choose a trusted Mac to send an alert.</string>
     <string name="find_mac_connect">Connect this Mac to send an alert.</string>
     <string name="find_mac_not_advertised">Find Mac is not available on this connection.</string>

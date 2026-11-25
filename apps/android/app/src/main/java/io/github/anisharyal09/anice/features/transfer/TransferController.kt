@@ -132,6 +132,18 @@ class TransferController(
     internal var pickerRelease: Job? = null
     var selectingFiles = false; internal set
     internal val operationID get() = currentBatch?.id?.let(UUID::fromString) ?: epoch
+    private var notificationReviewOperation by mutableStateOf<String?>(null)
+    val openWorkspaceRequest: Boolean get() = notificationReviewOperation?.let {
+        isBusy && it == operationID.toString()
+    } == true
+    fun openFromNotification(operationId: String) {
+        if (isBusy && operationId == operationID.toString()) notificationReviewOperation = operationId
+    }
+    fun workspaceOpened(): Boolean {
+        val current = openWorkspaceRequest
+        notificationReviewOperation = null
+        return current
+    }
     fun beginPicker() {
         pickerRelease?.cancel(); pickerRelease = null
         selectingFiles = true
@@ -392,6 +404,16 @@ class TransferController(
     fun rejectIncomingOffer(reason: Long = 0L) { rejectIncomingOfferFlow(reason) }
 
     fun cancelTransfer(local: Boolean = true) { cancelTransferFlow(local) }
+
+    internal fun cancelFromNotification(operationId: String) {
+        val interrupted = (interruptedOffer as? TransferState.IncomingOffer)?.batch?.id
+            ?.let { runCatching { UUID.fromString(it).toString() }.getOrNull() }
+        if (isBusy && operationId == operationID.toString() || operationId == interrupted) cancelTransfer()
+    }
+
+    internal fun resumeFromNotification(operationId: String) {
+        if (isPaused && operationId == operationID.toString()) resumeOverBluetooth()
+    }
 
     fun dismiss() { dismissFlow() }
 

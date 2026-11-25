@@ -5,7 +5,7 @@ Mac Desk Deck is an Android feature panel for a trusted Mac. It opens its shell 
 
 ## Status and recovery
 
-The top card names the Mac, summarizes connection state and the local time of the last received sample, and gives each device a labeled power summary. Its text wraps at compact widths instead of hiding the timestamp. **Details** shows transport, the full last-received date and time, thermal pressure and the keep-awake preference. A previous sample remains visible with its timestamp after reconnect or refresh, but telemetry controls remain disabled until a fresh sample arrives. Find Mac has separate readiness.
+The top card names the Mac, summarizes connection state and the local time of the last received sample, and gives each device a labeled power summary. **Details** stays aligned alongside the status text whenever width and text scale permit, wrapping cleanly below only on narrow or larger-text layouts, and opens transport details, the full last-received date and time, thermal pressure and the keep-awake preference. A previous sample remains visible with its timestamp after reconnect or refresh, but telemetry controls remain disabled until a fresh sample arrives. Find Mac has separate readiness.
 
 The panel shows opening progress immediately. After five seconds it explains that it is reconnecting once; after ten seconds it stops retrying and offers **Refresh**. Refresh starts a fresh read-only subscription and does not repeat any action. Readings become stale after three seconds without telemetry. The latest sample is cached locally so it can appear immediately after an app restart; cached readings are always stale and cannot enable actions until the Mac sends a fresh sample. The Mac stops sampling after fifteen seconds without a five-second renewal from the visible panel. Closing or backgrounding the panel sends Stop and cancels renewal.
 
@@ -35,7 +35,7 @@ Every control has independent feedback. Telemetry controls require a fresh sampl
 
 ## Find Mac
 
-**Find Mac** sits below the selected Mac's status card. It requests one native Mac notification through the existing Find Device owner, preferring a compatible secured LAN channel and using BLE otherwise. It is independent of Desk Deck's telemetry capability, subscription and sample freshness; stale or unavailable readings do not block an otherwise supported Find request. It does not create a connection, background lease, location tracking or a wake guarantee.
+**Find Mac** (also labeled **Ping Mac**) sits below the selected Mac's status card. It requests one native Mac notification through the existing Find Device owner, preferring a compatible secured LAN channel and using BLE otherwise. It is independent of Desk Deck's telemetry capability, subscription and sample freshness; stale or unavailable readings do not block an otherwise supported Find request. It does not create a connection, background lease, location tracking or a wake guarantee.
 
 The tile shows pending and peer-scoped results. A successful response confirms notification submission, not visible or audible delivery. If Mac notification access is blocked, the tile points to **Mac aniCe → Settings → Permissions → Notifications**. Permission is granted on the Mac; phone notification access does not gate Find Mac. No reply within ten seconds leaves delivery unconfirmed. Refreshing readings, changing Mac, reconnecting or reopening the panel never repeats the Find request.
 
@@ -43,7 +43,7 @@ The former Android **Find Device** launcher now opens Desk Deck. Saved Find Devi
 
 ## Layout and screen behavior
 
-Landscape presents meters and quick actions in an adaptive grid. Portrait stacks the same content naturally; very narrow layouts with larger text use one column to keep meter values readable. Mac choices wrap into labeled native chips. Output selection sits with the volume control; the slider does not share a horizontal swipe-navigation surface. Text follows Android font scaling and controls retain touch targets of at least 48 dp.
+Landscape presents meters and quick actions in an adaptive grid. Portrait stacks the same content naturally; very narrow layouts with larger text use one column to keep meter values readable. Mac choices wrap into labeled native chips. Output device selection and the volume slider share a grouped card with a full-width selector row, active-route checkmark menu, dedicated Refresh control and percentage readout badge; the slider does not share a horizontal swipe-navigation surface. Text follows Android font scaling and controls retain touch targets of at least 48 dp.
 
 Desk Deck stays within the regular Android app shell. The app bar Back button and bottom destinations remain available while the panel is open.
 

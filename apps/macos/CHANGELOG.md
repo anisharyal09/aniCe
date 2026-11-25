@@ -16,6 +16,11 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Bound release-note Markdown blocks, lines and inline styling with linear-time source cleanup, pre-parse view blocks once and wrap update-review actions when narrow.
+- Clear Mac update review on window close and app termination, verify notification tags and cancel unlaunched update work at shutdown without resurrecting sheets.
+- Attribute mirrored alerts and SMS to their phone with credential-scoped native grouping; keep passive revisions list-only in foreground and preserve used actions during source-icon enrichment.
+- Open SMS notifications in the original conversation with one-shot submission tokens and review-only uncertain-reply alerts; fence late native posts and preserve unrelated drafts.
+- Bind transfer review, approval/decline and Finder actions to their original local target, recheck deferred actions, bound completion targets and clear owned notices at startup/Quit.
 - Keep SIM-selection recovery in the affected Messages conversation, distinguish permission/provider/timeout outcomes and refresh choices on the current connection without changing default sending.
 - Use compact, softly filled capsule switches with fuller inset thumbs, clickable labels and native accessibility for persistent preferences while retaining explicit consent controls.
 - Use content-sized themed segments for glass style and Clipboard navigation/filters, roomier Share/History tabs and stronger theme-aware hover, pressed and focus feedback.
@@ -25,6 +30,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Restore the Mac Messages gear toggle so per-phone notification settings and **Connection details** open inline inside Messages instead of redirecting to Settings.
 - Unify the Auto connect label and capsule action, and remove obsolete preference-size/theme configuration.
 - Restore 20/50/100-item history capacity menus in compact Clipboard settings and History, retain paused/off access and remove duplicate feedback layers and unused clipboard helpers.
 - Keep Shelf edge labels/helpers together, align intrinsic selector faces and Shortcut controls to the trailing edge, and reflow narrow rows without clipping.

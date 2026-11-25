@@ -80,6 +80,19 @@ struct SmsReplyRequest: Equatable {
   let text: String
 }
 
+/// Memory-only navigation context from the exact native SMS alert.
+struct SmsConversationTarget: Equatable {
+  let peerKey: String
+  let peerName: String
+  let address: String
+  let threadId: String
+}
+
+func smsNotificationIdentifier(peerKey: String, messageId: String) -> String {
+  let credential = SHA256.hash(data: Data(peerKey.utf8)).map { String(format: "%02x", $0) }.joined()
+  return smsNotificationPrefix + credential + "-" + messageId
+}
+
 enum SmsPostOutcome: Sendable { case submitted, duplicate, denied, alertsDisabled, failed, cancelled, muted }
 enum SmsNotificationAccess: Sendable {
   case authorized, denied, alertsDisabled, notDetermined
@@ -290,7 +303,9 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   // Drafts outlive transport links but remain memory-only and scoped to full peer credentials.
   private var drafts: [String: String] = [:]
   private var selectedConversations: [String: String] = [:]
+  private(set) var notificationPhoneKey = ""
   private(set) var selectedPhoneKey = ""
+  private(set) var notificationNavigationRevision = 0
   private var timer: Task<Void, Never>?
   var onLanRequired: () -> Void = {}
 
@@ -323,12 +338,23 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     if address.isEmpty { selectedConversations.removeValue(forKey: selectedPhoneKey) }
     else { selectedConversations[selectedPhoneKey] = address }
   }
+  /// Opening an alert selects its trusted conversation without reading, sending or reconnecting.
+  @discardableResult
+  func openNotificationConversation(_ target: SmsConversationTarget, trustedPeers: [DeviceIdentity]) -> Bool {
+    guard !smsNormalizedAddress(target.address).isEmpty,
+      let peer = trustedPeers.first(where: { key($0) == target.peerKey }) else { return false }
+    selectConversation(peer, address: target.address)
+    notificationPhoneKey = target.peerKey
+    notificationNavigationRevision += 1
+    return true
+  }
   func retainDrafts(for identities: [DeviceIdentity]) {
     let credentials = Set(identities.map(key))
     let prefixes = credentials.map { $0 + "|" }
     drafts = drafts.filter { draftKey, _ in prefixes.contains { draftKey.hasPrefix($0) } }
     selectedConversations = selectedConversations.filter { credentials.contains($0.key) }
     if !credentials.contains(selectedPhoneKey) { selectedPhoneKey = "" }
+    if !credentials.contains(notificationPhoneKey) { notificationPhoneKey = "" }
   }
   func live(_ descriptor: ChannelDescriptor) -> Bool { links[descriptor.transport]?.channel.descriptor == descriptor }
   private func links(for key: String) -> [Link] {
@@ -829,6 +855,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     drafts.removeAll()
     selectedConversations.removeAll()
     selectedPhoneKey = ""
+    notificationPhoneKey = ""
     timer?.cancel(); timer = nil
     for descriptor in links.values.map(\.channel.descriptor) { retired(descriptor) }
     peers.removeAll()

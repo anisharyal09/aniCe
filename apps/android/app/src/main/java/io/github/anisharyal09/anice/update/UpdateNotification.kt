@@ -12,6 +12,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import io.github.anisharyal09.anice.MainActivity
 
 internal class UpdateNotification(private val context: Context) {
@@ -33,7 +34,9 @@ internal class UpdateNotification(private val context: Context) {
             manager.getNotificationChannel(CHANNEL)?.importance?.let { it != NotificationManager.IMPORTANCE_NONE } != true) return false
         val open = PendingIntent.getActivity(context, ID, Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            data = "anice-update://review/${release.version.tag}".toUri()
             putExtra(OPEN_REVIEW, true)
+            putExtra(EXTRA_VERSION_TAG, release.version.tag)
         }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notice = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
@@ -56,6 +59,7 @@ internal class UpdateNotification(private val context: Context) {
 
     companion object {
         const val OPEN_REVIEW = "io.github.anisharyal09.anice.update.OPEN_REVIEW"
+        const val EXTRA_VERSION_TAG = "io.github.anisharyal09.anice.update.VERSION_TAG"
         private const val CHANNEL = "app_updates"
         private const val ID = 730
     }

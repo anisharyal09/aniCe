@@ -69,9 +69,13 @@ Mac search matches a substring in SMS bodies and text/plain MMS parts on the pho
 
 ## Notifications
 
-Mac notifications name the sender, support inline Reply and open Messages on the default tap. Message text preview is shown by default (with an option to hide message text per phone). **Notifications** default on and **Play sound** defaults off to avoid intrusive rings. Turning notifications off also suppresses sound and reply-failure alerts while relay and panel counters continue. These controls are available in **Settings → Messages** and behind the panel's gear.
+Mac notifications name the sender and source phone, support inline Reply and open the original trusted phone/conversation on the default tap. Native identifiers and conversation groups are credential-scoped, so the same sender or provider ID on two phones cannot share an action target. A notification reply and default tap each run at most once; dismissal removes its action target without allowing a successfully submitted live message to notify again.
+
+Message text preview is shown by default (with an option to hide message text per phone). **Notifications** default on and **Play sound** defaults off to avoid intrusive rings. Turning notifications off also suppresses sound and reply-failure alerts while relay and panel counters continue. These controls are available in **Settings → Messages** and in the inline disclosure toggled by the Messages panel gear alongside **Connection details**.
 
 Replies over 24,576 UTF-8 bytes are rejected rather than truncated. An oversized notification reply opens Messages and keeps its full text in the connected phone's conversation draft for editing; an existing draft is preserved ahead of that text. Nothing is sent until the reply fits the limit and the user sends it.
+
+**Reply not confirmed** is a review-only native alert with no inline resend action. Its tap selects the original conversation without approving another send. Native callbacks carry an opaque local submission token; an old, dismissed or failed alert cannot reply to a replacement. Later submission callbacks remove retired alerts without clearing a newer alert that reused the identifier. Opening a conversation preserves other phone/conversation drafts and never marks messages read.
 
 Authorization is requested at Mac launch. Permission, alert availability and submission failures appear in the panel. Focus and macOS presentation settings can suppress an accepted notification. A provider row fetched before its live copy does not consume the notification; only successful notification submission suppresses repeat announcements. SMS notifications are cleared on quit and leftover identifiers are removed at startup.
 

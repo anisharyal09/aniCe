@@ -60,7 +60,7 @@ class DeskDeckSurfaceTests {
         try {
             onMain { h.connect(findCapable = false); h.deck.start(h.peer); h.sample() }
             show(activity) {
-                Fixture(false, 1f, 300) {
+                Fixture(false, 1f, 320) {
                     DeskDeckView(h.deck, h.power, h.find, listOf(record(h.peer)), true,
                         onConnect = { connects++ }, onPairMac = {})
                 }
@@ -294,6 +294,111 @@ class DeskDeckSurfaceTests {
         } finally { runner.runOnMainSync { activity.finish() } }
     }
 
+    @Test fun statusDetailsStayInlineOnPhoneAndAudioOutputCardSwitchesRoutesAndShowsPingMac() {
+        requirePreview()
+        val restoreDeck = overridePreferences("desk_deck", mapOf("selected_peer" to "mac-a", "keep_awake_charging" to false))
+        val restoreAppearance = overridePreferences("appearance", mapOf("mode" to "System"))
+        val speakerID = UUID.randomUUID().toString()
+        val airpodsID = UUID.randomUUID().toString()
+        val catalogRevision = UUID.randomUUID().toString()
+        try {
+            for (dark in listOf(false, true)) {
+                val activity = startActivity()
+                val h = Harness(context)
+                try {
+                    onMain {
+                        h.connect(version = 5, actions = 41)
+                        h.deck.start(h.peer)
+                        h.sample(version = 5, actions = 41, outputRouteID = speakerID)
+                        h.outputCatalog(catalogRevision, listOf(
+                            DeskDeckOutputRoute(speakerID, "MacBook Pro Speakers"),
+                            DeskDeckOutputRoute(airpodsID, "AirPods Pro (USB-C)"),
+                        ))
+                    }
+                    show(activity) {
+                        Fixture(dark, 1f, 412) {
+                            Column(Modifier.fillMaxSize().padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Mac Desk Deck", style = MaterialTheme.typography.titleMedium)
+                                DeskDeckView(h.deck, h.power, h.find, listOf(record(h.peer)), true,
+                                    onConnect = {}, onPairMac = {}, modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                    val density = minOf(activity.resources.displayMetrics.density,
+                        activity.resources.displayMetrics.widthPixels / 412f)
+                    val details = awaitControl("Details")
+                    val detailsBounds = bounds(details)
+                    val liveSummary = awaitControl("Live ·")
+                    val summaryBounds = bounds(liveSummary)
+                    assertTrue("Details must stay inline with status summary on phone",
+                        detailsBounds.top <= summaryBounds.bottom && detailsBounds.left >= summaryBounds.left)
+                    assertTrue("Details must keep 48dp minimum height", detailsBounds.height() >= (48 * density).toInt() - 1)
+                    assertTrue("Details height must stay single-row", detailsBounds.height() < (72 * density).toInt())
+
+                    awaitControl("Find Mac")
+                    awaitControl("Ping Mac")
+                    capture(activity, "desk-deck-top-${if (dark) "dark" else "light"}")
+
+                    reveal("Mac output volume")
+                    val selector = awaitControl("MacBook Pro Speakers")
+                    awaitControl("2 Mac outputs · tap to switch")
+                    awaitControl("35%")
+                    val refreshOutputs = awaitControl("Refresh output devices")
+                    assertTrue(bounds(selector).height() >= (48 * density).toInt() - 1)
+                    assertTrue(bounds(refreshOutputs).height() >= (48 * density).toInt() - 1)
+                    assertTrue(bounds(root()).contains(bounds(selector)))
+                    capture(activity, "desk-deck-v5-${if (dark) "dark" else "light"}")
+
+                    if (!dark) {
+                        click("MacBook Pro Speakers")
+                        awaitControl("AirPods Pro (USB-C)")
+                        capture(activity, "desk-deck-v5-menu-light")
+                        click("AirPods Pro (USB-C)")
+                        val commands = h.channels.flatMap { c -> c.sent.mapNotNull(DeskDeckMessage::decode).filter { it.kind == 4L } }
+                        assertTrue("Selecting an output route sends action 10 for the chosen route",
+                            commands.any { it.action == 10L && it.target == airpodsID && it.revision == catalogRevision })
+                    }
+                } finally { onMain { h.close(); activity.finish() } }
+            }
+
+            val compactActivity = startActivity()
+            val compactHarness = Harness(context)
+            try {
+                onMain {
+                    compactHarness.connect(version = 5, actions = 41)
+                    compactHarness.deck.start(compactHarness.peer)
+                    compactHarness.sample(version = 5, actions = 41, outputRouteID = speakerID)
+                    compactHarness.outputCatalog(catalogRevision, listOf(
+                        DeskDeckOutputRoute(speakerID, "MacBook Pro Speakers"),
+                        DeskDeckOutputRoute(airpodsID, "AirPods Pro (USB-C)"),
+                    ))
+                    compactHarness.close()
+                }
+                show(compactActivity) {
+                    Fixture(false, 1.2f, 280) {
+                        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Mac Desk Deck", style = MaterialTheme.typography.titleMedium)
+                            DeskDeckView(compactHarness.deck, compactHarness.power, compactHarness.find,
+                                listOf(record(compactHarness.peer)), true, onConnect = {}, onPairMac = {}, modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+                val compactDensity = minOf(compactActivity.resources.displayMetrics.density,
+                    compactActivity.resources.displayMetrics.widthPixels / 280f)
+                val connectButton = awaitControl("Connect")
+                val detailsButton = awaitControl("Details")
+                assertTrue(bounds(root()).contains(bounds(connectButton)))
+                assertTrue(bounds(root()).contains(bounds(detailsButton)))
+                assertTrue(bounds(detailsButton).height() >= (48 * compactDensity).toInt() - 1)
+                awaitControl("Ping Mac")
+                reveal("Mac output volume")
+                awaitControl("Output device")
+                awaitControl("Output volume")
+                capture(compactActivity, "desk-deck-v5-compact-light")
+            } finally { onMain { compactHarness.close(); compactActivity.finish() } }
+        } finally { restoreDeck(); restoreAppearance() }
+    }
+
     private class Harness(context: Context) {
         val peer = DeviceIdentity("mac-a", "Studio Mac with a long device name", "macos", "key", "fingerprint-a")
         private var time = 1_000L
@@ -318,24 +423,32 @@ class DeskDeckSurfaceTests {
             val sent = mutableListOf<ByteArray>()
             override suspend fun sendData(bytes: ByteArray) { sent.add(bytes) }
         }
-        suspend fun connect(findCapable: Boolean = true) {
+        suspend fun connect(findCapable: Boolean = true, version: Long = 3, actions: Long = 9) {
             channel = Channel(peer).also { channels.add(it) }
             deck.available(channel)
             find.available(channel)
-            deck.handle(channel.descriptor, DeskDeckMessage(kind = 1, version = 3, actions = 9).encode())
+            deck.handle(channel.descriptor, DeskDeckMessage(kind = 1, version = version, actions = actions).encode())
             if (findCapable) find.handle(channel.descriptor, FindDeviceMessage(1).encode())
         }
-        suspend fun sample() {
+        suspend fun sample(version: Long = 3, actions: Long = 9, outputRouteID: String = "") {
             val subscription = channel.sent.mapNotNull(DeskDeckMessage::decode).last { it.kind == 2L }.subscription
             val gib = 1_073_741_824L
             deck.handle(channel.descriptor, DeskDeckMessage(
-                kind = 3, version = 3, subscription = subscription, sequence = 1,
-                cpuPercent = 12, memoryUsed = 8 * gib, memoryTotal = 16 * gib, thermalState = 0, actions = 9,
+                kind = 3, version = version, subscription = subscription, sequence = 1,
+                cpuPercent = 12, memoryUsed = 8 * gib, memoryTotal = 16 * gib, thermalState = 0, actions = actions,
                 memoryActive = 4 * gib, memoryWired = 2 * gib, memoryCompressed = gib,
                 memoryApp = 3 * gib, memoryCached = 5 * gib, memoryFree = 3 * gib, memorySwap = 0,
+                outputRouteID = outputRouteID,
                 outputSupported = true, outputTarget = UUID.randomUUID().toString(),
                 outputRevision = UUID.randomUUID().toString(), outputLevel = 35,
                 powerState = 3, powerPercent = 72, powerSource = 2,
+            ).encode())
+        }
+        suspend fun outputCatalog(catalogRevision: String, routes: List<DeskDeckOutputRoute>) {
+            val subscription = channel.sent.mapNotNull(DeskDeckMessage::decode).last { it.kind == 2L }.subscription
+            deck.handle(channel.descriptor, DeskDeckMessage(
+                kind = 12, version = 5, subscription = subscription,
+                page = 0, pageCount = 1, catalogRevision = catalogRevision, outputRoutes = routes,
             ).encode())
         }
         fun requests() = channel.sent.mapNotNull(FindDeviceMessage::decode).filter { it.kind == 2L }

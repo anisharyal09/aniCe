@@ -5,6 +5,7 @@ import io.github.anisharyal09.anice.infrastructure.connections.displayName
 
 import android.content.Context
 import android.text.format.DateUtils
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
@@ -14,23 +15,29 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -170,8 +177,6 @@ private fun DeskDeckGrid(
     modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
-    var volumeDrag by remember(sample?.outputTarget, sample?.outputRevision) { mutableStateOf<Float?>(null) }
-    var outputMenuExpanded by remember(sample?.protocolVersion) { mutableStateOf(false) }
     var cpuDetails by rememberSaveable { mutableStateOf(false) }
     var memoryDetails by rememberSaveable { mutableStateOf(false) }
     var showDetails by rememberSaveable { mutableStateOf(false) }
@@ -238,48 +243,7 @@ private fun DeskDeckGrid(
             horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        BoxWithConstraints(Modifier.fillMaxWidth()) {
-                            val compact = maxWidth < 360.dp
-                            val summary: @Composable (Modifier) -> Unit = { summaryModifier ->
-                                Column(summaryModifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text(target?.displayName ?: "Mac", style = MaterialTheme.typography.titleSmall)
-                                    Text(connectionSummary(owner, connected, sample), style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                            val actions: @Composable () -> Unit = {
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    if (!connected && target != null) {
-                                        TextButton(onClick = onConnect, modifier = Modifier.heightIn(min = 48.dp)) { Text("Connect") }
-                                    } else if (owner.connectionState in setOf(DeskDeckConnectionState.STALE, DeskDeckConnectionState.FAILED)) {
-                                        TextButton(onClick = owner::refresh, modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh") }
-                                    }
-                                    TextButton(onClick = { showDetails = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Details") }
-                                }
-                            }
-                            if (compact) {
-                                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp),
-                                    horizontalAlignment = Alignment.End) {
-                                    summary(Modifier.fillMaxWidth())
-                                    actions()
-                                }
-                            } else {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    summary(Modifier.weight(1f))
-                                    actions()
-                                }
-                            }
-                        }
-                        HorizontalDivider()
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            PowerSummary("Mac", macPowerSummary(sample), Modifier.weight(1f))
-                            PowerSummary("Phone", phonePowerSummary(phonePower), Modifier.weight(1f))
-                        }
-                    }
-                }
+                StatusCard(owner, target, sample, connected, phonePower, onConnect) { showDetails = true }
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 FindMacCard(findDevice, target)
@@ -297,74 +261,7 @@ private fun DeskDeckGrid(
                 item { lockControl() }
             }
             item(span = { GridItemSpan(if (wide) 2 else maxLineSpan) }) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
-                    val routeSample = sample?.takeIf { it.protocolVersion >= 5L }
-                    if (routeSample != null) {
-                        val routeSwitchAvailable = routeSample.actions and 32L != 0L
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text("Output device", style = MaterialTheme.typography.labelLarge)
-                                Text(if (owner.outputCatalogLoaded) owner.selectedOutputName(routeSample) else "Loading Mac outputs…",
-                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                            Box {
-                                TextButton(onClick = {
-                                    if (owner.outputCatalogLoaded && owner.outputRoutes.isNotEmpty()) outputMenuExpanded = true
-                                    else owner.refreshOutputRoutes()
-                                }, enabled = fresh && routeSwitchAvailable && !owner.isBusy(10L) &&
-                                    (owner.outputCatalogLoaded || !owner.outputCatalogLoading), modifier = Modifier.heightIn(min = 48.dp)) {
-                                    Text(if (owner.outputCatalogLoaded) "Choose" else if (owner.outputCatalogLoading) "Loading…" else "Load")
-                                }
-                                DropdownMenu(expanded = outputMenuExpanded, onDismissRequest = { outputMenuExpanded = false }) {
-                                    owner.outputRoutes.forEach { route ->
-                                        DropdownMenuItem(
-                                            text = { Text(if (route.id == routeSample.outputRouteID) "${route.name} · Current" else route.name) },
-                                            onClick = {
-                                                outputMenuExpanded = false
-                                                if (route.id != routeSample.outputRouteID) {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                    owner.selectOutputRoute(route.id)
-                                                }
-                                            },
-                                            enabled = fresh && !owner.isBusy(10L),
-                                        )
-                                    }
-                                }
-                            }
-                            TextButton(onClick = owner::refreshOutputRoutes, enabled = fresh && routeSwitchAvailable && !owner.isBusy(10L),
-                                modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh") }
-                        }
-                        if (owner.outputCatalogLoaded && owner.outputRoutes.isEmpty()) {
-                            Text("No available Mac output devices.", style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        } else if (!routeSwitchAvailable) {
-                            Text("Output switching is unavailable on this Mac.", style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        if (owner.actionFeedback(10L).isNotBlank()) {
-                            Text(owner.actionFeedback(10L), style = MaterialTheme.typography.bodySmall)
-                        }
-                    } else if (sample != null) {
-                        Text("Update aniCe on Mac to choose its output device.", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Output volume", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                        Text(if (sample?.outputSupported == true) "${volumeDrag?.toInt() ?: owner.outputPreview?.toInt() ?: sample.outputLevel}%" else "Unavailable",
-                            style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (sample?.outputSupported == true) {
-                        Slider(value = volumeDrag ?: owner.outputPreview?.toFloat() ?: sample.outputLevel.toFloat(),
-                            onValueChange = { volumeDrag = it }, valueRange = 0f..100f,
-                            onValueChangeFinished = {
-                                val value = volumeDrag?.toLong(); volumeDrag = null
-                                if (value != null) owner.command(6, value, sample.outputTarget, sample.outputRevision)
-                            }, enabled = fresh,
-                            modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Mac output volume" })
-                    }
-                    if (owner.actionFeedback(6L).isNotBlank()) Text(owner.actionFeedback(6L), style = MaterialTheme.typography.bodySmall)
-                }
+                AudioOutputCard(owner, sample, fresh)
             }
             if (!wide) {
                 item { microphone() }
@@ -521,6 +418,326 @@ private fun HistoryChart(points: List<DeskDeckHistoryPoint>, memory: Boolean) {
 }
 
 @Composable
+private fun StatusCard(
+    owner: DeskDeckController,
+    target: DeviceIdentity?,
+    sample: DeskDeckSnapshot?,
+    connected: Boolean,
+    phonePower: DevicePowerReading,
+    onConnect: () -> Unit,
+    onShowDetails: () -> Unit,
+) {
+    val titleText = target?.displayName ?: "Mac"
+    val summaryText = connectionSummary(owner, connected, sample)
+    val secondaryAction: Pair<String, () -> Unit>? = when {
+        !connected && target != null -> "Connect" to onConnect
+        owner.connectionState in setOf(DeskDeckConnectionState.STALE, DeskDeckConnectionState.FAILED) -> "Refresh" to owner::refresh
+        else -> null
+    }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val density = LocalDensity.current
+                val measurer = rememberTextMeasurer()
+                val labelStyle = MaterialTheme.typography.labelLarge
+                val detailsWidth = with(density) {
+                    maxOf(58.dp, measurer.measure("Details", labelStyle).size.width.toDp() + 20.dp)
+                }
+                val secondaryWidth = secondaryAction?.let { (label, _) ->
+                    with(density) { maxOf(58.dp, measurer.measure(label, labelStyle).size.width.toDp() + 20.dp) }
+                } ?: 0.dp
+                val actionsWidth = detailsWidth + if (secondaryAction != null) secondaryWidth + 4.dp else 0.dp
+                val measuredSummaryWidth = with(density) {
+                    maxOf(
+                        measurer.measure(titleText, MaterialTheme.typography.titleSmall).size.width.toDp(),
+                        measurer.measure(summaryText, MaterialTheme.typography.bodySmall).size.width.toDp(),
+                    )
+                }
+                val minSummaryWidth = minOf(measuredSummaryWidth, 148.dp * density.fontScale.coerceAtLeast(1f))
+                val compact = maxWidth < minSummaryWidth + actionsWidth + 8.dp
+                val summary: @Composable (Modifier) -> Unit = { summaryModifier ->
+                    Column(summaryModifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(titleText, style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            summaryText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                val actionButtons: @Composable () -> Unit = {
+                    secondaryAction?.let { (label, action) ->
+                        TextButton(
+                            onClick = action,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) { Text(label, maxLines = 1, softWrap = false) }
+                    }
+                    TextButton(
+                        onClick = onShowDetails,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) { Text("Details", maxLines = 1, softWrap = false) }
+                }
+                if (compact) {
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        summary(Modifier.fillMaxWidth())
+                        FlowRow(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) { actionButtons() }
+                    }
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        summary(Modifier.weight(1f))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) { actionButtons() }
+                    }
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                PowerSummary("Mac", macPowerSummary(sample), Modifier.weight(1f))
+                PowerSummary("Phone", phonePowerSummary(phonePower), Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AudioOutputCard(
+    owner: DeskDeckController,
+    sample: DeskDeckSnapshot?,
+    fresh: Boolean,
+) {
+    val haptic = LocalHapticFeedback.current
+    var volumeDrag by remember(sample?.outputTarget, sample?.outputRevision) { mutableStateOf<Float?>(null) }
+    var outputMenuExpanded by remember(sample?.protocolVersion) { mutableStateOf(false) }
+    val routeSample = sample?.takeIf { it.protocolVersion >= 5L }
+    val routeSwitchAvailable = routeSample != null && (routeSample.actions and 32L != 0L)
+    LaunchedEffect(fresh, routeSwitchAvailable, owner.outputRoutes) {
+        if (!fresh || !routeSwitchAvailable || owner.outputRoutes.isEmpty()) outputMenuExpanded = false
+    }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (routeSample != null) {
+                val routeBusy = owner.isBusy(10L)
+                val hasRoutes = owner.outputCatalogLoaded && owner.outputRoutes.isNotEmpty()
+                val canInteractSelector = fresh && routeSwitchAvailable && !routeBusy &&
+                    (owner.outputCatalogLoaded || !owner.outputCatalogLoading)
+                val selectorLabel = when {
+                    !routeSwitchAvailable -> owner.selectedOutputName(routeSample)
+                        .takeIf { owner.outputCatalogLoaded && it != "Unavailable" }
+                        ?: "Output switching unavailable"
+                    routeBusy -> "Switching output…"
+                    hasRoutes -> owner.selectedOutputName(routeSample)
+                    owner.outputCatalogLoaded -> "No available Mac outputs"
+                    owner.outputCatalogLoading -> "Loading Mac outputs…"
+                    else -> "Load Mac output devices"
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("Output device", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                        TextButton(
+                            onClick = owner::refreshOutputRoutes,
+                            enabled = fresh && routeSwitchAvailable && !routeBusy,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.heightIn(min = 48.dp)
+                                .semantics { contentDescription = "Refresh output devices" },
+                        ) {
+                            Text(
+                                if (owner.outputCatalogLoading) "Refreshing…" else "Refresh",
+                                maxLines = 1,
+                                softWrap = false,
+                            )
+                        }
+                    }
+                    Box(Modifier.fillMaxWidth()) {
+                        val selectorShape = RoundedCornerShape(8.dp)
+                        Surface(
+                            shape = selectorShape,
+                            color = if (canInteractSelector) MaterialTheme.colorScheme.surface
+                                else MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                            border = BorderStroke(
+                                1.dp,
+                                if (outputMenuExpanded) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outline,
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .clip(selectorShape)
+                                .clickable(
+                                    enabled = canInteractSelector,
+                                    role = Role.DropdownList,
+                                    onClickLabel = if (hasRoutes) "Choose output device" else "Load output devices",
+                                ) {
+                                    if (hasRoutes) outputMenuExpanded = true else owner.refreshOutputRoutes()
+                                },
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        selectorLabel,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (hasRoutes && canInteractSelector) FontWeight.Medium else FontWeight.Normal,
+                                        color = if (canInteractSelector) MaterialTheme.colorScheme.onSurface
+                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    if (hasRoutes) {
+                                        Text(
+                                            if (owner.outputRoutes.size == 1) "1 Mac output available"
+                                            else "${owner.outputRoutes.size} Mac outputs · tap to switch",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_chevron_forward),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                        .graphicsLayer(rotationZ = if (outputMenuExpanded) -90f else 90f),
+                                    tint = if (canInteractSelector) MaterialTheme.colorScheme.onSurfaceVariant
+                                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                )
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = outputMenuExpanded && hasRoutes,
+                            onDismissRequest = { outputMenuExpanded = false },
+                        ) {
+                            owner.outputRoutes.forEach { route ->
+                                val isCurrent = route.id == routeSample.outputRouteID
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            route.name,
+                                            fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                                        )
+                                    },
+                                    trailingIcon = if (isCurrent) {
+                                        {
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_check),
+                                                contentDescription = "Current output",
+                                                modifier = Modifier.size(18.dp),
+                                                tint = MaterialTheme.colorScheme.primary,
+                                            )
+                                        }
+                                    } else null,
+                                    onClick = {
+                                        outputMenuExpanded = false
+                                        if (!isCurrent) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            owner.selectOutputRoute(route.id)
+                                        }
+                                    },
+                                    enabled = fresh && !routeBusy,
+                                )
+                            }
+                        }
+                    }
+                    if (owner.outputCatalogLoaded && owner.outputRoutes.isEmpty()) {
+                        Text(
+                            "No available Mac output devices.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else if (!routeSwitchAvailable) {
+                        Text(
+                            "Output switching is unavailable on this Mac.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (owner.actionFeedback(10L).isNotBlank()) {
+                        Text(
+                            owner.actionFeedback(10L),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            } else if (sample != null) {
+                Text(
+                    "Update aniCe on Mac to choose its output device.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
+            val shownLevel = volumeDrag?.toInt() ?: owner.outputPreview?.toInt() ?: sample?.outputLevel
+            val volumeSupported = sample?.outputSupported == true
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Output volume", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    ) {
+                        Text(
+                            if (volumeSupported && shownLevel != null) "$shownLevel%" else "Unavailable",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (volumeSupported && fresh) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        )
+                    }
+                }
+                if (volumeSupported && sample != null) {
+                    Slider(
+                        value = volumeDrag ?: owner.outputPreview?.toFloat() ?: sample.outputLevel.toFloat(),
+                        onValueChange = { volumeDrag = it },
+                        valueRange = 0f..100f,
+                        onValueChangeFinished = {
+                            val value = volumeDrag?.toLong()
+                            volumeDrag = null
+                            if (value != null) owner.command(6, value, sample.outputTarget, sample.outputRevision)
+                        },
+                        enabled = fresh,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .semantics { contentDescription = "Mac output volume" },
+                    )
+                }
+                if (owner.actionFeedback(6L).isNotBlank()) {
+                    Text(
+                        owner.actionFeedback(6L),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun FindMacCard(owner: FindDeviceController, target: DeviceIdentity?) {
     val feedback = target?.let(owner::feedbackFor)
     val detail = when {
@@ -535,10 +752,47 @@ private fun FindMacCard(owner: FindDeviceController, target: DeviceIdentity?) {
         else -> stringResource(R.string.find_idle)
     }
     val title = stringResource(R.string.find_mac_title)
-    val description = listOfNotNull(title, target?.displayName, detail).joinToString(". ")
+    val pingLabel = stringResource(R.string.find_mac_ping_label)
+    val enabled = target?.let(owner::canFind) == true
+    val description = listOfNotNull(title, pingLabel, target?.displayName, detail).joinToString(". ")
     // Find Device has no subscription or telemetry-freshness requirement.
-    MacroCard(title, detail, target?.let(owner::canFind) == true, description) {
-        target?.let(owner::find)
+    OutlinedCard(
+        onClick = { target?.let(owner::find) },
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp)
+            .semantics { contentDescription = description },
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = if (enabled) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Text(
+                        pingLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (enabled) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
+                }
+            }
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

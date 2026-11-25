@@ -51,6 +51,68 @@ class MockAndroidSecuredChannel(
 }
 
 class TransferControllerTests {
+    @Test fun notificationCancelRejectsAnOldOperationAndRetainsTheCurrentBatch() {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        fun batch() = TransferBatch(UUID.randomUUID().toString(),
+            listOf(TransferFile(UUID.randomUUID().toString(), "review.bin", 1024, ByteArray(32))),
+            1024, "Test Mac")
+        val first = batch()
+        owner.currentBatch = first
+        owner.state = TransferState.WaitingForPeerApproval(first)
+        val old = owner.operationID.toString()
+        val next = batch()
+        owner.currentBatch = next
+        owner.state = TransferState.WaitingForPeerApproval(next)
+        owner.cancelFromNotification(old)
+        assertEquals(next, owner.currentBatch)
+        assertTrue(owner.isBusy)
+        owner.cancelFromNotification(owner.operationID.toString())
+        assertEquals(TransferState.Cancelled, owner.state)
+        val terminal = owner.state
+        owner.cancelFromNotification(old)
+        assertEquals(terminal, owner.state)
+    }
+
+    @Test fun unboundNotificationResumeDoesNotChangePausedRoutingOrCreateConnectionDemand() {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val batch = TransferBatch(UUID.randomUUID().toString(),
+            listOf(TransferFile(UUID.randomUUID().toString(), "review.bin", 1024, ByteArray(32))),
+            1024, "Test Mac")
+        owner.currentBatch = batch
+        owner.state = TransferState.Paused(batch, 1, "review.bin", 0, 1024, 0, "Disconnected", true)
+        var demands = 0
+        owner.onLanRequired = { demands++ }
+        val previous = owner.state
+        owner.resumeFromNotification(UUID.randomUUID().toString())
+        owner.resumeFromNotification("")
+        assertEquals(previous, owner.state)
+        assertEquals(0, demands)
+        assertNull(owner.resumeJob)
+        owner.dismiss()
+    }
+
+    @Test fun notificationReviewIsOneShotAndCannotOpenAReplacementOperation() {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        fun batch() = TransferBatch(UUID.randomUUID().toString(),
+            listOf(TransferFile(UUID.randomUUID().toString(), "review.bin", 1024, ByteArray(32))), 1024, "Test Mac")
+        val first = batch()
+        owner.currentBatch = first
+        owner.state = TransferState.WaitingForPeerApproval(first)
+        owner.openFromNotification(owner.operationID.toString())
+        assertTrue(owner.openWorkspaceRequest)
+        assertTrue(owner.workspaceOpened())
+        assertFalse(owner.workspaceOpened())
+        owner.openFromNotification(owner.operationID.toString())
+        val successor = batch()
+        owner.currentBatch = successor
+        owner.state = TransferState.WaitingForPeerApproval(successor)
+        assertFalse(owner.openWorkspaceRequest)
+        assertFalse(owner.workspaceOpened())
+        owner.openFromNotification(first.id)
+        assertFalse(owner.openWorkspaceRequest)
+        owner.dismiss()
+    }
+
     @Test fun pickerReturnKeepsItsLeaseUntilTheReturningActivityIsForegrounded() = runBlocking {
         val owner = TransferController(dispatcher = Dispatchers.Unconfined)
         val leases = mutableListOf<Boolean>()

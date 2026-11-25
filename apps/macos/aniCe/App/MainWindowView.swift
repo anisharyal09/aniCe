@@ -158,7 +158,7 @@ struct MainWindowView: View {
     .onChange(of:navigation.destination) { _,_ in if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) } }
     .onChange(of:navigation.featurePanel) { _,_ in if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) } }
     .onChange(of:playback.showOnMac) { _,_ in if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) } }
-    .onDisappear { playback.presented("main",false) }
+    .onDisappear { playback.presented("main",false); updates.windowClosed() }
     .onAppear {
       if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) }
       let action = openWindow

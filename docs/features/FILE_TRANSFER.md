@@ -36,7 +36,7 @@ Files are written to job-owned partials, verified against their SHA-256 offer, t
 
 ## Progress and recovery
 
-Progress identifies direction, peer and file. Send progress counts receiver acknowledgements; receive progress counts successful local writes. Verification and publication remain visible after the bytes arrive. Android’s ongoing notification shows throttled byte progress for active sends and receives even while the app is open, with an operation-bound cancel action. Notification permission controls visibility in the notification shade.
+Progress identifies direction, peer and file. Send progress counts receiver acknowledgements; receive progress counts successful local writes. Verification and publication remain visible after the bytes arrive. Android’s ongoing notification shows throttled byte progress for active sends and receives even while the app is open. Its expanded native content includes the current file; its private lock-screen visibility follows Android settings. A file, state, direction or job change updates the notification immediately, while byte-only updates remain throttled. The tap opens only its original active transfer; Cancel and any legacy Bluetooth continuation remain operation-bound. Notification permission controls visibility in the notification shade.
 
 Back or **Continue in background** hides Android’s Share-to-Mac panel without cancelling the job. **Cancel transfer** cancels it explicitly. The share activity remains alive while needed for temporary source-file access; process recreation does not replay a send.
 
@@ -48,7 +48,9 @@ With mutually capable peers, LAN renews its cryptographic session before the lif
 
 A verified file that cannot be published retains its private partial and publication checkpoint. Restarting aniCe within the checkpoint lifetime reconciles an already-published file or restores the retained bytes for a fresh resume handshake. Cancel, dismissing the failed result or starting another batch discards that retained recovery state; published files are never removed. Hash-mismatched input is not retained for recovery.
 
-Mac background transfer notifications are off by default and optional; their controls are in Settings → File transfer. While aniCe is in the background, they announce incoming offers and confirm a successfully received batch, including automatic receives, after its files are verified and saved. They require macOS notification permission, and **Show in Finder** opens that batch’s saved folder. Progress remains in the app, where success identifies the files and save folder. Notification actions stay bound to the original batch. Dismissing a window or the Edge Drop shelf does not cancel an admitted transfer.
+Mac background transfer notifications are off by default and optional; their controls are in Settings → File transfer. While aniCe is in the background, they announce incoming offers and confirm a successfully received batch, including automatic receives, after its files are verified and saved. They require macOS notification permission. Offers expose **Accept**, **Review files** and **Decline**; Review opens the transfer panel without granting approval. Acceptance/decline checks the original operation again when the deferred action executes. An obsolete alert never approves or declines a successor batch.
+
+**Show in Finder** and the received-result tap open the original saved folder held in memory, not a folder supplied by a notification response or the next batch. Result targets are bounded; startup and normal Quit clear only transfer-owned notices. Late native submissions cannot restore a retired offer. Progress remains in the app, where success identifies the files and save folder. Native dismissal, closing a window and leaving the Edge Drop shelf do not cancel or approve an admitted transfer.
 
 ## Limits and references
 

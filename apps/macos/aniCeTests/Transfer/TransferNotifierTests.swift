@@ -47,7 +47,7 @@ final class TransferNotifierTests: XCTestCase {
     XCTAssertTrue(completedContent.body.contains("2 files"))
     XCTAssertTrue(completedContent.body.contains("saved to Downloads."))
     XCTAssertEqual(completedContent.categoryIdentifier, MacTransferNotifier.Category.result)
-    XCTAssertEqual(completedContent.userInfo["receivedFolder"], downloadFolder.absoluteString)
+    XCTAssertNil(completedContent.userInfo["receivedFolder"], "The native response must not carry a local destination URL")
 
   }
 
@@ -150,7 +150,7 @@ final class TransferNotifierTests: XCTestCase {
     XCTAssertEqual(model.state, .idle)
 
     notifier.handleAction(MacTransferNotifier.Action.choose)
-    XCTAssertTrue(windowOpened)
+    XCTAssertFalse(windowOpened, "Unbound legacy actions do not select a successor operation")
   }
 
   func testLegacyPausedCategoriesRetainTheirActions() throws {
@@ -200,14 +200,18 @@ final class TransferNotifierTests: XCTestCase {
     center.resolveAuthorization(granted: true)
     await waitForDelivery(center)
     let notice = try XCTUnwrap(center.added.first)
+    let resultCategory = try XCTUnwrap(MacTransferNotifier.notificationCategories().first {
+      $0.identifier == MacTransferNotifier.Category.result
+    })
+    try exportNotificationReview(notice, category: resultCategory, name: "transfer-received")
     XCTAssertEqual(center.added.count, 1)
     XCTAssertEqual(notice.content.title, "Files received")
-    XCTAssertEqual(notice.content.userInfo["receivedFolder"] as? String, folder.absoluteString)
+    XCTAssertNil(notice.content.userInfo["receivedFolder"])
     notifier.handleAction(MacTransferNotifier.Action.showInFinder, identifier: notice.identifier,
-      receivedFolder: notice.content.userInfo["receivedFolder"] as? String)
+      category: notice.content.categoryIdentifier, sourceToken: notice.content.userInfo["anice.transfer.token"] as? String)
     XCTAssertEqual(revealed, [folder], "An old result must not open the next batch's folder")
     notifier.handleAction(MacTransferNotifier.Action.showInFinder, identifier: notice.identifier,
-      receivedFolder: "https://example.invalid")
+      category: notice.content.categoryIdentifier, sourceToken: "wrong-token")
     XCTAssertEqual(revealed, [folder])
   }
 
@@ -293,6 +297,121 @@ final class TransferNotifierTests: XCTestCase {
     XCTFail("Receive notification was not delivered after approval")
   }
 
+  func testOfferActionsRecheckTheirBatchAfterDeferredExecutionAndAreOneShot() async throws {
+    let model = MacTransferModel()
+    let channel = MockSecuredChannel()
+    model.activeChannel = channel
+    model.notificationPreferences.enabled = true
+    let batch = makeBatch(count: 1)
+    model.state = .incomingOffer(batch: batch)
+    let center = SpyNotificationCenter()
+    var scheduled: [@MainActor () async -> Void] = []
+    let notifier = MacTransferNotifier(model: model, openMainWindow: {}, center: center,
+      applicationIsActive: { false }, scheduleAction: { scheduled.append($0) })
+    notifier.handle(.incomingOffer(batch))
+    await waitForDelivery(center)
+    let request = try XCTUnwrap(center.added.last)
+    let token = try XCTUnwrap(request.content.userInfo["anice.transfer.token"] as? String)
+    let category = try XCTUnwrap(MacTransferNotifier.notificationCategories().first {
+      $0.identifier == MacTransferNotifier.Category.offer
+    })
+    try exportNotificationReview(request, category: category, name: "transfer-offer")
+    for _ in 0..<3 {
+      notifier.handleAction(MacTransferNotifier.Action.decline, identifier: request.identifier,
+        category: request.content.categoryIdentifier, sourceToken: token)
+    }
+    XCTAssertEqual(scheduled.count, 1)
+    let successor = makeBatch(count: 2)
+    model.state = .incomingOffer(batch: successor)
+    await scheduled[0]()
+    XCTAssertEqual(model.pendingOffer?.id, successor.id)
+    XCTAssertFalse(channel.sentData.contains { (try? TransferMessage.decode($0)?.kind) == 4 })
+  }
+
+  func testOfferReviewDismissalAndWrongCategoryNeverApproveAFileTransfer() async throws {
+    let model = MacTransferModel()
+    model.notificationPreferences.enabled = true
+    let batch = makeBatch(count: 1)
+    model.state = .incomingOffer(batch: batch)
+    let center = SpyNotificationCenter()
+    var opens = 0
+    let notifier = MacTransferNotifier(model: model, openMainWindow: { opens += 1 }, center: center,
+      applicationIsActive: { false })
+    notifier.handle(.incomingOffer(batch))
+    await waitForDelivery(center)
+    let request = try XCTUnwrap(center.added.last)
+    let token = try XCTUnwrap(request.content.userInfo["anice.transfer.token"] as? String)
+    notifier.handleAction(MacTransferNotifier.Action.accept, identifier: request.identifier,
+      category: MacTransferNotifier.Category.result, sourceToken: token)
+    XCTAssertEqual(model.pendingOffer?.id, batch.id)
+    notifier.handleAction(MacTransferNotifier.Action.choose, identifier: request.identifier,
+      category: request.content.categoryIdentifier, sourceToken: token)
+    notifier.handleAction(MacTransferNotifier.Action.choose, identifier: request.identifier,
+      category: request.content.categoryIdentifier, sourceToken: token)
+    XCTAssertEqual(opens, 1)
+    XCTAssertEqual(model.pendingOffer?.id, batch.id)
+    notifier.handle(.incomingOffer(batch))
+    for _ in 0..<20 { await Task.yield() }
+    let replacement = try XCTUnwrap(center.added.last)
+    notifier.handleAction(UNNotificationDismissActionIdentifier, identifier: replacement.identifier,
+      category: replacement.content.categoryIdentifier, sourceToken: replacement.content.userInfo["anice.transfer.token"] as? String)
+    XCTAssertEqual(model.pendingOffer?.id, batch.id)
+  }
+
+  func testLateNativeAddAndStartupCleanupCannotReviveARetiredOffer() async throws {
+    let model = MacTransferModel()
+    model.notificationPreferences.enabled = true
+    let first = makeBatch(count: 1)
+    model.state = .incomingOffer(batch: first)
+    let center = SpyNotificationCenter()
+    center.holdAdd = true
+    center.pendingIdentifiers = ["transfer-offer-old", "anice-sms-keep"]
+    center.deliveredIdentifiers = ["transfer-received-old", "find-device-keep"]
+    var scheduled: [@MainActor () async -> Void] = []
+    let notifier = MacTransferNotifier(model: model, openMainWindow: {}, center: center,
+      applicationIsActive: { false }, scheduleAction: { scheduled.append($0) })
+    notifier.handle(.incomingOffer(first))
+    await waitForDelivery(center)
+    let request = try XCTUnwrap(center.added.last)
+    XCTAssertTrue(center.removedPending.contains("transfer-offer-old"))
+    XCTAssertFalse(center.removedPending.contains("anice-sms-keep"))
+    XCTAssertFalse(center.removedDelivered.contains("find-device-keep"))
+    model.state = .idle
+    center.pendingAdds[0](nil)
+    for _ in 0..<20 { await Task.yield() }
+    XCTAssertTrue(center.removedDelivered.contains(request.identifier))
+    let staleToken = request.content.userInfo["anice.transfer.token"] as? String
+    notifier.handleAction(MacTransferNotifier.Action.accept, identifier: request.identifier,
+      category: request.content.categoryIdentifier, sourceToken: staleToken)
+    XCTAssertTrue(scheduled.isEmpty)
+  }
+
+  func testCurrentDeclineExecutesOnceAndNativeReviewLabelMatchesItsAction() async throws {
+    let model = MacTransferModel()
+    let channel = MockSecuredChannel()
+    model.activeChannel = channel
+    model.notificationPreferences.enabled = true
+    let batch = makeBatch(count: 1)
+    model.state = .incomingOffer(batch: batch)
+    let center = SpyNotificationCenter()
+    var scheduled: [@MainActor () async -> Void] = []
+    let notifier = MacTransferNotifier(model: model, openMainWindow: {}, center: center,
+      applicationIsActive: { false }, scheduleAction: { scheduled.append($0) })
+    notifier.handle(.incomingOffer(batch))
+    await waitForDelivery(center)
+    let request = try XCTUnwrap(center.added.last)
+    notifier.handleAction(MacTransferNotifier.Action.decline, identifier: request.identifier,
+      category: request.content.categoryIdentifier, sourceToken: request.content.userInfo["anice.transfer.token"] as? String)
+    XCTAssertEqual(scheduled.count, 1)
+    await scheduled[0]()
+    XCTAssertNil(model.pendingOffer)
+    XCTAssertEqual(model.state, .idle)
+    let categories = MacTransferNotifier.notificationCategories()
+    let offer = try XCTUnwrap(categories.first { $0.identifier == MacTransferNotifier.Category.offer })
+    XCTAssertEqual(offer.actions.first { $0.identifier == MacTransferNotifier.Action.choose }?.title, "Review files")
+    XCTAssertTrue(offer.options.contains(.customDismissAction))
+  }
+
   func testPausedActionsAreIgnoredUnlessTheBatchIsStillPaused() {
     let model = MacTransferModel()
     let center = SpyNotificationCenter()
@@ -356,6 +475,13 @@ private final class SpyNotificationCenter: TransferNotificationCenter, @unchecke
   var added: [UNNotificationRequest] = []
   var removedDelivered: [String] = []
   var removedPending: [String] = []
+  var pendingIdentifiers: [String] = []
+  var deliveredIdentifiers: [String] = []
+  var holdAdd = false
+  var pendingAdds: [@Sendable (Error?) -> Void] = []
+
+  func pendingIdentifiers(completionHandler: @escaping @Sendable ([String]) -> Void) { completionHandler(pendingIdentifiers) }
+  func deliveredIdentifiers(completionHandler: @escaping @Sendable ([String]) -> Void) { completionHandler(deliveredIdentifiers) }
 
   func requestAuthorization(options: UNAuthorizationOptions, completionHandler: @escaping @Sendable (Bool, Error?) -> Void) {
     requestedAuthorization = true
@@ -371,7 +497,8 @@ private final class SpyNotificationCenter: TransferNotificationCenter, @unchecke
 
   func add(_ request: UNNotificationRequest, withCompletionHandler completionHandler: (@Sendable (Error?) -> Void)?) {
     added.append(request)
-    completionHandler?(nil)
+    if holdAdd, let completionHandler { pendingAdds.append(completionHandler) }
+    else { completionHandler?(nil) }
   }
 
   func removeDeliveredNotifications(withIdentifiers identifiers: [String]) {
