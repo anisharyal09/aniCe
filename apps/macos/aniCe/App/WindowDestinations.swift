@@ -347,7 +347,6 @@ extension MainWindowView {
            .contextMenu { Button("Edit name…") { editingLocalName = true } }
            .highPriorityGesture(LongPressGesture().onEnded { _ in editingLocalName = true })
            .accessibilityAction(named: "Edit device name") { editingLocalName = true }
-        Divider()
       }.padding(28).frame(maxWidth: .infinity, alignment: .leading)
     }
     .sheet(isPresented: Binding(get: { navigation.deviceRoute == .pairing }, set: { if !$0 { navigation.show(.devices) } })) {

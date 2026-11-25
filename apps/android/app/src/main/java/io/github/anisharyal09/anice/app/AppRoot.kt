@@ -212,6 +212,12 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                     }
                 }
             }, actions = {
+                if (navigation.destination != AppDestination.Guide) {
+                    IconButton(onClick = { navigation.openGuide(currentGuideTopic(navigation)) }) {
+                        Icon(painterResource(R.drawable.ic_help), contentDescription = "Open Guide",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                    }
+                }
                 if (navigation.destination != AppDestination.About) {
                     IconButton(onClick = { navigation.select(AppDestination.About, pairing.peers.isEmpty()) }) {
                         Icon(painterResource(R.drawable.ic_about), contentDescription = "About aniCe",
@@ -345,8 +351,45 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                         AppDestination.Favourites -> FeaturesScreen(session, pairing.peers, navigation,
                             favouritesOnly = true, trustedPeersLoaded = pairing.trustedPeersLoaded)
                         AppDestination.About, AppDestination.Settings -> SettingsScreen(identity, snackbars, navigation, context, pairing.peers)
+                        AppDestination.Guide -> GuideScreen(navigation.guideTopic)
                     }
                 }
+            }
+        }
+    }
+}
+
+private fun currentGuideTopic(navigation: AppNavigation): GuideTopic? {
+    if ((navigation.destination == AppDestination.Features || navigation.destination == AppDestination.Favourites) &&
+        navigation.featurePanel != null
+    ) {
+        return when (navigation.featurePanel) {
+            AppFeature.PhoneInput -> GuideTopic.ControlMac
+            AppFeature.DeskDeck -> GuideTopic.MacDeskDeck
+            AppFeature.Files -> GuideTopic.FilesAndEdgeDrop
+            AppFeature.Clipboard -> GuideTopic.ClipboardAndQuickSend
+            AppFeature.Playback -> GuideTopic.NowPlayingAndAudio
+            AppFeature.Sms -> GuideTopic.MessagesAndSms
+            null -> null
+        }
+    }
+    return when (navigation.destination) {
+        AppDestination.Home, AppDestination.Features, AppDestination.Favourites,
+        AppDestination.About, AppDestination.Guide -> null
+        AppDestination.Devices -> GuideTopic.PairingAndConnection
+        AppDestination.Settings -> when (navigation.settingsRoute) {
+            SettingsRoute.About -> null
+            SettingsRoute.Identity -> GuideTopic.PairingAndConnection
+            SettingsRoute.NotificationApps -> GuideTopic.NotificationsAndCalls
+            SettingsRoute.Overview -> when (navigation.settingsSection) {
+                "Permissions" -> GuideTopic.Permissions
+                "Do Not Disturb" -> GuideTopic.DndSync
+                "Clipboard" -> GuideTopic.ClipboardAndQuickSend
+                "Messages" -> GuideTopic.MessagesAndSms
+                "Notification sync" -> GuideTopic.NotificationsAndCalls
+                "File transfer" -> GuideTopic.FilesAndEdgeDrop
+                "Connection" -> GuideTopic.PairingAndConnection
+                else -> null
             }
         }
     }
@@ -359,6 +402,7 @@ private fun AppDestination.icon(selected: Boolean): Int = when (this) {
     AppDestination.Favourites -> if (selected) R.drawable.ic_star_filled else R.drawable.ic_star
     AppDestination.Settings -> if (selected) R.drawable.ic_settings else R.drawable.ic_settings_outline
     AppDestination.About -> R.drawable.ic_about
+    AppDestination.Guide -> R.drawable.ic_help
 }
 
 @Composable

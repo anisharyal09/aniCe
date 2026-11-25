@@ -10,6 +10,7 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
+- Replace scattered inline help disclosures with a contextual toolbar/app-bar Guide action (`?`) opening an offline, categorized **aniCe Guide** (`Connect`, `Share & Files`, `Control`, `Sync & Alerts`) across all cross-device and system capabilities (including Open Link in Mac, Edge Drop, Quick Paste Tray, Floating Key, notification/call sync, Do Not Disturb sync, Control Mac and Mac Desk Deck), refine **Features** with a compact hairline **More built into aniCe** row, and polish Android **Mac Desk Deck** onto calm satin-luminous `surfaceContainer` cards.
 - Bound release-note Markdown parsing and native inline styling across Mac and Android, and prevent dismissed, closed, terminated or stale-notification update reviews from resurrecting or duplicating.
 - Refine native notification attribution, quiet updates and original-operation actions for mirrored alerts, Messages and file transfers without new wire messages or notification history.
 - Merge Android Find Mac into Desk Deck, migrate saved shortcuts and routes, and retain independent Find Phone reception without changing the alert contract.

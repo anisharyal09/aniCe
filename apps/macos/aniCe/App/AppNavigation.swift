@@ -5,13 +5,57 @@ import SwiftUI
 import Observation
 
 enum AppDestination: String, CaseIterable, Identifiable {
-  case home = "Overview", devices = "Devices", features = "Features", favourites = "Favourites", settings = "Settings", about = "About"
+  case home = "Overview", devices = "Devices", features = "Features", favourites = "Favourites", settings = "Settings", about = "About", guide = "Guide"
   static let primary: [Self] = [.home, .devices, .features, .favourites, .settings, .about]
   var id: Self { self }
-  var symbol: String { switch self { case .home: "house"; case .devices: "laptopcomputer.and.iphone"; case .features: "square.grid.2x2"; case .favourites: "star"; case .about: "info.circle"; case .settings: "gearshape" } }
+  var symbol: String {
+    switch self {
+    case .home: "house"
+    case .devices: "laptopcomputer.and.iphone"
+    case .features: "square.grid.2x2"
+    case .favourites: "star"
+    case .about: "info.circle"
+    case .settings: "gearshape"
+    case .guide: "questionmark.circle"
+    }
+  }
 }
 enum DeviceRoute: Equatable { case overview, pairing }
 enum SettingsRoute: Equatable { case overview, identity, about }
+
+enum GuideCategory: String, CaseIterable, Identifiable {
+  case all = "All", connect = "Connect", shareAndFiles = "Share & Files", control = "Control", syncAndAlerts = "Sync & Alerts"
+  var id: Self { self }
+}
+
+enum GuideTopic: String, CaseIterable, Identifiable {
+  case pairingAndConnection
+  case permissions
+  case openLinkInMac
+  case filesAndEdgeDrop
+  case clipboardAndQuickSend
+  case pasteTrayAndPins
+  case controlMac
+  case controlAndroidAndFloatingKey
+  case macDeskDeck
+  case nowPlayingAndAudio
+  case messagesAndSms
+  case notificationsAndCalls
+  case dndSync
+  case findDeviceAndPing
+  case companionAndShortcuts
+
+  var id: Self { self }
+
+  var category: GuideCategory {
+    switch self {
+    case .pairingAndConnection, .permissions: .connect
+    case .openLinkInMac, .filesAndEdgeDrop, .clipboardAndQuickSend, .pasteTrayAndPins: .shareAndFiles
+    case .controlMac, .controlAndroidAndFloatingKey, .macDeskDeck, .nowPlayingAndAudio: .control
+    case .messagesAndSms, .notificationsAndCalls, .dndSync, .findDeviceAndPing, .companionAndShortcuts: .syncAndAlerts
+    }
+  }
+}
 
 enum MacSettingsCategory: String, CaseIterable {
   case all = "All", general = "General", permissions = "Permissions", features = "Features", shortcuts = "Shortcuts"
@@ -112,6 +156,7 @@ enum WindowAppearance: String, CaseIterable {
     var focusedPeer: String?
     var featurePanel: AppFeature?
     var featureOrigin: AppDestination = .features
+    var guideTopic: GuideTopic?
   }
 
   private var route = Route()
@@ -149,6 +194,14 @@ enum WindowAppearance: String, CaseIterable {
     set { navigate { $0.featurePanel = newValue } }
   }
   var featureOrigin: AppDestination { route.featureOrigin }
+  var guideTopic: GuideTopic? { route.guideTopic }
+
+  func openGuide(_ topic: GuideTopic? = nil) {
+    navigate {
+      $0.destination = .guide
+      $0.guideTopic = topic
+    }
+  }
   var details = false
   var diagnostics = false
   var findDetails = false

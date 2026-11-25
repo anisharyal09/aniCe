@@ -5,11 +5,33 @@ package io.github.anisharyal09.anice.app
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.listSaver
 
-enum class AppDestination(val label: String) { Home("Home"), Devices("Devices"), Features("Features"), Favourites("Favourites"), Settings("Settings"), About("About");
+enum class AppDestination(val label: String) { Home("Home"), Devices("Devices"), Features("Features"), Favourites("Favourites"), Settings("Settings"), About("About"), Guide("Guide");
     companion object { val primary = listOf(Home, Devices, Features, Favourites, Settings) }
 }
 enum class DeviceRoute { Overview, Pairing, Discovery }
 enum class SettingsRoute { Overview, Identity, NotificationApps, About }
+
+enum class GuideCategory(val label: String) {
+    All("All"), Connect("Connect"), ShareAndFiles("Share & Files"), Control("Control"), SyncAndAlerts("Sync & Alerts")
+}
+
+enum class GuideTopic(val category: GuideCategory) {
+    PairingAndConnection(GuideCategory.Connect),
+    Permissions(GuideCategory.Connect),
+    OpenLinkInMac(GuideCategory.ShareAndFiles),
+    FilesAndEdgeDrop(GuideCategory.ShareAndFiles),
+    ClipboardAndQuickSend(GuideCategory.ShareAndFiles),
+    PasteTrayAndPins(GuideCategory.ShareAndFiles),
+    ControlMac(GuideCategory.Control),
+    ControlAndroidAndFloatingKey(GuideCategory.Control),
+    MacDeskDeck(GuideCategory.Control),
+    NowPlayingAndAudio(GuideCategory.Control),
+    MessagesAndSms(GuideCategory.SyncAndAlerts),
+    NotificationsAndCalls(GuideCategory.SyncAndAlerts),
+    DndSync(GuideCategory.SyncAndAlerts),
+    FindDeviceAndPing(GuideCategory.SyncAndAlerts),
+    CompanionAndShortcuts(GuideCategory.SyncAndAlerts)
+}
 
 enum class SettingsCategory(val label: String) {
     All("All"), General("General"), Permissions("Permissions"), Features("Features"), Shortcuts("Shortcuts");
@@ -32,6 +54,7 @@ internal fun comparisonUsesDeviceSheet(destination: AppDestination, route: Devic
 internal fun showsAppBarBack(destination: AppDestination, route: DeviceRoute,
     settingsRoute: SettingsRoute, featurePanel: AppFeature?): Boolean =
     destination == AppDestination.About ||
+        destination == AppDestination.Guide ||
         (destination == AppDestination.Devices && route !in listOf(DeviceRoute.Overview, DeviceRoute.Pairing)) ||
         (destination == AppDestination.Settings && settingsRoute != SettingsRoute.Overview) ||
         (destination == AppDestination.Features && featurePanel != null)
@@ -85,6 +108,12 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
     var favouriteFeatures by mutableStateOf(AppFeature.DEFAULT_FAVOURITES)
     var featureOrder by mutableStateOf("")
     var settingsSection by mutableStateOf<String?>(null)
+    var guideTopic by mutableStateOf<GuideTopic?>(null)
+    var guideOrigin by mutableStateOf(AppDestination.Home)
+    var guideOriginRoute by mutableStateOf(DeviceRoute.Overview)
+    var guideOriginSettingsRoute by mutableStateOf(SettingsRoute.Overview)
+    var guideOriginFeature by mutableStateOf<AppFeature?>(null)
+
     fun openSettings(section: String) {
         settingsSection = section
         settingsRoute = SettingsRoute.Overview
@@ -102,6 +131,17 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
     }
     fun closeFeature() { featurePanel = null; destination = featureOrigin }
 
+    fun openGuide(topic: GuideTopic? = null) {
+        if (destination != AppDestination.Guide) {
+            guideOrigin = destination
+            guideOriginRoute = route
+            guideOriginSettingsRoute = settingsRoute
+            guideOriginFeature = featurePanel
+        }
+        guideTopic = topic
+        destination = AppDestination.Guide
+    }
+
     fun select(page: AppDestination, unpaired: Boolean) {
         destination = page
         if (page == AppDestination.Features || page == AppDestination.Favourites) featurePanel = null
@@ -112,7 +152,13 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
     fun pair() { route = DeviceRoute.Pairing; destination = AppDestination.Devices }
     fun paired() { route = DeviceRoute.Overview; destination = AppDestination.Home }
     fun back() {
-        if (destination == AppDestination.Devices && route != DeviceRoute.Overview) route = DeviceRoute.Overview
+        if (destination == AppDestination.Guide) {
+            destination = guideOrigin
+            route = guideOriginRoute
+            settingsRoute = guideOriginSettingsRoute
+            featurePanel = guideOriginFeature
+            guideTopic = null
+        } else if (destination == AppDestination.Devices && route != DeviceRoute.Overview) route = DeviceRoute.Overview
         else if (destination == AppDestination.Features && featurePanel != null) closeFeature()
         else if (destination == AppDestination.Home && mediaDetails) mediaDetails=false
         else if (destination == AppDestination.Settings && settingsRoute != SettingsRoute.Overview) settingsRoute = SettingsRoute.Overview
@@ -121,15 +167,23 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
     companion object {
         val saver = listSaver<AppNavigation, String>(
             // Keep the retired findDetails slot so older saved fields do not shift.
-            save = { listOf(it.destination.name, it.route.name, it.focusedPeer.orEmpty(), it.settingsRoute.name, it.mediaDetails.toString(), "false", AppFeature.migrateStored(it.favouriteFeatures), it.featurePanel?.name.orEmpty(), it.featureOrigin.name, AppFeature.migrateStored(it.featureOrder)) },
+            save = {
+                listOf(
+                    it.destination.name, it.route.name, it.focusedPeer.orEmpty(), it.settingsRoute.name,
+                    it.mediaDetails.toString(), "false", AppFeature.migrateStored(it.favouriteFeatures),
+                    it.featurePanel?.name.orEmpty(), it.featureOrigin.name, AppFeature.migrateStored(it.featureOrder),
+                    it.guideTopic?.name.orEmpty(), it.guideOrigin.name, it.guideOriginRoute.name,
+                    it.guideOriginSettingsRoute.name, it.guideOriginFeature?.name.orEmpty()
+                )
+            },
             restore = { saved ->
                 // Older saved state can still point at the removed Permissions destination.
                 val settingsRoute = SettingsRoute.entries.firstOrNull { it.name == saved.getOrNull(3) }
                     ?: SettingsRoute.Overview
                 AppNavigation(
-                    AppDestination.valueOf(saved[0]),
-                    DeviceRoute.valueOf(saved[1]),
-                    saved[2].ifEmpty { null },
+                    AppDestination.entries.firstOrNull { it.name == saved.getOrNull(0) } ?: AppDestination.Home,
+                    DeviceRoute.entries.firstOrNull { it.name == saved.getOrNull(1) } ?: DeviceRoute.Overview,
+                    saved.getOrNull(2)?.ifEmpty { null },
                     settingsRoute,
                 ).also { value ->
                     value.mediaDetails = saved.getOrNull(4) == "true"
@@ -140,6 +194,11 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
                     value.featureOrigin = AppDestination.entries.firstOrNull { page -> page.name == saved.getOrNull(8) }
                         ?: AppDestination.Features
                     value.featureOrder = AppFeature.migrateStored(saved.getOrNull(9).orEmpty())
+                    value.guideTopic = GuideTopic.entries.firstOrNull { it.name == saved.getOrNull(10) }
+                    value.guideOrigin = AppDestination.entries.firstOrNull { it.name == saved.getOrNull(11) } ?: AppDestination.Home
+                    value.guideOriginRoute = DeviceRoute.entries.firstOrNull { it.name == saved.getOrNull(12) } ?: DeviceRoute.Overview
+                    value.guideOriginSettingsRoute = SettingsRoute.entries.firstOrNull { it.name == saved.getOrNull(13) } ?: SettingsRoute.Overview
+                    value.guideOriginFeature = AppFeature.stored(saved.getOrNull(14))
                 }
             }
         )

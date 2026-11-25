@@ -204,6 +204,18 @@ struct MainWindowView: View {
       destinationContent
     }
     .navigationTitle(MacAppStorage.applicationName)
+    .toolbar {
+      ToolbarItem(placement: .primaryAction) {
+        Button {
+          navigation.openGuide(currentGuideTopic)
+        } label: {
+          Image(systemName: "questionmark.circle")
+        }
+        .accessibilityLabel("Open Guide")
+        .help(navigation.destination == .guide ? "Showing Guide" : "Open Guide")
+        .disabled(navigation.destination == .guide)
+      }
+    }
     .toolbarBackground(nativeGlass && !reduceTransparency
       ? (NativeGlassStyle.stored(nativeGlassStyle) == .vibrant
         ? AnyShapeStyle(.thinMaterial) : AnyShapeStyle(.regularMaterial))
@@ -251,6 +263,40 @@ struct MainWindowView: View {
     case .favourites: featureDestination(favouritesOnly: true)
     case .about: aboutContent
     case .settings: settingsContent
+    case .guide: GuideView(initialTopic: navigation.guideTopic)
+    }
+  }
+
+  private var currentGuideTopic: GuideTopic? {
+    if (navigation.destination == .features || navigation.destination == .favourites),
+       let feature = navigation.featurePanel {
+      switch feature {
+      case .keyboardTrackpad: return .controlAndroidAndFloatingKey
+      case .messages: return .messagesAndSms
+      case .files: return .filesAndEdgeDrop
+      case .clipboard: return .clipboardAndQuickSend
+      case .findDevice: return .findDeviceAndPing
+      case .playback: return .nowPlayingAndAudio
+      }
+    }
+    switch navigation.destination {
+    case .home, .features, .favourites, .about, .guide: return nil
+    case .devices: return .pairingAndConnection
+    case .settings:
+      if navigation.settingsRoute == .about { return nil }
+      if navigation.settingsRoute == .identity { return .pairingAndConnection }
+      switch navigation.settingsSection {
+      case "permissions": return .permissions
+      case "shortcuts": return .companionAndShortcuts
+      case "clipboard": return .clipboardAndQuickSend
+      case "file-transfer": return .filesAndEdgeDrop
+      case "messages": return .messagesAndSms
+      case "dnd-sync": return .dndSync
+      case "now-playing": return .nowPlayingAndAudio
+      case "desk-deck": return .macDeskDeck
+      case "connection": return .pairingAndConnection
+      default: return nil
+      }
     }
   }
 

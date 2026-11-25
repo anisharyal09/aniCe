@@ -154,6 +154,71 @@ struct AniCeSegmentedControl<Value: Hashable>: View {
   }
 }
 
+struct AniCeHelpDisclosure: View {
+  let title: String
+  let bodyText: String
+  var summary: String? = nil
+  var symbol: String? = nil
+  var highlighted: Bool = false
+  var initiallyExpanded: Bool = false
+  @State private var expanded: Bool
+  @Environment(\.colorScheme) private var scheme
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
+
+  init(title: String, bodyText: String, summary: String? = nil, symbol: String? = nil,
+       highlighted: Bool = false, initiallyExpanded: Bool = false) {
+    self.title = title
+    self.bodyText = bodyText
+    self.summary = summary
+    self.symbol = symbol
+    self.highlighted = highlighted
+    self.initiallyExpanded = initiallyExpanded
+    _expanded = State(initialValue: initiallyExpanded)
+  }
+
+  var body: some View {
+    DisclosureGroup(isExpanded: $expanded) {
+      Text(bodyText)
+        .font(.system(size: 12 * fontScale))
+        .foregroundStyle(AniCePalette.secondaryText(scheme))
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, symbol == nil ? 18 : 48)
+        .padding(.trailing, 8)
+        .padding(.top, 4)
+        .padding(.bottom, 2)
+    } label: {
+      HStack(alignment: .center, spacing: 10) {
+        if let symbol {
+          Image(systemName: symbol)
+            .font(.system(size: 14 * fontScale, weight: .regular))
+            .foregroundStyle(highlighted ? AniCePalette.accent(scheme) : AniCePalette.secondaryText(scheme))
+            .frame(width: 20, alignment: .center)
+        }
+        VStack(alignment: .leading, spacing: 2) {
+          Text(title)
+            .font(.system(size: 13 * fontScale, weight: .medium))
+            .foregroundStyle(AniCePalette.primaryText(scheme))
+            .fixedSize(horizontal: false, vertical: true)
+          if let summary, !summary.isEmpty {
+            Text(summary)
+              .font(.system(size: 12 * fontScale))
+              .foregroundStyle(AniCePalette.secondaryText(scheme))
+              .fixedSize(horizontal: false, vertical: true)
+          }
+        }
+        Spacer(minLength: 4)
+      }
+      .padding(.vertical, 2)
+      .contentShape(Rectangle())
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .onChange(of: initiallyExpanded) { _, shouldExpand in
+      expanded = shouldExpand
+    }
+  }
+}
+
 private struct AniCeSegmentFace: View {
   let title: String
   let selected: Bool

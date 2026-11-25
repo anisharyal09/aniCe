@@ -36,6 +36,7 @@ class AppNavigationTest {
                 for (settings in SettingsRoute.entries) {
                     for (feature in listOf(null, AppFeature.PhoneInput)) {
                         val expected = destination == AppDestination.About ||
+                            destination == AppDestination.Guide ||
                             (destination == AppDestination.Devices && route == DeviceRoute.Discovery) ||
                             (destination == AppDestination.Settings && settings != SettingsRoute.Overview) ||
                             (destination == AppDestination.Features && feature != null)
@@ -48,6 +49,28 @@ class AppNavigationTest {
         state.back()
         assertEquals(AppDestination.Home, state.destination)
         assertEquals("mac-a", state.focusedPeer)
+    }
+
+    @Test fun openGuidePreservesOriginRouteFeatureAndRoundTripsSaver() {
+        val state = AppNavigation(AppDestination.Devices, DeviceRoute.Discovery, "mac-a").also {
+            it.openFeature(AppFeature.DeskDeck)
+            it.openGuide(GuideTopic.MacDeskDeck)
+        }
+        assertEquals(AppDestination.Guide, state.destination)
+        assertEquals(GuideTopic.MacDeskDeck, state.guideTopic)
+        assertTrue(showsAppBarBack(state.destination, state.route, state.settingsRoute, state.featurePanel))
+
+        val scope = androidx.compose.runtime.saveable.SaverScope { true }
+        val saved = with(AppNavigation.saver) { scope.save(state) }!!
+        val restored = AppNavigation.saver.restore(saved)!!
+        assertEquals(AppDestination.Guide, restored.destination)
+        assertEquals(GuideTopic.MacDeskDeck, restored.guideTopic)
+
+        restored.back()
+        assertEquals(AppDestination.Features, restored.destination)
+        assertEquals(AppFeature.DeskDeck, restored.featurePanel)
+        assertNull(restored.guideTopic)
+        assertEquals("mac-a", restored.focusedPeer)
     }
 
     @org.junit.Test fun comparisonCannotBeHiddenByAnInactiveDeviceRoute() {

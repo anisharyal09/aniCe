@@ -66,7 +66,6 @@ fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>, open
     var historyTab by remember { mutableStateOf(false) }
     var preferencesOpen by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
-    var how by remember { mutableStateOf(false) }
     var reveal by remember { mutableStateOf(false) }
     var pasted by remember { mutableStateOf("") }
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
@@ -125,8 +124,6 @@ fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>, open
                 OutlinedTextField(value = pasted, onValueChange = { if (it.length <= 65536) pasted = it }, label = { Text("Paste text here") }, modifier = Modifier.fillMaxWidth())
                 if (pasted.isNotEmpty()) OutlinedButton(onClick = { owner.send(pasted = pasted); pasted = "" }, enabled = available && !owner.busy) { Text("Send pasted text") }
             }
-            TextButton(onClick = { how = !how }) { Text(if (how) "How sharing works ▴" else "How sharing works ▾") }
-            if (how) Text("Manual sharing works with automatic sharing off. For text or links in another app, use Share → Send to Mac (aniCe icon). Text-selection menus also work where supported. For copied text, use the Send to Mac Quick Settings tile and tap Send in its small panel. Add the tile from More options. Connect your Mac first.\n\nFor automatic sharing, enable it on both devices, copy text, then open aniCe. Android reads copied text only while aniCe has focus. Received text replaces your clipboard, including in the background. Home shows the latest successful clipboard activity for five minutes with a short preview and local Copy for eligible text. Optional history stays on this device, organized by date with the latest items first.", style = MaterialTheme.typography.bodySmall)
         }
     }
 }

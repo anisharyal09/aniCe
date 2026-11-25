@@ -257,6 +257,14 @@ class DeskDeckSurfaceTests {
             awaitControl("Open a feature")
             assertNull(find(root(), "Find Device"))
             capture(activity, "features-without-standalone-find")
+            reveal("More built into aniCe")
+            val guideFooter = awaitControl("More built into aniCe")
+            assertTrue(bounds(guideFooter).height() >= (48 * activity.resources.displayMetrics.density).toInt() - 1)
+            capture(activity, "features-footer-native-shell")
+            click("More built into aniCe")
+            awaitControl("aniCe Guide")
+            click("Back")
+            awaitControl("Open a feature")
             val current = activity
             runner.runOnMainSync { current.finish() }
             activity = null
@@ -281,12 +289,14 @@ class DeskDeckSurfaceTests {
         try {
             click("Settings")
             click("Permissions")
+            // Wait for Permissions-only purpose details before scrolling so an in-flight category switch cannot overshoot.
+            awaitControl("Relay incoming SMS to Mac.")
             reveal("Find Phone notifications")
-            assertNotNull(find(root(), "Find Phone notifications"))
-            assertNotNull(find(root(), "Receive Find Phone ringing requests from your Mac"))
+            awaitControl("Find Phone notifications")
+            awaitControl("Receive Find Phone ringing requests from your Mac")
             if (!allowed) {
                 reveal("Allow Find Phone alerts")
-                assertNotNull(find(root(), "Allow Find Phone alerts"))
+                awaitControl("Allow Find Phone alerts")
             }
             capture(activity, "find-phone-native-permissions")
             assertEquals("Viewing recovery never grants permission", allowed, app.findDeviceNotification.permitted())
@@ -477,7 +487,7 @@ class DeskDeckSurfaceTests {
         CompositionLocalProvider(LocalConfiguration provides configuration) {
             AniCeTheme {
                 CompositionLocalProvider(LocalDensity provides Density(fittedDensity, scale)) {
-                    Surface(Modifier.fillMaxSize()) {
+                    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                         // Surface propagates its minimum width; a separate Box makes the requested viewport real.
                         Box(Modifier.fillMaxSize().safeDrawingPadding()) {
                             Box(Modifier.width(width.dp).heightIn(max = if (width >= 600) 480.dp else 720.dp)

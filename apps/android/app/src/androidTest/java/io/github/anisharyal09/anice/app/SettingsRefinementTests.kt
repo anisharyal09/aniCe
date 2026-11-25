@@ -14,6 +14,8 @@ import android.os.ParcelFileDescriptor
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -29,6 +31,11 @@ import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.MainActivity
+import io.github.anisharyal09.anice.features.nowplaying.MediaController
+import io.github.anisharyal09.anice.features.nowplaying.MediaView
+import io.github.anisharyal09.anice.features.transfer.TransferController
+import io.github.anisharyal09.anice.features.transfer.TransferView
+import io.github.anisharyal09.anice.ui.ExpandableHelpNote
 import io.github.anisharyal09.anice.ui.theme.AniCeTheme
 import io.github.anisharyal09.anice.update.AndroidUpdateManager
 import io.github.anisharyal09.anice.update.AvailableRelease
@@ -1150,6 +1157,144 @@ class SettingsRefinementTests {
                     runner.runOnMainSync { activity.finish() }
                     runner.waitForIdleSync()
                 }
+            }
+        }
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Test fun contextualGuideOpensFromAppBarShowsCategorizedTopicsAndPreservesAccessibleTargets() {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        for (dark in listOf(false, true)) {
+            val activity = runner.startActivitySync(
+                Intent(runner.targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ) as MainActivity
+            val transfer = TransferController(runner.targetContext.applicationContext)
+            val media = MediaController()
+            val navigation = AppNavigation(AppDestination.Features).apply {
+                openFeature(AppFeature.Files)
+            }
+            try {
+                runner.runOnMainSync {
+                    activity.setContent {
+                        Fixture(dark, 1.2f) {
+                            Scaffold(
+                                topBar = {
+                                    TopAppBar(
+                                        title = { Text("aniCe") },
+                                        navigationIcon = {
+                                            if (showsAppBarBack(navigation.destination, navigation.route,
+                                                    navigation.settingsRoute, navigation.featurePanel)) {
+                                                IconButton(onClick = { navigation.back() }) {
+                                                    Icon(
+                                                        androidx.compose.ui.res.painterResource(io.github.anisharyal09.anice.R.drawable.ic_back),
+                                                        contentDescription = "Back",
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        actions = {
+                                            if (navigation.destination != AppDestination.Guide) {
+                                                IconButton(onClick = { navigation.openGuide(GuideTopic.FilesAndEdgeDrop) }) {
+                                                    Icon(
+                                                        androidx.compose.ui.res.painterResource(io.github.anisharyal09.anice.R.drawable.ic_help),
+                                                        contentDescription = "Open Guide",
+                                                        modifier = Modifier.size(18.dp),
+                                                    )
+                                                }
+                                            }
+                                            if (navigation.destination != AppDestination.About) {
+                                                IconButton(onClick = { navigation.select(AppDestination.About, unpaired = false) }) {
+                                                    Icon(
+                                                        androidx.compose.ui.res.painterResource(io.github.anisharyal09.anice.R.drawable.ic_about),
+                                                        contentDescription = "About aniCe",
+                                                        modifier = Modifier.size(18.dp),
+                                                    )
+                                                }
+                                            }
+                                        },
+                                    )
+                                },
+                            ) { padding ->
+                                Box(Modifier.fillMaxSize().padding(padding)) {
+                                    if (navigation.destination == AppDestination.Guide) {
+                                        GuideScreen(navigation.guideTopic)
+                                    } else {
+                                        Column(
+                                            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            TransferView(transfer)
+                                            MediaView(media, compact = false, overview = false)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                idle()
+                awaitLabel("Open Guide")
+                assertNotNull(find(root(), "About aniCe"))
+                assertNull("Inline help must be removed from Transfer", find(root(), "How transfers work"))
+                assertNull("Inline help must be removed from Now Playing", find(root(), "How Now Playing works"))
+                assertNull("Inline help must be removed from Connections", find(root(), "How connections work"))
+
+                val helpButton = clickable(find(root(), "Open Guide"))
+                assertNotNull(helpButton)
+                val density = activity.resources.displayMetrics.density
+                assertTrue(bounds(helpButton).height() >= (48 * density).toInt() - 1)
+
+                val contextualTopic = navigation.featurePanel
+                assertEquals(AppFeature.Files, contextualTopic)
+                click("Open Guide")
+                awaitLabel("aniCe Guide")
+                assertEquals(AppDestination.Guide, navigation.destination)
+                assertEquals(GuideTopic.FilesAndEdgeDrop, navigation.guideTopic)
+                awaitLabel("trusted auto-receive")
+
+                click("Back")
+                awaitLabel("Open Guide")
+                assertEquals(AppDestination.Features, navigation.destination)
+                assertEquals(AppFeature.Files, navigation.featurePanel)
+
+                runner.runOnMainSync { navigation.openGuide(null) }
+                awaitLabel("aniCe Guide")
+                awaitLabel("Open Link in Mac")
+                assertNull("Collapsed Guide keeps topic bodies hidden", find(root(), "without overwriting your Mac clipboard"))
+
+                val linkTrigger = clickable(find(root(), "Open Link in Mac"))
+                assertNotNull(linkTrigger)
+                assertTrue(bounds(linkTrigger).height() >= (48 * density).toInt() - 1)
+                assertTrue(linkTrigger!!.stateDescription?.toString()?.contains("Collapsed") == true)
+
+                click("Open Link in Mac")
+                awaitLabel("without overwriting your Mac clipboard")
+                val bodyBounds = bounds(find(root(), "without overwriting your Mac clipboard"))
+                assertTrue(bodyBounds.left >= bounds(root()).left && bodyBounds.right <= bounds(root()).right)
+                capture("guide-${if (dark) "dark" else "light"}-120")
+
+                click("Share & Files")
+                idle()
+                awaitNoLabel("Pairing & Connections")
+                assertNotNull(find(root(), "Open Link in Mac"))
+                click("Control")
+                awaitLabel("Control Mac")
+                click("All")
+                awaitLabel("Pairing & Connections")
+
+                click("Expand all")
+                awaitLabel("Collapse all")
+                click("Collapse all")
+                awaitLabel("Expand all")
+
+                click("Back")
+                awaitLabel("Open Guide")
+                assertEquals(AppDestination.Features, navigation.destination)
+                assertEquals(AppFeature.Files, navigation.featurePanel)
+            } finally {
+                runner.runOnMainSync { transfer.dismiss(); activity.finish() }
+                runner.waitForIdleSync()
             }
         }
     }

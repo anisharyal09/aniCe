@@ -109,6 +109,9 @@ struct FeaturesView: View {
               feature(item, in: displayedFeatures)
             }
           }
+          if !favouritesOnly {
+            moreBuiltInCard
+          }
         }
 
       }
@@ -210,6 +213,38 @@ struct FeaturesView: View {
       if peers.contains(where: { findDevice.canFind($0.peer) }) { return "Ready to alert your device" }
       return peers.contains(where: { findDevice.connected($0.peer) }) ? "Not available on this device" : "Device offline"
     }
+  }
+
+  private var moreBuiltInCard: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      AniCePalette.separator(colorScheme).opacity(0.6).frame(height: 0.5)
+        .padding(.top, 20)
+        .padding(.bottom, 10)
+      Button {
+        navigation.openGuide(nil)
+      } label: {
+        HStack(spacing: 8) {
+          Text("More built into aniCe — shortcuts, sync, and system tools.")
+            .font(.system(size: 12 * fontScale))
+            .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            .lineLimit(1)
+            .truncationMode(.tail)
+          Spacer(minLength: 12)
+          HStack(spacing: 4) {
+            Text("Open Guide")
+              .font(.system(size: 12 * fontScale, weight: .medium))
+            Image(systemName: "chevron.right")
+              .font(.system(size: 10.5, weight: .medium))
+          }
+          .foregroundStyle(AniCePalette.accent(colorScheme))
+        }
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(AniCeHoverButtonStyle(feedbackPadding: 4))
+    }
+    .accessibilityLabel("More built into aniCe. Open Guide.")
   }
 
 }

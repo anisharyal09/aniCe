@@ -8,6 +8,7 @@ import SwiftUI
 import Observation
 import Carbon
 import UserNotifications
+import Vision
 
 @testable import aniCe
 
@@ -1343,6 +1344,215 @@ final class BetaUpdatePreferenceTests: XCTestCase {
     }
     XCTAssertEqual(renders, 128)
     XCTAssertEqual(writes, 0)
+  }
+
+  @MainActor func testContextualGuideActionOpensCategorizedOfflineGuideWithoutInlineClutter() async throws {
+    let name = "aniCe.GuideTests.\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    defaults.set(1.2, forKey: "ui.fontScale")
+
+    XCTAssertEqual(AppDestination.primary, [.home, .devices, .features, .favourites, .settings, .about])
+
+    let navigation = ConnectionNavigation()
+    navigation.openFeature(.files)
+    navigation.openGuide(.filesAndEdgeDrop)
+    XCTAssertEqual(navigation.destination, .guide)
+    XCTAssertEqual(navigation.guideTopic, .filesAndEdgeDrop)
+    navigation.goBack()
+    XCTAssertEqual(navigation.destination, .features)
+    XCTAssertEqual(navigation.featurePanel, .files)
+    navigation.goForward()
+    XCTAssertEqual(navigation.destination, .guide)
+    XCTAssertEqual(navigation.guideTopic, .filesAndEdgeDrop)
+
+    let transfer = MacTransferModel()
+    let keyboard = MacKeyboardTrackpadModel(preferences: defaults)
+    let clipboard = MacClipboardModel(native: ClipboardNativeFake(), preferences: ClipboardPreferences(storage: defaults))
+    let findDevice = MacFindDeviceModel(notifier: MacFindDeviceNotifier())
+    let smsPrefs = SmsPreferences(storage: nil)
+    let sms = MacSmsModel(notifier: MacSmsNotifier(preferences: smsPrefs))
+    let edgeDrop = MacEdgeDropController(model: transfer, preferences: EdgeDropPreferences(storage: defaults))
+    defer {
+      transfer.dismiss()
+      clipboard.invalidate()
+    }
+
+    for (title, body) in [
+      ("Open Link in Mac", "Launch any http or https link from Android straight into your Mac’s default browser."),
+      ("Control Mac (from Android)", "Turn your Android screen and keyboard into a wireless touchpad and keyboard for Mac."),
+    ] {
+      let host = NSHostingView(rootView: AniCeHelpDisclosure(title: title, bodyText: body)
+        .disclosureGroupStyle(ClickableDisclosureStyle())
+        .padding(12).frame(width: 340)
+        .defaultAppStorage(defaults))
+      host.frame.size = host.fittingSize
+      host.layoutSubtreeIfNeeded()
+      XCTAssertLessThan(host.bounds.height, 75, "\(title) must stay collapsed by default")
+    }
+
+    for scheme in [ColorScheme.light, .dark] {
+      let inlineCheck = VStack(alignment: .leading, spacing: 12) {
+        TransferView(model: transfer, peers: [], compact: false, overview: false)
+        MacKeyboardTrackpadView(model: keyboard, floatingPresentation: false)
+      }
+      .padding(16).frame(width: 480)
+      .background(AniCePalette.surface(scheme))
+      .environment(\.colorScheme, scheme)
+      .defaultAppStorage(defaults)
+
+      let inlineHost = NSHostingView(rootView: inlineCheck)
+      inlineHost.frame.size = inlineHost.fittingSize
+      let inlineText = try recognizedText(inlineHost)
+      XCTAssertFalse(inlineText.contains("How transfers work"))
+      XCTAssertFalse(inlineText.contains("How Control Android works"))
+
+      for favouritesOnly in [false, true] {
+        let featNav = ConnectionNavigation()
+        featNav.select(favouritesOnly ? .favourites : .features)
+        let featuresView = FeaturesView(
+          playback: MacPlaybackModel(),
+          transfer: transfer,
+          clipboard: clipboard,
+          findDevice: findDevice,
+          sms: sms,
+          keyboardTrackpad: keyboard,
+          smsPreferences: smsPrefs,
+          findNotifier: nil,
+          peers: [],
+          edgeDrop: edgeDrop,
+          navigation: featNav,
+          favouritesOnly: favouritesOnly
+        )
+        .frame(width: 720, height: 820)
+        .background(AniCePalette.background(scheme))
+        .environment(\.colorScheme, scheme)
+        .defaultAppStorage(defaults)
+
+        let featHost = NSHostingView(rootView: featuresView)
+        featHost.frame.size = CGSize(width: 720, height: 820)
+        let featText = try recognizedText(featHost)
+        if favouritesOnly {
+          XCTAssertFalse(featText.contains("More built into aniCe"))
+        } else {
+          XCTAssertTrue(featText.contains("More built into aniCe"))
+          XCTAssertTrue(featText.contains("Open Guide"))
+          if let path = ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"] {
+            let directory = URL(fileURLWithPath: path, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let bitmap = try XCTUnwrap(featHost.bitmapImageRepForCachingDisplay(in: featHost.bounds))
+            featHost.cacheDisplay(in: featHost.bounds, to: bitmap)
+            let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            try data.write(to: directory.appendingPathComponent("mac-features-\(scheme).png"))
+          }
+        }
+      }
+
+      let guideHost = NSHostingView(rootView: GuideView(initialTopic: nil)
+        .disclosureGroupStyle(ClickableDisclosureStyle())
+        .frame(width: 680, height: 780)
+        .background(AniCePalette.background(scheme))
+        .environment(\.colorScheme, scheme)
+        .defaultAppStorage(defaults))
+      guideHost.frame.size = CGSize(width: 680, height: 780)
+      let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 780),
+        styleMask: [.borderless], backing: .buffered, defer: false)
+      window.isReleasedWhenClosed = false
+      window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+      window.contentView = guideHost
+      window.orderFront(nil)
+      defer { window.contentView = nil; window.close() }
+      try await settle(guideHost)
+
+      let initialText = try recognizedText(guideHost)
+      XCTAssertTrue(initialText.contains("aniCe Guide"))
+      XCTAssertTrue(initialText.contains("Open Link in Mac"))
+      XCTAssertTrue(initialText.contains("Send files & Edge Drop"))
+      XCTAssertFalse(initialText.contains("without overwriting your Mac clipboard"))
+
+      let linkPoint = try XCTUnwrap(try textCenter(guideHost, matching: "Open Link in Mac"))
+      try click(guideHost, in: window, at: linkPoint)
+      try await settle(guideHost)
+      let expandedText = try recognizedText(guideHost)
+      XCTAssertTrue(expandedText.contains("launches it directly"))
+
+      if let path = ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"] {
+        let directory = URL(fileURLWithPath: path, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let bitmap = try XCTUnwrap(guideHost.bitmapImageRepForCachingDisplay(in: guideHost.bounds))
+        guideHost.cacheDisplay(in: guideHost.bounds, to: bitmap)
+        let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        try data.write(to: directory.appendingPathComponent("mac-guide-\(scheme).png"))
+      }
+
+      let controlPoint = try XCTUnwrap(try textCenter(guideHost, matching: "Control"))
+      try click(guideHost, in: window, at: controlPoint)
+      try await settle(guideHost)
+      let controlText = try recognizedText(guideHost)
+      XCTAssertTrue(controlText.contains("Floating Key"), "OCR output: \(controlText)")
+      XCTAssertTrue(controlText.contains("Desk Deck") || controlText.contains("Monitor Mac vitals"), "OCR output: \(controlText)")
+
+      let sharePoint = try XCTUnwrap(try textCenter(guideHost, matching: "Share & Files"))
+      try click(guideHost, in: window, at: sharePoint)
+      try await settle(guideHost)
+      let filteredText = try recognizedText(guideHost)
+      XCTAssertFalse(filteredText.contains("Pairing & Connections"))
+      XCTAssertTrue(filteredText.contains("Open Link in Mac"))
+
+      let allPoint = try XCTUnwrap(try textCenter(guideHost, matching: "All"))
+      try click(guideHost, in: window, at: allPoint)
+      try await settle(guideHost)
+      let expandPoint = try XCTUnwrap(try textCenter(guideHost, matching: "Expand all"))
+      try click(guideHost, in: window, at: expandPoint)
+      try await settle(guideHost)
+      XCTAssertTrue(try recognizedText(guideHost).contains("Collapse all"))
+      let collapsePoint = try XCTUnwrap(try textCenter(guideHost, matching: "Collapse all"))
+      try click(guideHost, in: window, at: collapsePoint)
+      try await settle(guideHost)
+      XCTAssertTrue(try recognizedText(guideHost).contains("Expand all"))
+
+      let contextualHost = NSHostingView(rootView: GuideView(initialTopic: .openLinkInMac)
+        .disclosureGroupStyle(ClickableDisclosureStyle())
+        .frame(width: 680, height: 640)
+        .background(AniCePalette.background(scheme))
+        .environment(\.colorScheme, scheme)
+        .defaultAppStorage(defaults))
+      contextualHost.frame.size = CGSize(width: 680, height: 640)
+      let contextualText = try recognizedText(contextualHost)
+      XCTAssertTrue(contextualText.contains("launches it directly"))
+    }
+  }
+
+  private func recognizedText(_ host: NSView) throws -> String {
+    host.layoutSubtreeIfNeeded()
+    let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+    host.cacheDisplay(in: host.bounds, to: bitmap)
+    let image = try XCTUnwrap(bitmap.cgImage)
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    request.usesLanguageCorrection = false
+    try VNImageRequestHandler(cgImage: image).perform([request])
+    return request.results?.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ") ?? ""
+  }
+
+  private func textCenter(_ host: NSView, matching query: String) throws -> NSPoint? {
+    host.layoutSubtreeIfNeeded()
+    let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+    host.cacheDisplay(in: host.bounds, to: bitmap)
+    let image = try XCTUnwrap(bitmap.cgImage)
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    request.usesLanguageCorrection = false
+    try VNImageRequestHandler(cgImage: image).perform([request])
+    let ordered = (request.results ?? []).sorted { $0.boundingBox.midY > $1.boundingBox.midY }
+    for observation in ordered {
+      guard let recognized = observation.topCandidates(1).first,
+            let range = recognized.string.range(of: query) else { continue }
+      let box = (try? recognized.boundingBox(for: range)?.boundingBox) ?? observation.boundingBox
+      let y = host.isFlipped ? (1.0 - box.midY) * host.bounds.height : box.midY * host.bounds.height
+      return NSPoint(x: box.midX * host.bounds.width, y: y)
+    }
+    return nil
   }
 
   private func settle(_ host: NSView) async throws {

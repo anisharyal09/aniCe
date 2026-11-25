@@ -218,9 +218,6 @@ struct ClipboardView: View {
             if !pasted.isEmpty { Button("Send pasted text") { model.send(pasted: pasted); pasted = "" }.disabled(model.busy || !available) }
           }.padding(.top, 8)
         }
-        DisclosureGroup("How sharing works") {
-          Text("Manual sharing works with automatic sharing off. From another Android app, use Share → Send to Mac for text or links, or select text and choose Send to Mac where offered. For text already copied on the phone, its Send to Mac Quick Settings tile opens an explicit sending panel. The Mac must already be connected.\n\nFor automatic sharing, enable it on both devices. Android shares copies while aniCe has focus; copy text and open aniCe. Incoming text replaces the receiving clipboard, including while the phone app is in the background. Recent activity offers a short preview and local Copy for eligible text. Optional history stays on each device, organized by date with the latest items first.").font(.caption).foregroundStyle(.secondary)
-        }
       }
     }
     .padding(.horizontal, 4)

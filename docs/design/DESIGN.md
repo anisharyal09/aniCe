@@ -8,6 +8,7 @@ Version 0.3. This guide defines visual direction, interaction behavior, standard
 - **Native behavior**: Use platform-native controls, typography, and navigation patterns (macOS AppKit/SwiftUI with SF Symbols; Android Material 3/Compose with Material Symbols).
 - **State truth**: Truthfully distinguish between trusted, connecting, secured, offline, permission-gated, and unsupported states. Never fake live state or display an invented zero.
 - **Direct feedback**: Interactive controls respond with visible hover, pressed and focus feedback. Mac uses a restrained but noticeable semantic state layer (10% hover, 18% pressed) with a 140 ms hover transition, disabled under Reduce Motion. Filled selections use contrasting ink for feedback, including the light selected face in Dark and dark selected face in Light; inactive controls use accent ink. Android retains Material ripple/state layers for touch, keyboard focus and mouse/stylus hover where supported. No glow, scale bounce or hover-only actions.
+- **Contextual offline Guide**: Secondary and detail views expose a clean toolbar/app-bar Guide action (`?`) alongside a quiet hairline-separated **More built into aniCe** footer row in Features, opening one categorized local **aniCe Guide** (`Connect`, `Share & Files`, `Control`, `Sync & Alerts`) presented in calm grouped sheets without nested borders, popups, or cluttered inline disclosures.
 
 ## Brand mark
 
@@ -72,10 +73,11 @@ Shared information architecture mapped into platform-native navigation:
 | Favourites | Pinned quick-access features (defaults: Android = Control Mac, Desk Deck, Clipboard; macOS = Clipboard, Control Android, Messages) |
 | Settings | App-wide preferences (Appearance, Text Scale, Permissions, LAN timeout) |
 | About | Version, license, source, developer links, and support |
+| Guide | Categorized offline reference for built-in capabilities, shortcuts, and settings (opened via `?` outside primary navigation) |
 
 ### macOS layout
 - Sidebar pins are independent of Favourites and menu-bar pins, with Pin/Unpin in feature context menus. Pinned navigation scrolls vertically while Settings/About remain available. Overview and companion shortcut faces wrap in saved order. Companion uses native behind-window vibrancy and a separate quiet Support aniCe heart beside Open aniCe.
-- **Main window**: Resizable window with traffic lights and Back/Forward history navigation on the left of the split header; aniCe branding in the window titlebar. Sidebar holds navigation destinations; workspace content is centered with a maximum of two columns.
+- **Main window**: Resizable window with traffic lights and Back/Forward history navigation on the left of the split header, aniCe branding in the window titlebar, and a trailing contextual Guide (`?`) toolbar action in the detail bar. Sidebar holds navigation destinations; workspace content is centered with a maximum of two columns.
 - **Initial size and sidebar**: A new main window defaults to 960 × 640 pt; native resizing and restored window sizes remain in control. The sidebar uses a 27 pt brand mark and fits the wordmark and full destination labels at the current text size, with 12 pt of additional width. It remains resizable.
 - **Menu-bar companion**: Compact popover (max 520 pt height) showing active device state, Now Playing, file transfers, quick actions, and pinned favorite shortcuts.
 - Companion overflow contains Manage devices, Settings and Quit; the visible Paste tray action and global shortcut provide tray access without a duplicate overflow entry.
@@ -83,11 +85,11 @@ Shared information architecture mapped into platform-native navigation:
 
 ### Android layout
 - Home quick-access shortcuts wrap into rows, preserving labels and 48 dp targets without horizontal scrolling.
-- Native top app bar with aniCe brand mark and About action.
+- Native top app bar with aniCe brand mark, Guide (`?`) action, and About (`i`) action.
 - Five bottom destinations: Home, Devices, Features, Favourites, Settings.
 - Native system Back and RTL support throughout.
-- About retains an app-bar Back action. Full-screen input controls respect safe drawing and keyboard insets so Done, Stop and the editor remain reachable.
-- Desk Deck retains standard app shell with app bar and navigation tabs.
+- About and Guide retain app-bar Back actions returning cleanly to the originating screen. Full-screen input controls respect safe drawing and keyboard insets so Done, Stop and the editor remain reachable.
+- Desk Deck retains standard app shell with app bar and navigation tabs, using clean `surfaceContainer` cards with subtle top-lit catchlight edges and zero nested input/badge borders.
 
 ## State truth
 
