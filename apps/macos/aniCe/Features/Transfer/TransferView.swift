@@ -329,7 +329,16 @@ private struct TransferFileDropTarget: ViewModifier {
   func body(content: Content) -> some View {
     content
       .onDrop(of: [UTType.fileURL], isTargeted: $isTargeted) { providers in
-        TransferDropSubmission.receive(providers, model: model)
+        let accepted = TransferDropSubmission.receive(providers, model: model)
+        if accepted {
+          NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+        }
+        return accepted
+      }
+      .onChange(of: isTargeted) { _, targeted in
+        if targeted {
+          NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        }
       }
       .overlay {
         if isTargeted, model.connectedAndroidRecipient != nil, !model.isBusy {

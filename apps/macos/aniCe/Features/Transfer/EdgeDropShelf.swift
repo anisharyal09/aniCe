@@ -305,6 +305,7 @@ enum EdgeDropFeedbackPhase: Equatable {
     guard preferences.enabled, !sleeping else { return }
     sentFeedback = batch
     acceptedDrop = nil
+    NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
     guard started, let point = feedbackPoint,
       let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) ?? NSScreen.main else { return }
     showShelf(on: screen, near: point)
@@ -544,7 +545,11 @@ enum EdgeDropFeedbackPhase: Equatable {
   }
 
   override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-    controller?.enterNativeDrag(sender.draggingPasteboard) ?? []
+    let operation = controller?.enterNativeDrag(sender.draggingPasteboard) ?? []
+    if operation == .copy {
+      NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+    }
+    return operation
   }
 
   override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -562,7 +567,11 @@ enum EdgeDropFeedbackPhase: Equatable {
   override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
     guard let controller else { return false }
     let urls = MacEdgeDropController.fileURLs(from: sender.draggingPasteboard)
-    return controller.finishDrop(urls)
+    let accepted = controller.finishDrop(urls)
+    if accepted {
+      NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+    }
+    return accepted
   }
 }
 

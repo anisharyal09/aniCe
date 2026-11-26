@@ -122,7 +122,7 @@ struct CompanionView: View {
         .buttonStyle(AniCeButtonStyle(compact: true))
         .frame(maxWidth: .infinity)
         .accessibilityLabel(floatingKeyboard.isVisible ? "Hide Floating Key" : "Show Floating Key")
-        .help("Show Floating Key to type directly on Android; right-click for trackpad controls (\(GlobalShortcutPreferences.shared.binding(.floatingKey).label)).")
+        .help("Show Floating Key (\(GlobalShortcutPreferences.shared.binding(.floatingKey).label)) or toggle active typing (\(GlobalShortcutPreferences.shared.binding(.floatingKeyInput).label)); right-click for trackpad controls.")
       }
     }
   }

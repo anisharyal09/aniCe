@@ -79,7 +79,8 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
     guard let phone = model.targetPeer?.displayName else {
       return "Open full controls to choose a trusted phone and use its keyboard or trackpad."
     }
-    return "Click to type directly on \(phone). Right-click for full controls, including a trackpad to move and scroll the phone."
+    let typingShortcut = GlobalShortcutPreferences.shared.binding(.floatingKeyInput).label
+    return "Click or press \(typingShortcut) to type directly on \(phone). Right-click for full controls, including a trackpad to move and scroll the phone."
   }
 
   var statusDescription: String {

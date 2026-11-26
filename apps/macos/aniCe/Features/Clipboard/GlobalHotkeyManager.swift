@@ -12,7 +12,7 @@ enum GlobalShortcutAction: String, CaseIterable, Identifiable {
     switch self {
     case .tray: "Clipboard tray"
     case .floatingKey: "Floating Key"
-    case .floatingKeyInput: "Floating Key typing"
+    case .floatingKeyInput: "Floating Key active typing"
     }
   }
   var number: UInt32 {

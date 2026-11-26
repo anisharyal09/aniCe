@@ -44,7 +44,7 @@ Drop files to your screen edge to share them, sync clipboards instantly, reply t
 
 - **[Edge Drop](docs/features/FILE_TRANSFER.md#sending):** On by default at the right edge. Drag regular Finder files to the Mac screen edge to send them to the selected compatible phone; change the edge or turn the shelf off in Settings → File transfer.
 - **[Quick Paste Tray](docs/features/CLIPBOARD.md#quick-paste-tray-on-macos):** `⌥⌘V` opens searchable local clipboard history with previews, filters and pins. Copy a selection for ordinary paste, even without a connected phone.
-- **[Floating Key](docs/features/KEYBOARD_TRACKPAD.md#floating-key):** `⌥⌘K` toggles a floating button to send input directly to your phone from your Mac keyboard in a click—with an expandable trackpad control.
+- **[Floating Key](docs/features/KEYBOARD_TRACKPAD.md#floating-key):** `⌥⌘K` toggles the floating keyboard button, and `⌃⌘K` starts or stops active typing directly without clicking—with an expandable trackpad control.
 - **Menu Bar Companion:** Click the menu bar icon to check phone battery and connection state, control active media playback, track transfer progress, access pinned features directly and quickly send files or clipboard text.
 
 ### File sharing and clipboard
