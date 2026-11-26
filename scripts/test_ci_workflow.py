@@ -162,7 +162,38 @@ class WorkflowPolicyTests(unittest.TestCase):
     def test_required_jobs_are_exactly_the_declared_lanes(self):
         document = workflow_documents()["ci.yml"]
         jobs = document.get("jobs", {})
-        self.assertEqual(set(jobs), set(REQUIRED_JOBS) | {"verify-required"})
+        self.assertEqual(set(jobs), {"detect-changes"} | set(REQUIRED_JOBS) | {"verify-required"})
+        self.assertNotIn("if", jobs["verify-ci-integrity"])
+        self.assertNotIn("if", jobs["verify-contracts"])
+        for job_name, flag in (
+            ("verify-rust", "run_rust"),
+            ("verify-android", "run_android"),
+            ("verify-macos", "run_macos"),
+        ):
+            self.assertEqual(jobs[job_name].get("needs"), "detect-changes", job_name)
+            self.assertEqual(
+                jobs[job_name].get("if"),
+                f"needs.detect-changes.outputs.{flag} == 'true'",
+                job_name,
+            )
+
+    def test_ci_change_detector_uses_environment_data_and_fails_closed(self):
+        detector = workflow_documents()["ci.yml"]["jobs"]["detect-changes"]
+        self.assertEqual(detector.get("runs-on"), "ubuntu-24.04")
+        checkout = next(
+            step for step in detector["steps"]
+            if step.get("uses", "").startswith("actions/checkout@")
+        )
+        self.assertEqual(checkout.get("with", {}).get("fetch-depth"), 2)
+        classify = next(step for step in detector["steps"] if step.get("id") == "classify")
+        self.assertNotIn("${{", classify.get("run", ""))
+        self.assertIn("scripts/ci_changes.py --mode ci", classify.get("run", ""))
+        self.assertEqual(detector.get("permissions"), {"contents": "read", "actions": "read"})
+        self.assertEqual(classify["env"]["GH_TOKEN"], "${{ github.event_name == 'push' && github.token || '' }}")
+        self.assertEqual(
+            detector["outputs"],
+            {f"run_{lane}": f"${{{{ steps.classify.outputs.run_{lane} }}}}" for lane in ("rust", "android", "macos")},
+        )
 
     def test_required_lanes_call_the_shared_verifier(self):
         document = workflow_documents()["ci.yml"]
@@ -199,33 +230,61 @@ class WorkflowPolicyTests(unittest.TestCase):
         document = workflow_documents()["ci.yml"]
         aggregator = document["jobs"]["verify-required"]
         self.assertEqual(aggregator.get("if"), "always()")
-        self.assertEqual(set(aggregator.get("needs", [])), set(REQUIRED_JOBS))
+        self.assertEqual(set(aggregator.get("needs", [])), {"detect-changes"} | set(REQUIRED_JOBS))
         self.assertEqual(aggregator.get("runs-on"), "ubuntu-24.04")
         self.assertEqual(aggregator.get("permissions"), {})
         steps = aggregator.get("steps", [])
         self.assertEqual(len(steps), 1)
         self.assertNotIn("uses", steps[0])
-        self.assertIn("NEEDS_JSON", steps[0].get("env", {}))
-        self.assertIn("EXPECTED_LANES", steps[0].get("env", {}))
+        self.assertEqual(steps[0].get("env"), {"NEEDS_JSON": "${{ toJSON(needs) }}"})
         self.assertIn("python3 - <<'PY'", steps[0].get("run", ""))
-        self.assertEqual(
-            steps[0]["env"]["EXPECTED_LANES"].split(),
-            list(REQUIRED_JOBS),
-        )
 
-    def test_required_aggregator_rejects_every_non_success_shape(self):
+    def test_required_aggregator_rejects_missing_evidence_and_unexpected_results(self):
         document = workflow_documents()["ci.yml"]
         step = document["jobs"]["verify-required"]["steps"][0]
-        expected = step["env"]["EXPECTED_LANES"].split()
-        successful = {name: {"result": "success"} for name in expected}
+        all_flags_true = {"run_rust": "true", "run_android": "true", "run_macos": "true"}
+        successful = {
+            "detect-changes": {"result": "success", "outputs": dict(all_flags_true)},
+            **{name: {"result": "success"} for name in REQUIRED_JOBS},
+        }
+        docs_only = {
+            "detect-changes": {
+                "result": "success",
+                "outputs": {"run_rust": "false", "run_android": "false", "run_macos": "false"},
+            },
+            "verify-ci-integrity": {"result": "success"},
+            "verify-contracts": {"result": "success"},
+            "verify-rust": {"result": "skipped"},
+            "verify-android": {"result": "skipped"},
+            "verify-macos": {"result": "skipped"},
+        }
         cases = [
-            ("success", successful, 0),
+            ("all-success", successful, 0),
+            ("docs-only-selective-skips", docs_only, 0),
+            ("android-only", {
+                **docs_only,
+                "detect-changes": {"result": "success", "outputs": {
+                    "run_rust": "false", "run_android": "true", "run_macos": "false",
+                }},
+                "verify-android": {"result": "success"},
+            }, 0),
             ("failure", {**successful, "verify-contracts": {"result": "failure"}}, 1),
             ("cancelled", {**successful, "verify-rust": {"result": "cancelled"}}, 1),
-            ("skipped", {**successful, "verify-android": {"result": "skipped"}}, 1),
+            ("unexpected-skip-when-enabled", {**successful, "verify-android": {"result": "skipped"}}, 1),
+            ("unexpected-success-when-disabled", {**docs_only, "verify-rust": {"result": "success"}}, 1),
+            ("always-lane-skipped", {**docs_only, "verify-contracts": {"result": "skipped"}}, 1),
+            ("detector-failed", {**successful, "detect-changes": {"result": "failure", "outputs": {}}}, 1),
+            ("detector-missing-outputs", {**successful, "detect-changes": {"result": "success"}}, 1),
+            ("detector-empty-outputs", {**successful, "detect-changes": {"result": "success", "outputs": {}}}, 1),
+            ("detector-invalid-flag", {
+                **successful,
+                "detect-changes": {"result": "success", "outputs": {**all_flags_true, "run_rust": "maybe"}},
+            }, 1),
+            ("skipped-lane-failed", {**docs_only, "verify-rust": {"result": "failure"}}, 1),
+            ("skipped-lane-cancelled", {**docs_only, "verify-macos": {"result": "cancelled"}}, 1),
             ("neutral", {**successful, "verify-ci-integrity": {"result": "neutral"}}, 1),
             ("missing-result", {**successful, "verify-rust": {}}, 1),
-            ("missing-lane", {name: {"result": "success"} for name in expected[:-1]}, 1),
+            ("missing-lane", {k: v for k, v in successful.items() if k != "verify-macos"}, 1),
             ("unexpected-lane", {**successful, "unexpected": {"result": "success"}}, 1),
             ("non-object-row", {**successful, "verify-rust": "success"}, 1),
             ("empty", {}, 1),
@@ -235,10 +294,7 @@ class WorkflowPolicyTests(unittest.TestCase):
                 completed = subprocess.run(
                     ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
                     cwd=ROOT,
-                    env=os.environ | {
-                        "NEEDS_JSON": json.dumps(needs),
-                        "EXPECTED_LANES": " ".join(expected),
-                    },
+                    env=os.environ | {"NEEDS_JSON": json.dumps(needs)},
                     capture_output=True,
                     text=True,
                     timeout=10,
@@ -247,17 +303,16 @@ class WorkflowPolicyTests(unittest.TestCase):
                 if expected_code:
                     self.assertIn("::error::", completed.stdout)
                 else:
-                    self.assertIn("All required lanes succeeded", completed.stdout)
+                    self.assertIn("All applicable lanes succeeded", completed.stdout)
         for label, environment in (
-            ("malformed-json", {"NEEDS_JSON": "{", "EXPECTED_LANES": " ".join(expected)}),
-            ("missing-needs", {"EXPECTED_LANES": " ".join(expected)}),
-            ("empty-expected", {"NEEDS_JSON": "{}", "EXPECTED_LANES": ""}),
+            ("malformed-json", {"NEEDS_JSON": "{"}),
+            ("missing-needs", {}),
         ):
             with self.subTest(label=label):
                 completed = subprocess.run(
                     ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
                     cwd=ROOT,
-                    env={**os.environ, **environment},
+                    env={key: value for key, value in os.environ.items() if key != "NEEDS_JSON"} | environment,
                     capture_output=True,
                     text=True,
                     timeout=10,
@@ -377,7 +432,19 @@ exit "$ANICE_TEST_SDK_EXIT"
         events = triggers(document)
         self.assertEqual(events, {"schedule", "workflow_dispatch"})
         self.assertEqual(document.get("permissions"), {"contents": "read"})
+        self.assertEqual(document["concurrency"]["group"],
+                         "${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}")
+        self.assertEqual({item["cron"] for item in document["on"]["schedule"]},
+                         {"37 3 * * 1", "37 3 * * 0,2-6"})
+        detector = document["jobs"]["detect-changes"]
+        classify = next(step for step in detector["steps"] if step.get("id") == "classify")
+        self.assertEqual(classify["env"]["REUSE_SCHEDULED_RUNTIME"],
+                         "${{ github.event.schedule == '37 3 * * 0,2-6' }}")
+        self.assertIn("scripts/ci_changes.py --mode runtime", classify["run"])
+        self.assertEqual(detector["permissions"], {"contents": "read", "actions": "read"})
         job = document["jobs"]["verify-android-connected"]
+        self.assertEqual(job.get("needs"), "detect-changes")
+        self.assertEqual(job.get("if"), "needs.detect-changes.outputs.run_connected != 'false'")
         self.assertEqual(job.get("runs-on"), "ubuntu-24.04")
         matrix = job.get("strategy", {}).get("matrix", {}).get("include", [])
         self.assertEqual({row.get("api-level") for row in matrix}, {29, 36})
@@ -410,6 +477,22 @@ exit "$ANICE_TEST_SDK_EXIT"
         self.assertEqual(upload.get("if"), "always()")
         self.assertEqual(upload.get("with", {}).get("if-no-files-found"), "error")
 
+    def test_cargo_caches_share_downloads_without_reusing_build_outputs(self):
+        documents = workflow_documents()
+        cache_steps = [
+            step["with"]
+            for workflow in ("ci.yml", "runtime.yml", "security.yml")
+            for job in documents[workflow]["jobs"].values()
+            for step in job["steps"]
+            if step.get("uses", "").startswith("actions/cache@")
+        ]
+        self.assertEqual(len(cache_steps), 6)
+        for settings in cache_steps:
+            self.assertEqual(settings, cache_steps[0])
+            self.assertEqual(settings["path"].splitlines(),
+                             ["~/.cargo/registry/index", "~/.cargo/registry/cache", "~/.cargo/git/db"])
+            self.assertIn("Cargo.lock", settings["key"])
+
     def test_emulator_acceleration_probe_keeps_failure_status_and_evidence(self):
         job = workflow_documents()['runtime.yml']['jobs']['verify-android-connected']
         settings = next(step['with'] for step in job['steps']
@@ -436,10 +519,11 @@ exit "$ANICE_TEST_SDK_EXIT"
         events = triggers(document)
         self.assertNotIn("pull_request", events)
         self.assertNotIn("merge_group", events)
-        self.assertLessEqual(events, {"schedule", "workflow_dispatch", "push"})
+        self.assertEqual(events, {"workflow_dispatch"})
         self.assertEqual(document.get("permissions"), {"contents": "read"})
         job = document["jobs"]["verify-native-interchange"]
         self.assertEqual(job.get("environment"), "device-lab")
+        self.assertEqual(job.get("if"), "github.ref == 'refs/heads/main'")
         runner = job.get("runs-on")
         self.assertIn("self-hosted", runner)
         self.assertIn("device-lab", runner)
@@ -663,15 +747,29 @@ PY
         self.assertNotIn("pull_request", events)
         self.assertNotIn("pull_request_target", events)
         self.assertEqual(document.get("permissions"), {"contents": "read"})
+        detector = document["jobs"]["detect-changes"]
+        self.assertEqual(detector.get("runs-on"), "ubuntu-24.04")
+        self.assertEqual(
+            set(detector.get("outputs", {})),
+            {"run_codeql", "codeql_languages", "run_swift"},
+        )
         codeql = document["jobs"]["codeql"]
         self.assertEqual(codeql.get("permissions"), {"contents": "read", "security-events": "write"})
-        self.assertIn("java-kotlin", codeql.get("strategy", {}).get("matrix", {}).get("language", []))
+        self.assertEqual(codeql.get("needs"), "detect-changes")
+        self.assertEqual(codeql.get("if"), "needs.detect-changes.outputs.run_codeql == 'true'")
+        self.assertEqual(
+            codeql.get("strategy", {}).get("matrix", {}).get("language"),
+            "${{ fromJSON(needs.detect-changes.outputs.codeql_languages) }}",
+        )
         codeql_swift = document["jobs"]["codeql-swift"]
+        self.assertEqual(codeql_swift.get("needs"), "detect-changes")
+        self.assertEqual(codeql_swift.get("if"), "needs.detect-changes.outputs.run_swift == 'true'")
         self.assertEqual(codeql_swift.get("runs-on"), "macos-15")
         self.assertIn("Xcode_26.3.app", codeql_swift.get("env", {}).get("DEVELOPER_DIR", ""))
         self.assertEqual(codeql_swift.get("permissions"), {"contents": "read", "security-events": "write"})
-        self.assertEqual(set(document["jobs"]), {"codeql", "codeql-swift"})
-        for job in document["jobs"].values():
+        self.assertEqual(set(document["jobs"]), {"detect-changes", "codeql", "codeql-swift"})
+        for job_name in ("codeql", "codeql-swift"):
+            job = document["jobs"][job_name]
             init = next(step for step in job["steps"] if step.get("name") == "Initialize CodeQL")
             analyze = next(step for step in job["steps"] if step.get("name") == "Perform CodeQL Analysis")
             self.assertEqual(init["uses"].split("@")[1], analyze["uses"].split("@")[1])
@@ -701,9 +799,17 @@ PY
         document = workflow_documents()["dependency-review.yml"]
         events = triggers(document)
         self.assertEqual(events, {"pull_request"})
+        self.assertEqual(document["on"]["pull_request"], {"branches": ["main"]})
         self.assertEqual(document.get("permissions"), {"contents": "read"})
         job = document["jobs"]["dependency-review"]
         self.assertEqual(job.get("permissions"), {"contents": "read"})
+        self.assertNotIn("if", job)
+        checkout, classify, review = job["steps"]
+        self.assertEqual(checkout["with"]["fetch-depth"], 2)
+        self.assertEqual(classify["id"], "classify")
+        self.assertIn("scripts/ci_changes.py --mode dependencies", classify["run"])
+        self.assertNotIn("${{", classify["run"])
+        self.assertEqual(review["if"], "steps.classify.outputs.review_dependencies != 'false'")
         step = next(s for s in job["steps"] if "dependency-review-action" in s.get("uses", ""))
         self.assertEqual(step.get("with", {}).get("fail-on-severity"), "high")
 
@@ -721,6 +827,8 @@ PY
             "/SECURITY.md",
             "/CONTRIBUTING.md",
             "/scripts/verify-suite.py",
+            "/scripts/ci_changes.py",
+            "/scripts/test_ci_changes.py",
             "/scripts/test_ci_workflow.py",
             "/scripts/test_verify_suite.py",
             "/scripts/test_device_health.py",

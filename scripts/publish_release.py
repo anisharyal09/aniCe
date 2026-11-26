@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 
+from ci_changes import main_push_ci_succeeded
 from release_version import parse_tag
 
 MAX_BYTES = 256 * 1024 * 1024
@@ -18,13 +19,7 @@ NAMES = ("aniCe-android.apk", "aniCe-mac.zip")
 
 def require_ci(repository, commit):
     """Only the latest main-push CI run for this exact source can authorize signing."""
-    endpoint = f"repos/{repository}/actions/workflows/ci.yml/runs?head_sha={commit}&branch=main&event=push&per_page=100"
-    response = json.loads(subprocess.check_output(["gh", "api", endpoint], text=True))
-    runs = [run for run in response.get("workflow_runs", [])
-            if run.get("head_sha") == commit and run.get("head_branch") == "main"
-            and run.get("event") == "push"]
-    latest = max(runs, key=lambda run: run["id"], default=None)
-    if not latest or latest.get("status") != "completed" or latest.get("conclusion") != "success":
+    if not main_push_ci_succeeded(repository, commit):
         raise ValueError("The latest main-push CI run for the release commit must succeed")
 
 

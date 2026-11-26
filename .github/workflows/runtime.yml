@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Runs Android instrumentation on KVM-accelerated CPUs with headless SwiftShader graphics.
-# Scheduled nightly and manually dispatched; never runs on PR events.
+# Checks for Android changes nightly, with a full weekly run and manual dispatch.
 name: Runtime
 
 on:
   schedule:
-    - cron: '0 3 * * *'
+    - cron: '37 3 * * 1'   # Full refresh on Mondays, even without changes.
+    - cron: '37 3 * * 0,2-6'
   workflow_dispatch:
 
 permissions:
@@ -16,14 +17,40 @@ defaults:
     shell: bash
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   PYTHONDONTWRITEBYTECODE: '1'
 
 jobs:
+  detect-changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      run_connected: ${{ steps.classify.outputs.run_connected }}
+    steps:
+      - name: Check out sources for change classification
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Check for changes since the last successful scheduled run
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REUSE_SCHEDULED_RUNTIME: ${{ github.event.schedule == '37 3 * * 0,2-6' }}
+          HEAD_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci_changes.py --mode runtime --event "$EVENT_NAME" --head "$HEAD_SHA"
+
   verify-android-connected:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.run_connected != 'false'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -61,6 +88,17 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+
+      - name: Cache Cargo downloads
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-downloads-v1-${{ runner.os }}-${{ hashFiles('core/rust/pairing/Cargo.lock') }}
+          restore-keys: |
+            cargo-downloads-v1-${{ runner.os }}-
 
       - name: Install Android SDK and NDK components
         run: |

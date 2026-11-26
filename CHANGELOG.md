@@ -8,6 +8,15 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+### Changed
+
+- Select native CI, dependency review and CodeQL work by changed inputs while preserving an always-reported merge gate and exact-commit release evidence. Share Cargo downloads across compatible jobs.
+- Skip redundant nightly Android emulator runs after successful verification, retain full weekly checks, and run the physical device lab on demand.
+
+### Fixed
+
+- Include failing Android test names in GitHub annotations and preserve JUnit results when Gradle reports test failures.
+
 ## [v0.9.0-beta.4]
 
 Application release v0.9.0-beta.4, build 90024.

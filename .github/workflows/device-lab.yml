@@ -1,20 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Protected physical device lab verification for native cross-platform interchange.
 # Runs only on self-hosted hardware with physical Android phones attached via USB.
-# NEVER triggered by untrusted pull_request code.
+# Dispatch on main when a runner and test device are available.
 name: Device Lab
 
 on:
-  schedule:
-    - cron: '0 4 * * *'
   workflow_dispatch:
     inputs:
       serial:
         description: 'Explicit Android device serial (optional)'
         required: false
         type: string
-  push:
-    branches: [main]
 
 permissions:
   contents: read
@@ -33,6 +29,7 @@ env:
 
 jobs:
   verify-native-interchange:
+    if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, macOS, device-lab]
     environment: device-lab
     timeout-minutes: 45

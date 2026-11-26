@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Runs independent verification lanes on GitHub-hosted runners.  The workflow
-# only prepares toolchains and invokes scripts/verify-suite.py; acceptance
-# rules, floors and report parsing live in the verifier.
+# Runs verification lanes on GitHub-hosted runners. Test acceptance rules,
+# floors and report parsing live in scripts/verify-suite.py.
 name: CI
 
 on:
@@ -29,6 +28,32 @@ env:
   PYTHONDONTWRITEBYTECODE: '1'
 
 jobs:
+  detect-changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      run_rust: ${{ steps.classify.outputs.run_rust }}
+      run_android: ${{ steps.classify.outputs.run_android }}
+      run_macos: ${{ steps.classify.outputs.run_macos }}
+    steps:
+      - name: Check out sources for change classification
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Classify changed paths
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.before || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.event_name == 'push' && github.token || '' }}
+        run: python3 scripts/ci_changes.py --mode ci --event "$EVENT_NAME" --base "$BASE_SHA" --head "$HEAD_SHA"
+
   verify-ci-integrity:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -106,6 +131,8 @@ jobs:
           path: build/reports/verification/
 
   verify-rust:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.run_rust == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -118,6 +145,17 @@ jobs:
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
+
+      - name: Cache Cargo downloads
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-downloads-v1-${{ runner.os }}-${{ hashFiles('core/rust/pairing/Cargo.lock') }}
+          restore-keys: |
+            cargo-downloads-v1-${{ runner.os }}-
 
       - name: Set up Rust
         run: |
@@ -137,6 +175,8 @@ jobs:
           path: build/reports/verification/
 
   verify-android:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.run_android == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -160,6 +200,17 @@ jobs:
             apps/android/**/*.gradle.kts
             apps/android/gradle.properties
             apps/android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Cache Cargo downloads
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-downloads-v1-${{ runner.os }}-${{ hashFiles('core/rust/pairing/Cargo.lock') }}
+          restore-keys: |
+            cargo-downloads-v1-${{ runner.os }}-
 
       - name: Set up Rust and Android targets
         run: |
@@ -192,6 +243,8 @@ jobs:
             apps/android/app/build/reports/
 
   verify-macos:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.run_macos == 'true'
     runs-on: macos-15
     timeout-minutes: 90
     env:
@@ -209,6 +262,17 @@ jobs:
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
+
+      - name: Cache Cargo downloads
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-downloads-v1-${{ runner.os }}-${{ hashFiles('core/rust/pairing/Cargo.lock') }}
+          restore-keys: |
+            cargo-downloads-v1-${{ runner.os }}-
 
       - name: Set up Rust and macOS targets
         run: |
@@ -241,15 +305,14 @@ jobs:
     # branch protection. This job has no checkout or repository permissions.
     # Protect the workflow itself with CODEOWNERS and required code-owner review.
     if: always()
-    needs: [verify-ci-integrity, verify-contracts, verify-rust, verify-android, verify-macos]
+    needs: [detect-changes, verify-ci-integrity, verify-contracts, verify-rust, verify-android, verify-macos]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {}
     steps:
-      - name: Require every lane to succeed
+      - name: Require every applicable lane to succeed
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-          EXPECTED_LANES: verify-ci-integrity verify-contracts verify-rust verify-android verify-macos
         run: |
           python3 - <<'PY'
           import json
@@ -257,35 +320,55 @@ jobs:
           import sys
 
           try:
-              expected = os.environ["EXPECTED_LANES"].split()
               needs = json.loads(os.environ["NEEDS_JSON"])
           except (KeyError, json.JSONDecodeError) as error:
               print("::error::Cannot read required lane results: %s" % error)
-              sys.exit(1)
-          if not expected:
-              print("::error::No required lanes were declared")
               sys.exit(1)
           if not isinstance(needs, dict):
               print("::error::Required lane results are not an object")
               sys.exit(1)
 
+          expected = {
+              "detect-changes": None,
+              "verify-ci-integrity": None,
+              "verify-contracts": None,
+              "verify-rust": "run_rust",
+              "verify-android": "run_android",
+              "verify-macos": "run_macos",
+          }
+          detector = needs.get("detect-changes")
+          outputs = detector.get("outputs") if isinstance(detector, dict) else None
+          if not isinstance(outputs, dict):
+              outputs = {}
+
           problems = []
-          for name in expected:
-              row = needs.get(name)
-              if not isinstance(row, dict):
-                  problems.append("%s: missing" % name)
-                  continue
-              result = row.get("result")
-              if result != "success":
-                  problems.append("%s: %s" % (name, result))
-          unexpected = sorted(set(needs) - set(expected))
+          skipped = []
+          for lane, flag in expected.items():
+              required_result = "success"
+              if flag is not None:
+                  value = outputs.get(flag)
+                  if value == "false":
+                      required_result = "skipped"
+                  elif value != "true":
+                      problems.append(f"detect-changes: missing or invalid {flag}")
+
+              row = needs.get(lane)
+              result = row.get("result") if isinstance(row, dict) else "missing"
+              if result != required_result:
+                  problems.append(f"{lane}: {result!r} (expected {required_result})")
+              elif result == "skipped":
+                  skipped.append(lane)
+
+          unexpected = sorted(set(needs) - expected.keys())
           if unexpected:
-              problems.append("unexpected lanes: " + ", ".join(unexpected))
+              problems.append("unexpected lanes: " + ", ".join(map(repr, unexpected)))
 
           if problems:
               print("::error::Required verification did not succeed: " + "; ".join(problems))
-              for problem in problems:
-                  print("| " + problem)
               sys.exit(1)
-          print("All required lanes succeeded: " + ", ".join(expected))
+
+          summary = "All applicable lanes succeeded: " + ", ".join(lane for lane in expected if lane not in skipped)
+          if skipped:
+              summary += "; selectively skipped by path filter: " + ", ".join(skipped)
+          print(summary)
           PY
