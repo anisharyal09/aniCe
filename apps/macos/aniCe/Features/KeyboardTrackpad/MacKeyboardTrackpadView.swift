@@ -50,7 +50,7 @@ struct MacKeyboardTrackpadView: View {
         .toggleStyle(AniCePreferenceToggleStyle())
 
       if !floatingPresentation {
-        Text("Shortcut: \(GlobalShortcutPreferences.shared.binding(.floatingKey).label) shows or hides Floating Key")
+        Text("Shortcuts: \(GlobalShortcutPreferences.shared.binding(.floatingKey).label) shows or hides Floating Key · \(GlobalShortcutPreferences.shared.binding(.floatingKeyInput).label) toggles typing focus")
           .font(.caption)
           .foregroundStyle(AniCePalette.secondaryText(scheme))
       }

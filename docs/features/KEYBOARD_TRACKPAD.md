@@ -12,9 +12,9 @@ Keyboard & Trackpad lets the Mac send standard Bluetooth keyboard and mouse inpu
 4. Choose **Refresh** after system pairing, select the corresponding Bluetooth device and confirm **Link device**. This list contains only system-paired devices. A matching name appears first; if the phone uses a different name, open **Phone has a different name?** and choose its pairing. Confirmation stores a local association for that trusted aniCe phone and starts the HID connection. Other Bluetooth accessories may also appear in the expanded list.
 5. On later visits, aniCe reconnects once to the saved paired device over Bluetooth HID. The connection stays idle until you click the keyboard area or pad; connecting never captures input by itself. Two-finger scrolling over an inactive pad scrolls this panel. Once you click the pad to activate it, two-finger scrolling controls the phone.
 
-Press **⌥⌘K** anywhere while aniCe is running to show or hide **Floating Key**. Hover its button for direct-typing and trackpad guidance.
+Press **⌥⌘K** anywhere while aniCe is running to show or hide **Floating Key**, or **⌃⌘K** to focus and start or stop typing on Android directly (showing Floating Key if hidden). Hover its button for direct-typing and trackpad guidance.
 
-Settings → Shortcuts can record or reset the Floating Key shortcut using Command, Control, Option and Shift combinations or function keys. Ordinary typing/editing and enabled system combinations are reserved. A conflicting shortcut leaves the previous registration unchanged.
+Settings → Shortcuts can record or reset the Floating Key shortcuts using Command, Control, Option and Shift combinations or function keys. Ordinary typing/editing and enabled system combinations are reserved. A conflicting shortcut leaves the previous registration unchanged.
 
 Use **Other devices…** to select another trusted aniCe phone. Use **Change Bluetooth device…** in that menu to replace the system-paired device associated with the selected phone. A removed aniCe trust or reset local identity clears these local associations. Forgetting a phone in macOS Bluetooth Settings also requires linking again.
 

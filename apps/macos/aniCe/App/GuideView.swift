@@ -13,6 +13,7 @@ private struct GuideTopicEntry: Identifiable {
   @MainActor static var allEntries: [GuideTopicEntry] {
     let tray = GlobalShortcutPreferences.shared.binding(.tray).label
     let floatingKey = GlobalShortcutPreferences.shared.binding(.floatingKey).label
+    let floatingKeyInput = GlobalShortcutPreferences.shared.binding(.floatingKeyInput).label
     return [
       GuideTopicEntry(
         topic: .pairingAndConnection,
@@ -68,7 +69,7 @@ private struct GuideTopicEntry: Identifiable {
         title: "Control Android & Floating Key",
         summary: "Classic Bluetooth HID keyboard/trackpad from Mac and the \(floatingKey) Floating Key panel.",
         symbol: "keyboard",
-        body: "Trust the phone in aniCe, pair it separately in system Bluetooth Settings, then link that pairing in Mac Features → Control Android. Click the trackpad to arm pointer and keyboard input; turn off Use keyboard and trackpad together for separate areas. Toggle Floating Key from the menu bar or \(floatingKey), configurable in Mac Settings → Shortcuts. Press ⌘⇧Esc while an input surface has focus to stop. Bluetooth HID input stays separate from aniCe’s BLE and local-network connections."
+        body: "Trust the phone in aniCe, pair it separately in system Bluetooth Settings, then link that pairing in Mac Features → Control Android. Click the trackpad to arm pointer and keyboard input; turn off Use keyboard and trackpad together for separate areas. Toggle Floating Key from the menu bar or \(floatingKey), and press \(floatingKeyInput) to start or stop typing directly (showing Floating Key if hidden), configurable in Mac Settings → Shortcuts. Press ⌘⇧Esc while an input surface has focus to stop. Bluetooth HID input stays separate from aniCe’s BLE and local-network connections."
       ),
       GuideTopicEntry(
         topic: .macDeskDeck,
@@ -117,7 +118,7 @@ private struct GuideTopicEntry: Identifiable {
         title: "Menu bar, Favourites & Settings",
         summary: "Sidebar/menu-bar pins, Favourites reordering, global shortcuts, Glass, and updates.",
         symbol: "star",
-        body: "Add tools to Favourites or reorder them with right-click on Mac and long-press on phone. Mac feature menus also pin tools independently to the sidebar and menu bar. Mac Settings → Shortcuts configures Paste tray (\(tray)) and Floating Key (\(floatingKey)). Settings also holds appearance, 80%–120% text size, connection preferences and updates. New releases are reviewed before installation; automatic checking and beta inclusion are separate choices."
+        body: "Add tools to Favourites or reorder them with right-click on Mac and long-press on phone. Mac feature menus also pin tools independently to the sidebar and menu bar. Mac Settings → Shortcuts configures Paste tray (\(tray)), Floating Key (\(floatingKey)) and Floating Key typing (\(floatingKeyInput)). Settings also holds appearance, 80%–120% text size, connection preferences and updates. New releases are reviewed before installation; automatic checking and beta inclusion are separate choices."
       ),
     ]
   }

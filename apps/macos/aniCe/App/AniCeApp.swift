@@ -265,6 +265,7 @@ struct AniCeApp: App {
     let hotkey = GlobalHotkeyManager()
     hotkey.onPasteTray = { PasteTrayController.shared.toggle() }
     hotkey.onToggleKeyboard = { [weak floatingKeyboard] in floatingKeyboard?.toggleVisibility() }
+    hotkey.onToggleKeyboardInput = { [weak floatingKeyboard] in floatingKeyboard?.toggleCaptureFromShortcut() }
     hotkeyManager = hotkey
     delegate.onPrepareTerminate = {
       MacUpdateModel.shared.prepareForTermination()

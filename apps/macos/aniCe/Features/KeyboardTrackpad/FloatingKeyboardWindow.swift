@@ -22,6 +22,7 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
   private let inputID = UUID()
   let expandedPresentationID = UUID()
   private var panel: FloatingKeyboardPanel?
+  private weak var inputView: KeyboardInputNSView?
   private var screenObserver: NSObjectProtocol?
   private var interruptionObservers: [NSObjectProtocol] = []
   private weak var previousKeyWindow: NSWindow?
@@ -114,6 +115,26 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
 
   func toggleVisibility() {
     if isVisible { hide() } else { show() }
+  }
+
+  func registerInputView(_ view: KeyboardInputNSView) {
+    inputView = view
+  }
+
+  func toggleCaptureFromShortcut() {
+    guard !isShuttingDown else { return }
+    if !isVisible {
+      rememberPreviousKeyWindow()
+      show()
+      Task { @MainActor [weak self] in
+        await Task.yield()
+        guard let self, self.isVisible, let inputView = self.inputView else { return }
+        self.toggleCapture(from: inputView)
+      }
+      return
+    }
+    guard let inputView else { return }
+    toggleCapture(from: inputView)
   }
 
   func openInApp() {
@@ -530,6 +551,7 @@ private struct FloatingKeyboardInputSurface: NSViewRepresentable {
   func updateNSView(_ view: KeyboardInputNSView, context: Context) { configure(view) }
 
   private func configure(_ view: KeyboardInputNSView) {
+    controller.registerInputView(view)
     view.model = model
     view.presentationID = controller.captureOwner.presentationID
     view.inputID = controller.captureOwner.inputID

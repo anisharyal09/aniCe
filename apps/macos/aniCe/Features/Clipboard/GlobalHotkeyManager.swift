@@ -6,12 +6,28 @@ import SwiftUI
 import Observation
 
 enum GlobalShortcutAction: String, CaseIterable, Identifiable {
-  case tray, floatingKey
+  case tray, floatingKey, floatingKeyInput
   var id: Self { self }
-  var title: String { self == .tray ? "Clipboard tray" : "Floating Key" }
-  var number: UInt32 { self == .tray ? 1 : 2 }
+  var title: String {
+    switch self {
+    case .tray: "Clipboard tray"
+    case .floatingKey: "Floating Key"
+    case .floatingKeyInput: "Floating Key typing"
+    }
+  }
+  var number: UInt32 {
+    switch self {
+    case .tray: 1
+    case .floatingKey: 2
+    case .floatingKeyInput: 3
+    }
+  }
   var defaultBinding: GlobalShortcut {
-    GlobalShortcut(keyCode: self == .tray ? 9 : 40, shift: false)
+    switch self {
+    case .tray: GlobalShortcut(keyCode: 9, shift: false)
+    case .floatingKey: GlobalShortcut(keyCode: 40, shift: false)
+    case .floatingKeyInput: GlobalShortcut(keyCode: 40, modifierFlags: [.control, .command])
+    }
   }
 }
 
@@ -276,6 +292,7 @@ final class GlobalHotkeyManager: @unchecked Sendable {
   private var eventHandler: EventHandlerRef?
   var onPasteTray: @MainActor () -> Void = {}
   var onToggleKeyboard: @MainActor () -> Void = {}
+  var onToggleKeyboardInput: @MainActor () -> Void = {}
 
   @MainActor
   init() {
@@ -323,6 +340,7 @@ final class GlobalHotkeyManager: @unchecked Sendable {
         switch hotKeyNumber {
         case 1: manager.onPasteTray()
         case 2: manager.onToggleKeyboard()
+        case 3: manager.onToggleKeyboardInput()
         default: break
         }
       }
