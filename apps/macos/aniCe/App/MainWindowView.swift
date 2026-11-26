@@ -158,6 +158,7 @@ struct MainWindowView: View {
     .onDisappear { playback.presented("main", false); updates.windowClosed() }
     .onAppear {
       updateKeyboardTrackpadTargets()
+      sms.isMessagesActive = { NSApp.isActive && navigation.destination == .features && navigation.featurePanel == .messages }
       if !IdentityView.isTesting { playback.presented("main", mediaSurfaceVisible) }
       let action = openWindow
       delegate.reopenMainWindow = {

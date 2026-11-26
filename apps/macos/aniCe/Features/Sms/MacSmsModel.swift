@@ -307,6 +307,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   private(set) var selectedPhoneKey = ""
   private(set) var notificationNavigationRevision = 0
   private var timer: Task<Void, Never>?
+  var isMessagesActive: () -> Bool = { false }
   var onLanRequired: () -> Void = {}
 
   init(notifier: any SmsNotifying,
@@ -1126,13 +1127,16 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     conversation.sortDates.removeValue(forKey: send.rowId)
   }
 
-  func upsertCard(_ state: PeerState, address: String, snippet: String, dateMillis: Int64, unread: Int64) {
+  func upsertCard(_ state: PeerState, address: String, snippet: String, dateMillis: Int64, unread: Int64, forceSnippet: Bool = false) {
     let normalized = smsNormalizedAddress(address)
     guard !normalized.isEmpty else { return }
     let text = smsTruncate(smsSanitizeText(snippet), maxBytes: 160)
     if let index = state.threads.firstIndex(where: { $0.key == normalized }) {
       var card = state.threads[index]
-      if dateMillis >= card.dateMillis { card.snippet = text; card.dateMillis = dateMillis }
+      if forceSnippet || dateMillis >= card.dateMillis {
+        card.snippet = text
+        card.dateMillis = max(card.dateMillis, dateMillis)
+      }
       card.address = address.isEmpty ? card.address : address
       card.unreadCount += unread
       card.live = true

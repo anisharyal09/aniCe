@@ -15,6 +15,11 @@ import androidx.core.net.toUri
 import io.github.anisharyal09.anice.MainActivity
 import io.github.anisharyal09.anice.R
 import java.util.UUID
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class TransferNotification(
     private val context: Context,
@@ -22,7 +27,9 @@ class TransferNotification(
     private val isForeground: () -> Boolean = { false },
 ) {
     private val manager = context.getSystemService(NotificationManager::class.java)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var announcedOffer: Pair<String, Boolean>? = null
+    private var announcedCompletion: String? = null
     private var lastProgressAt = 0L
     private var lastProgressKey: String? = null
 
@@ -32,11 +39,13 @@ class TransferNotification(
             setShowBadge(false)
         })
         manager.cancel(OFFER_NOTIFICATION_ID)
+        manager.cancel(RESULT_NOTIFICATION_ID)
     }
 
     @SuppressLint("NotificationPermission")
     fun update(force: Boolean = false) {
         updateOffer()
+        updateResult()
         val progress = activeProgressNotice()
         if (progress != null) {
             val now = SystemClock.elapsedRealtime()
@@ -94,6 +103,41 @@ class TransferNotification(
         if (announcedOffer == null) return
         manager.cancel(OFFER_NOTIFICATION_ID)
         announcedOffer = null
+    }
+
+    @SuppressLint("NotificationPermission")
+    private fun updateResult() {
+        val completed = controller.state as? TransferState.Completed
+        if (completed == null) {
+            if (controller.isBusy) manager.cancel(RESULT_NOTIFICATION_ID)
+            return
+        }
+        if (!controller.receiving || completed.fileCount <= 0 || isForeground()) return
+        if (announcedCompletion == completed.batchId) return
+        announcedCompletion = completed.batchId
+        val operationId = controller.operationID.toString()
+        val files = "${completed.fileCount} file${if (completed.fileCount == 1) "" else "s"} (${Formatter.formatFileSize(context, completed.totalBytes)})"
+        val prefs = controller.destinationPreferences
+        scope.launch {
+            val destination = if (prefs != null) {
+                withContext(Dispatchers.IO) { prefs.summary() }
+            } else {
+                "Downloads/aniCe"
+            }
+            val current = controller.state as? TransferState.Completed
+            if (current?.batchId != completed.batchId || !controller.receiving || isForeground()) return@launch
+            val body = "$files saved to $destination."
+            val notice = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_file_send)
+                .setContentTitle("Files received")
+                .setContentText(body).setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                .setContentIntent(openIntent(context, operationId))
+                .setAutoCancel(true)
+                .setOnlyAlertOnce(true)
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .build()
+            manager.notify(RESULT_NOTIFICATION_ID, notice)
+        }
     }
 
     private inner class ProgressNotice(
@@ -186,6 +230,7 @@ class TransferNotification(
         const val NOTIFICATION_ID = 2002
         // Foregrounding can remove an offer without removing the service's progress notice.
         internal const val OFFER_NOTIFICATION_ID = 2004
+        internal const val RESULT_NOTIFICATION_ID = 2005
         private const val PROGRESS_MAX = 1000
         private const val PROGRESS_UPDATE_INTERVAL_MS = 1000L
     }

@@ -105,10 +105,11 @@ extension MacSmsModel {
         subscriptionId: assembly.subscriptionId)
       conversation.live.append(row)
       noteArrival(conversation, assembly.messageId)
-      upsertCard(state, address: assembly.address, snippet: body, dateMillis: assembly.dateMillis, unread: assembly.unread ? 1 : 0)
+      upsertCard(state, address: assembly.address, snippet: body, dateMillis: assembly.dateMillis, unread: assembly.unread ? 1 : 0, forceSnippet: true)
     }
     if announced { return }
     state.status = "Message received"
+    if isMessagesActive() { return }
     let outcome = await notifier.post(SmsNotification(identifier: smsNotificationIdentifier(peerKey: key(peer), messageId: assembly.messageId), peerKey: key(peer),
       peerName: peer.displayName, address: assembly.address, threadId: conversation.threadId,
       threadIdentifier: normalized, body: body, failure: false))
@@ -165,6 +166,10 @@ extension MacSmsModel {
     if let index = state.threads.firstIndex(where: { $0.key == normalized }) {
       var card = state.threads[index]
       card.threadId = assembly.threadId
+      if assembly.dateMillis >= card.dateMillis || card.snippet.isEmpty {
+        card.snippet = smsTruncate(smsSanitizeText(body), maxBytes: 160)
+        card.dateMillis = max(card.dateMillis, assembly.dateMillis)
+      }
       state.threads[index] = card
     }
   }

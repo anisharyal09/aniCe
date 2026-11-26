@@ -991,6 +991,9 @@ class CallIdentityReceiver : BroadcastReceiver() {
             owner.clearCallerIdentity()
             return
         }
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) return
+        val telephony = context.getSystemService(TelephonyManager::class.java) ?: return
+        if (runCatching { telephony.callState }.getOrDefault(TelephonyManager.CALL_STATE_IDLE) != TelephonyManager.CALL_STATE_RINGING) return
         val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)?.takeIf(String::isNotBlank) ?: return
         owner.incomingCallerNumber(number)
     }

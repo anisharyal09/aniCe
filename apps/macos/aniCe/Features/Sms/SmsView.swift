@@ -7,6 +7,7 @@ import SwiftUI
 struct SmsNotificationControls: View {
   let preferences: SmsPreferences
   let peer: DeviceIdentity
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       Toggle("Notifications", isOn: Binding(get: { preferences.notifications(peer) },
@@ -18,6 +19,8 @@ struct SmsNotificationControls: View {
         set: { preferences.set(peer, $0) }))
         .disabled(!preferences.notifications(peer))
     }
+    .font(.system(size: 11 * fontScale))
+    .controlSize(.mini)
     .toggleStyle(AniCePreferenceToggleStyle())
   }
 }
@@ -41,8 +44,8 @@ struct SmsSettingsView: View {
             SmsNotificationControls(preferences: preferences, peer: record.peer)
           } label: {
             VStack(alignment: .leading, spacing: 2) {
-              Text(record.peer.displayName)
-              Text(summary(record.peer)).font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(scheme))
+              Text(record.peer.displayName).font(.system(size: 13 * fontScale, weight: .medium))
+              Text(summary(record.peer)).font(.system(size: 11.5 * fontScale)).foregroundStyle(AniCePalette.secondaryText(scheme))
             }
           }
         }
@@ -70,6 +73,7 @@ struct SmsView: View {
   @State private var submittedDraft: String?
   @State private var controlsOpen = false
   @State private var simRecoveryContext: String?
+  @State private var olderAnchorId: String?
   @FocusState private var composerFocused: Bool
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.colorScheme) private var scheme
@@ -99,8 +103,12 @@ struct SmsView: View {
     }
     Color.clear.frame(height: 0).task(id: peerKey + (model.supports(peer) ? "+ready" : "")) {
       model.requestSims(peer)
-      if model.supports(peer), !address.isEmpty, model.messages(peer, address: address).isEmpty {
-        model.requestMessages(peer, address: address)
+      if model.supports(peer), !address.isEmpty {
+        if model.messages(peer, address: address).isEmpty {
+          model.requestMessages(peer, address: address)
+        } else {
+          model.refreshMessages(peer, address: address)
+        }
       }
     }
   }
@@ -187,6 +195,7 @@ struct SmsView: View {
     // Opening a conversation is an invitation to type; the draft is one Return away.
     .onChange(of: address) { _, next in
       simRecoveryContext = nil
+      olderAnchorId = nil
       composerFocused = !next.isEmpty
       if let peer { model.selectConversation(peer, address: next) }
       if let peer, !next.isEmpty { draft = model.draft(peer, address: next) }
@@ -245,37 +254,39 @@ struct SmsView: View {
       if cards.isEmpty {
         Text("No conversations yet").foregroundStyle(AniCePalette.secondaryText(scheme))
       } else {
-        ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
-          Button {
-            address = card.key
-            draft = model.draft(peer, address: card.key)
-            model.refreshMessages(peer, address: card.address)
-          } label: {
-            HStack(spacing: 12) {
-              VStack(alignment: .leading, spacing: 4) {
-                Text(card.address).font(.body).lineLimit(1).truncationMode(.middle)
-                if !card.snippet.isEmpty {
-                  Text(card.snippet).font(.caption).lineLimit(1)
-                    .foregroundStyle(AniCePalette.secondaryText(scheme))
+        LazyVStack(alignment: .leading, spacing: 0) {
+          ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
+            Button {
+              address = card.key
+              draft = model.draft(peer, address: card.key)
+              model.refreshMessages(peer, address: card.address)
+            } label: {
+              HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                  Text(card.address).font(.body).lineLimit(1).truncationMode(.middle)
+                  if !card.snippet.isEmpty {
+                    Text(card.snippet).font(.caption).lineLimit(1)
+                      .foregroundStyle(AniCePalette.secondaryText(scheme))
+                  }
                 }
-              }
-              Spacer(minLength: 8)
-              VStack(alignment: .trailing, spacing: 4) {
-                if card.dateMillis > 0 {
-                  Text(date(card.dateMillis), format: .dateTime.month().day())
-                    .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+                Spacer(minLength: 8)
+                VStack(alignment: .trailing, spacing: 4) {
+                  if card.dateMillis > 0 {
+                    Text(date(card.dateMillis), format: .dateTime.month().day())
+                      .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+                  }
+                  if card.unreadCount > 0 {
+                    Text("\(card.unreadCount) unread").font(.caption).foregroundStyle(AniCePalette.accent(scheme))
+                  }
                 }
-                if card.unreadCount > 0 {
-                  Text("\(card.unreadCount) unread").font(.caption).foregroundStyle(AniCePalette.accent(scheme))
-                }
-              }
-              Image(systemName: "chevron.right").font(.caption)
-                .foregroundStyle(AniCePalette.accent(scheme)).accessibilityHidden(true)
-            }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
-          }.buttonStyle(AniCeHoverButtonStyle())
-          // Reaching the last card asks for the next page, so the list keeps filling without a manual step.
-          .onAppear { if index == cards.count - 1 { model.requestMoreThreads(peer) } }
-          Divider()
+                Image(systemName: "chevron.right").font(.caption)
+                  .foregroundStyle(AniCePalette.accent(scheme)).accessibilityHidden(true)
+              }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
+            }.buttonStyle(AniCeHoverButtonStyle())
+            // Reaching the last card asks for the next page, so the list keeps filling without a manual step.
+            .onAppear { if index == cards.count - 1 { model.requestMoreThreads(peer) } }
+            Divider()
+          }
         }
         if model.threadMore(peer) {
           // The automatic request can be dropped while another one is in flight; the button is the way out.
@@ -294,8 +305,8 @@ struct SmsView: View {
     } else {
       results(peer)
     }
-    Color.clear.frame(height: 0).task(id: peerKey) {
-      if !model.busy(peer) { model.requestThreads(peer) }
+    Color.clear.frame(height: 0).task(id: peerKey + (model.supports(peer) ? "+ready" : "")) {
+      if model.supports(peer), !model.busy(peer) { model.requestThreads(peer) }
     }
   }
 
@@ -367,8 +378,11 @@ struct SmsView: View {
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 12) {
             if model.more(peer, address: address) {
-              Button("Show older messages") { model.requestMessages(peer, address: address) }
-                .buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(scheme)).disabled(model.busy(peer))
+              Button("Show older messages") {
+                olderAnchorId = rows.first?.id
+                model.requestMessages(peer, address: address)
+              }
+              .buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(scheme)).disabled(model.busy(peer))
             }
             if rows.isEmpty {
               Text("No messages on this phone").font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -384,10 +398,8 @@ struct SmsView: View {
                 if row.direction == 1 { Spacer(minLength: 28) }
                 VStack(alignment: .leading, spacing: 4) {
                   Text(row.body).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
-                  ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) { metadata(row, peer: peer, mixed: mixed); Spacer(minLength: 0) }
-                    VStack(alignment: .leading, spacing: 2) { metadata(row, peer: peer, mixed: mixed) }
-                  }.font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+                  HStack(spacing: 8) { metadata(row, peer: peer, mixed: mixed); Spacer(minLength: 0) }
+                    .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
                 }
                 .padding(.horizontal, 12).padding(.vertical, 9)
                 .frame(maxWidth: 500, alignment: .leading)
@@ -400,9 +412,16 @@ struct SmsView: View {
           }
           .padding(.vertical, 8)
         }
-        .onAppear { if let last = rows.last { proxy.scrollTo(last.id, anchor: .bottom) } }
-        .onChange(of: rows.last?.id) { _, last in
-          if let last { withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(last, anchor: .bottom) } }
+        .defaultScrollAnchor(.bottom)
+        .onChange(of: rows.first?.id) { _, _ in
+          if let anchor = olderAnchorId {
+            olderAnchorId = nil
+            proxy.scrollTo(anchor, anchor: .top)
+          }
+        }
+        .onChange(of: rows.last?.id) { old, last in
+          guard let last, old != nil else { return }
+          withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(last, anchor: .bottom) }
         }
         .frame(maxHeight: .infinity)
       }
