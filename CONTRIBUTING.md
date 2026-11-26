@@ -32,7 +32,11 @@ For platform-specific testing:
 
 The `ci-integrity` lane also requires actionlint 1.7.12 on `PATH`; it is not installed by pip.
 
-GitHub CI runs on PRs targeting `main`, merge-queue candidates, `main` pushes and manual dispatch. Feature branches use PR checks, or manual dispatch before a PR, rather than duplicate push builds. Configure `verify-required` as a required status check in the repository's `main` ruleset and require workflow code-owner review; YAML does not enable those GitHub settings. Release signing still requires successful main-push CI for the exact release commit.
+GitHub CI runs on PRs targeting `main`, merge-queue candidates, `main` pushes and manual dispatch. Feature branches use PR checks or manual dispatch before a PR. Every run checks workflow integrity, structure, documentation links and contracts. Ordinary docs skip native lanes; platform changes run that platform; shared contracts and fixtures run Android and macOS; Rust bridge changes run all three native lanes. Packaged notices run the platforms that bundle them. Manual CI runs, changes to the CI gate and ambiguous diffs run all native lanes. A `main` push can skip unaffected lanes only when its previous tip has successful main-push CI. Release signing still requires successful main-push CI for the exact release commit.
+
+Require `verify-required` and workflow code-owner review in the `main` ruleset. The aggregate checks that each selected lane passed and that only explicitly unselected lanes were skipped. Use the aggregate for merge queues as well. Dependency Review is a separate PR-only check: its scan runs for dependency inputs and when the diff cannot be determined. CodeQL selects languages on `main` pushes and runs a full scan weekly or on manual dispatch.
+
+Runtime checks the Android API 29 and 36 emulators nightly when relevant inputs have changed or the previous scheduled run did not pass. The weekly refresh and manual dispatch run both emulators in full. Dispatch Device Lab on `main` when the protected self-hosted runner and a test phone are available.
 
 ### What each lane verifies
 
@@ -46,7 +50,7 @@ GitHub CI runs on PRs targeting `main`, merge-queue candidates, `main` pushes an
 | `connected` | Android instrumentation on one explicitly selected authorized target |
 | `interchange` | Native Mac/Android identity, LAN and session harnesses on a prepared test installation |
 
-The connected lane uses the isolated UI preview package on emulators. Companion-only regressions are SDK-gated to API 31+; synthetic comparison/setup presentation fixtures require the UI-preview emulator, not a physical installation. Native interchange and real-radio/player tests require their explicit harness or setup. Physical-device runs and interchange can install/replace the normal Debug package; use a dedicated test installation and pass `--serial`, not a phone whose app state must be preserved. Keyboard-specific manual diagnostics are described in the [IME probe](tools/ime-probe/README.md).
+The connected lane uses the isolated UI preview package on emulators. Companion-only regressions are SDK-gated to API 31+; synthetic comparison/setup presentation fixtures require the UI-preview emulator. Native Wi-Fi and Bluetooth regressions can report capability-gated skips; the hosted emulator must still pass the synthetic LAN address-restoration test. Native interchange and real-radio/player tests require their explicit harness or setup. Physical-device runs and interchange can install/replace the normal Debug package; use a dedicated test installation and pass `--serial`, not a phone whose app state must be preserved. Keyboard-specific manual diagnostics are described in the [IME probe](tools/ime-probe/README.md).
 
 Reports live under `build/reports/verification/run-*/`. A zero exit alone is insufficient: missing/truncated results, duplicate test cases, failures and unreviewed skips are rejected. Count floors guard against suite disappearance; only passing native cases count toward them. Change a floor only after reviewing actual test removal, not to make a failing run green.
 

@@ -16,10 +16,13 @@ Shared product changes, repository structure, documentation and development conv
 - Bound release-note Markdown parsing and native inline styling across Mac and Android, and prevent stale update reviews from resurrecting or duplicating.
 - Refine native notification attribution, quiet updates, and operation-bound actions for mirrored alerts, Messages, and file transfers.
 - Merge Android Find Mac into Desk Deck and align persistent preference switches, segmented controls, Permissions organization, and Mac Native Glass surfaces.
+- Select native CI, dependency review and CodeQL work by changed inputs while preserving an always-reported merge gate and exact-commit release evidence. Share Cargo downloads across compatible jobs.
+- Skip redundant nightly Android emulator runs after successful verification, retain full weekly checks, and run the physical device lab on demand.
 
 ### Fixed
 
 - Keep Guide filter and expansion choices through Android recreation, make Guide bulk actions apply to every topic, and keep obsolete update actions from clearing a newer release notice.
+- Include failing Android test names in GitHub annotations and preserve JUnit results when Gradle reports test failures.
 
 ## [v0.9.0-beta.4]
 

@@ -28,6 +28,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Restore the 20/50/100-item history capacity menu in grouped Clipboard settings and History without enabling collection; correct segmented selection colors and no-match history copy.
 - Restore compact Home/Settings action faces and show granted/missing SMS, notification, call, caller-ID and DND access with their purposes.
 - Show native app-bar Back on About and apply safe drawing/keyboard insets to full-screen Mac control.
+- Exercise synthetic LAN address restoration without host Wi-Fi, and report native Wi-Fi or Bluetooth regressions as skipped when their required capabilities are unavailable.
+- Wait for the right-to-left settings fixture to draw before checking update-action alignment.
 
 ## [v0.9.0-beta.4]
 
