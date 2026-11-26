@@ -40,7 +40,7 @@ enum class SettingsCategory(val label: String) {
         // Shortcuts remains decodable from older saved UI state but is no longer a phone category.
         val visibleEntries = listOf(All, General, Permissions, Features)
         fun forSection(title: String): SettingsCategory = when (title) {
-            "Appearance", "Updates", "Connection", "This device" -> General
+            "Appearance", "Updates", "Connection", "This device", "Guide" -> General
             "Permissions" -> Permissions
             "Shortcuts" -> All
             else -> Features

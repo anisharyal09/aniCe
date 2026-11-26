@@ -10,7 +10,7 @@ Release candidate: **0.9.0-beta.4 · build 90024** (unpublished). See [installat
 
 ## Using the Mac app
 
-- **Overview** shows the selected device and current activity; **Devices** owns pairing, trusted phones, automatic connection preferences and independent Bluetooth/LAN controls. Features and Favourites provide saved access to the implemented panels.
+- **Overview** shows the selected device and current activity; **Devices** owns pairing, trusted phones, automatic connection preferences and independent Bluetooth/LAN controls. Features and Favourites provide saved access to the implemented panels; the toolbar `?` action, Features footer (`More built into aniCe — see guide`), and **Settings → Guide** open the offline **aniCe Guide** (including pairing methods, device nicknames, Quick Settings tile, shortcuts, and settings paths).
 - The **menu-bar companion** shares connection owners with the main window. Closing the window keeps it running; Command-Q quits. It offers Send clipboard, Quick Paste Tray, Send files and Floating Key for the selected compatible phone.
 - **Control Android** uses native Classic Bluetooth HID after OS pairing and one explicit link to the trusted phone. Option–Command–K toggles Floating Key; input starts deliberately in its capture area. See [keyboard, pointer and clipboard typing](../../docs/features/KEYBOARD_TRACKPAD.md).
 - **Clipboard** offers manual sharing, separate automatic-sharing consent and optional local history. Option–Command–V opens the Quick Paste Tray even without a connected phone. Return copies selected history for normal paste; the tray does not type into another application.

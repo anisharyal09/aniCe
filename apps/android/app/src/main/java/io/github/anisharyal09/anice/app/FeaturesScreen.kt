@@ -10,10 +10,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
@@ -124,29 +129,28 @@ fun FeaturesScreen(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             Text(
-                                "More built into aniCe · shortcuts, sync, and system tools.",
+                                text = buildAnnotatedString {
+                                    append("More built into ani")
+                                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) {
+                                        append("Ce")
+                                    }
+                                    append(" — ")
+                                    withStyle(SpanStyle(fontWeight = FontWeight.Medium)) {
+                                        append("see guide")
+                                    }
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.weight(1f),
                                 maxLines = 2,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                overflow = TextOverflow.Ellipsis,
                             )
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                Text(
-                                    "Open Guide",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_chevron_forward),
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(14.dp),
-                                )
-                            }
+                            Icon(
+                                painter = painterResource(R.drawable.ic_chevron_forward),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.size(14.dp),
+                            )
                         }
                     }
                 }

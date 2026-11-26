@@ -3,7 +3,9 @@
 package io.github.anisharyal09.anice.app
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,7 +17,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.heading
@@ -37,107 +38,107 @@ internal object GuideCatalog {
         GuideTopicEntry(
             topic = GuideTopic.PairingAndConnection,
             title = "Pairing & Connections",
-            summary = "End-to-end encrypted Bluetooth Low Energy and local Wi-Fi.",
+            summary = "Auto-pairing confirmation, QR scan, manual code entry, and device nicknames.",
             iconRes = R.drawable.ic_devices,
-            body = "Verify the 6-digit comparison code (or scan QR on Android) once when pairing. Paired devices reconnect automatically over Bluetooth Low Energy and upgrade heavier work such as file transfers or Desk Deck onto local Wi-Fi when Settings → Connection → Use local network automatically is on in both apps (Android also offers Idle LAN in background timeouts). Pause or unpair a peer anytime from Devices without resetting this device's identity.",
+            body = "Pair by confirming the 6-digit auto-pairing comparison code, scanning the Mac QR code on your phone, or entering the pairing code manually on your phone. Paired devices reconnect over Bluetooth Low Energy and upgrade file transfers or Desk Deck onto local Wi-Fi when Settings → Connection → Use local network automatically is on in both apps. Rename or set a custom nickname for any paired device, pause connections, or unpair from Devices.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.Permissions,
-            title = "Permissions & Mac Access",
-            summary = "Capabilities stay dormant until the matching Android or Mac access is allowed.",
+            title = "Permissions & access",
+            summary = "Capabilities stay inactive until their matching phone or Mac permission is granted.",
             iconRes = R.drawable.ic_settings,
-            body = "Android Settings → Permissions covers Nearby devices, Receive/Read/Send SMS, SIM selection, Find Phone notifications, Notification Access, Answer phone calls, Call log, Contacts (optional caller ID), and Do Not Disturb access. Mac Settings → Permissions (Access) tracks Event Posting (Privacy & Security → Accessibility or Device Control, used for Control Mac and Lock Mac fallback), Notifications, and Automatic pasteboard reading.",
+            body = "Phone Settings → Permissions covers Nearby devices, SMS (Receive/Read/Send), Phone state (optional dual-SIM list), Find Phone notifications, Notification Access, Answer phone calls, Call log, Contacts (optional caller ID), and Do Not Disturb access. Mac Settings → Permissions covers Event Posting (Privacy & Security → Accessibility or Device Control, required for Control Mac and Lock Mac fallback), Notifications, and Automatic pasteboard reading.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.OpenLinkInMac,
             title = "Open Link in Mac",
-            summary = "Launch any http or https link from Android straight into your Mac's browser.",
+            summary = "Launch http or https links from your phone straight into your Mac browser.",
             iconRes = R.drawable.ic_external_link,
-            body = "Highlight a web URL in any Android app and choose Send to Mac, or share a URL from Chrome or another app via Android's Share sheet → Send to Mac. When the link is an http or https URL and your connected Mac supports Open Link, tapping Open in Mac launches it directly in your Mac's default browser without overwriting your Mac clipboard (or tap Send as clipboard to send it to Mac clipboard instead).",
+            body = "Highlight an http or https link on your phone and choose Send to Mac, or share from Chrome via Share → Send to Mac. Tapping Open in Mac launches it directly in your Mac's default browser without overwriting your Mac clipboard (or tap Send as clipboard to copy it instead).",
         ),
         GuideTopicEntry(
             topic = GuideTopic.FilesAndEdgeDrop,
             title = "Send files & Edge Drop",
-            summary = "Encrypted batch transfers up to 128 files plus Android Share & Mac Edge Drop.",
+            summary = "Encrypted batches up to 128 files, phone Share sheet, and Mac Edge Drop.",
             iconRes = R.drawable.ic_file_send,
-            body = "Pick files in Send files, share directly from any Android app with Share → Send to Mac, or drag from Finder toward your chosen Left, Right, or Top screen edge with Mac Edge Drop. Transfers switch automatically to local Wi-Fi when paired and reachable, track progress per file with retry or cancel, and support Save received files to custom folders, background transfer notifications, and trusted auto-receive in Settings → File transfer.",
+            body = "Send up to 128 files per batch from Send files, your phone's Share → Send to Mac menu, or by dragging Finder items onto the Left, Right, or Top screen edge with Mac Edge Drop (Settings → File transfer). Transfers use local Wi-Fi when available, retain 15-minute resume checkpoints across interruptions, and support custom receive folders, trusted auto-receive, and background notifications.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.ClipboardAndQuickSend,
-            title = "Clipboard & Send to Mac",
-            summary = "Manual or automatic text sync, Android selection menu, and Quick Settings tile.",
+            title = "Clipboard & Quick Settings tile",
+            summary = "Manual or auto text sync, phone selection menu, and Send to Mac Quick Settings tile.",
             iconRes = R.drawable.ic_clipboard,
-            body = "Send text manually from Clipboard → Send clipboard, paste text under More options → Paste text here, or enable automatic sharing on both devices in Settings → Clipboard. Anywhere on Android, highlight text and pick Send to Mac, share text into Send to Mac, or add the Send to Mac Quick Settings tile (prompt inside Clipboard → More options or Quick Settings → Edit). Marked sensitive items ask before sending.",
+            body = "Share text manually via Clipboard → Send clipboard / Paste text here, or enable automatic sync on both devices in Settings → Clipboard. Add the Send to Mac Quick Settings tile (prompt in Clipboard → More options or Quick Settings → Edit) to push your current phone clipboard—or open an http/https link on Mac—with one notification-shade tap without opening aniCe. Text selection → Send to Mac and Share → Send to Mac also work in any app; marked sensitive items ask before sending.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.PasteTrayAndPins,
-            title = "History & Quick Paste Tray",
-            summary = "Offline local clipboard history by device, Mac snippet pins, and tray hotkey.",
+            title = "Clipboard history & Quick Paste Tray",
+            summary = "Device-local history filters, Mac pinned snippets, and tray shortcut.",
             iconRes = R.drawable.ic_clipboard_tile,
-            body = "Android Clipboard → History keeps local-only clips filtered by All, Mac, and Phone tabs with selectable 20, 50, or 100 item capacity. Mac Clipboard → History and the floating Quick Paste Tray (⌥⌘V or menu-bar icon; Mac Settings → Shortcuts) keep local-only history under All, Pinned, Mac, and Phone filters with search, pinned snippets, Pause history, and Undo/Redo.",
+            body = "Local-only clipboard history stays off synced storage on each device (All, Mac, and Phone filters on your phone with 20, 50, or 100 item capacity). On Mac, press ⌥⌘V or click the menu-bar icon (Mac Settings → Shortcuts) to search history, pin snippets, pause collection, or Undo/Redo edits offline.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.ControlMac,
-            title = "Control Mac (from Android)",
-            summary = "Turn your phone screen and keyboard into a wireless trackpad and keyboard for Mac.",
+            title = "Control Mac (from phone)",
+            summary = "Use your phone screen and keyboard as a wireless Mac trackpad and keyboard.",
             iconRes = R.drawable.ic_laptop,
-            body = "Open Features → Control Mac while connected and tap Start. Drag for cursor movement, tap or two-finger tap to click, two-finger drag to scroll, and type with your regular Android keyboard (with autocorrect and IME support) or the fullscreen trackpad bar. Requires Event Posting / Accessibility access on Mac (Mac Settings → Permissions); closing the screen keeps the live session ready without forcing the keyboard open.",
+            body = "While connected, open Features → Control Mac and tap Start. Use one-finger drag to move, tap or two-finger tap to left/right click, long-press drag to select, two-finger drag to scroll, or expand fullscreen trackpad. Type using your mobile keyboard (with autocorrect, Live typing, Clear box without deleting Mac text, and cursor-preserving middle edits). Requires Mac Event Posting access (Mac Settings → Permissions).",
         ),
         GuideTopicEntry(
             topic = GuideTopic.ControlAndroidAndFloatingKey,
             title = "Control Android & Floating Key",
-            summary = "Bluetooth HID keyboard and trackpad from Mac plus the anywhere Floating Key.",
+            summary = "Classic Bluetooth HID keyboard/trackpad from Mac and the Floating Key panel.",
             iconRes = R.drawable.ic_keyboard,
-            body = "Pair your phone and Mac in system Bluetooth Settings once, then link that Bluetooth pairing in Mac Features → Control Android. On Mac, press ⌥⌘K (customizable in Mac Settings → Shortcuts) or use the menu bar to toggle the Floating Key panel anywhere, use keyboard and trackpad together or separately, resize the pad, and stop input anytime with ⌘⇧Esc.",
+            body = "Pair your Mac and phone once in system Bluetooth Settings, then link that pairing inside Mac Features → Control Android (Home, Back, and Recents controls included). Toggle the compact Floating Key overlay from any Mac app via ⌥⌘K (Mac Settings → Shortcuts) or the menu bar, resize the trackpad, adjust pointer/scroll speed, and stop input anytime with ⌘⇧Esc.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.MacDeskDeck,
-            title = "Mac Desk Deck (from Android)",
-            summary = "Monitor Mac vitals and trigger quick actions, audio output switching, volume, and apps.",
+            title = "Mac Desk Deck (from phone)",
+            summary = "Live Mac CPU/memory/thermal meters, quick actions, audio output, and approved apps.",
             iconRes = R.drawable.ic_features,
-            body = "Open Features → Mac Desk Deck to view live CPU history, memory breakdown (Used, App, Wired, Compressed, Cached, Swap), thermal pressure, and Mac/Phone power status plus a cached last snapshot when offline. Trigger Mute input / Mic mute, Lock Mac, Screenshot, Keep awake while charging (under Details), Ping Mac, Now Playing controls, Output device + Output volume slider, up to 32 approved Mac app shortcuts (Mac Settings → Desk Deck, arranged under Apps), and a Mac-local DND mode Shortcut (does not sync back to your phone).",
+            body = "View live CPU history, memory breakdown (Used, App, Wired, Compressed, Cached, Swap), thermal state, and Mac/phone power status (plus last cached snapshot offline). Trigger Mic mute, Lock Mac, Screenshot, Keep awake while charging (under Details), Ping Mac, playback controls, Output device + volume slider, up to 32 approved Mac app shortcuts (Mac Settings → Desk Deck), and a Mac-local DND Shortcut.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.NowPlayingAndAudio,
-            title = "Now Playing & Output control",
-            summary = "Shared track artwork, scrubbing, playback buttons, and volume synchronization.",
+            title = "Now Playing & audio output",
+            summary = "Track metadata, album art, timeline scrubbing, player switcher, and volume sync.",
             iconRes = R.drawable.ic_media_note,
-            body = "Control playback and volume from Home, Features → Now Playing, Mac Desk Deck, or Mac's menu-bar companion. View track title, artist, album art, timeline scrubber, play/pause/skip buttons, and output volume synchronization across connected peers. Configure Mac visibility and player volume in Playback setup and Settings → Now Playing.",
+            body = "Control Mac playback and volume from Home, Features → Now Playing, Desk Deck, or the Mac menu bar (plus notification/lock-screen media controls when phone background ownership is active). Phone volume keys can adjust supported Mac output. Configure Mac visibility and volume access in Playback setup and Settings → Now Playing.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.MessagesAndSms,
             title = "Messages & SMS relay",
-            summary = "Read phone SMS threads on Mac and send replies straight through your SIM.",
+            summary = "Read SMS conversations on Mac and reply directly through your phone's SIM.",
             iconRes = R.drawable.ic_sms,
-            body = "Browse recent SMS conversations, unread counts, search results, dual-SIM Send from selection, and sent/delivery status in Mac Features → Messages over your encrypted direct connection (zero cloud server). On Mac, the gear beside Search messages toggles per-phone notifications and Connection details right inline (Settings → Messages shows the same controls). Requires Android SMS permissions and Phone access for SIM selection.",
+            body = "Browse recent SMS threads, unread counts, search results, dual-SIM Send from selection, and delivery status over your encrypted direct link (no cloud server). On Mac, the gear beside Search messages toggles per-phone notifications, sound, text previews, and Connection details inline (mirrored in Settings → Messages). Requires SMS access and Phone permission for SIM selection.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.NotificationsAndCalls,
-            title = "Mirrored Notifications & Call controls",
-            summary = "Mirror Android app alerts to Mac, inline reply or dismiss, and handle SIM calls.",
+            title = "Mirrored notifications & call controls",
+            summary = "Forward chosen phone app alerts to Mac with inline reply, dismissal, and Answer/Decline.",
             iconRes = R.drawable.ic_phone,
-            body = "Configure under Settings → Notification sync: grant Notification Access, pick installed apps under Select apps, and turn on Mirror incoming calls (Answer phone calls plus optional Call log & Contacts for caller ID) to show caller alerts on Mac with Answer or Decline actions while call audio stays on your phone. Supported inline replies and dismissals mirror back to Android.",
+            body = "In phone Settings → Notification sync, grant Notification Access and choose apps under Select apps. Native Mac alerts mirror inline replies, app actions, and dismissals. Enable Mirror incoming calls (Answer phone calls plus optional Call log & Contacts for caller ID) to Answer or Decline ringing SIM calls from Mac while audio stays on your phone.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.DndSync,
             title = "Do Not Disturb sync",
-            summary = "Sync Android Do Not Disturb changes onto macOS Focus using Apple Shortcuts.",
+            summary = "Sync phone Do Not Disturb changes to macOS Focus using Apple Shortcuts.",
             iconRes = R.drawable.ic_settings,
-            body = "Turn on Sync phone DND to Mac in Settings → Do Not Disturb (after allowing Do Not Disturb access), and choose the two Apple Shortcuts (“Turn Do Not Disturb On” and “Turn Do Not Disturb Off”) guided inside Mac Settings → Do Not Disturb (copyable prompts or manual Set Focus setup). When phone DND changes while connected, your Mac runs the matching Shortcut locally.",
+            body = "Allow Do Not Disturb access and enable Sync phone DND to Mac in Settings → Do Not Disturb, then configure “Turn Do Not Disturb On” and “Turn Do Not Disturb Off” Shortcuts in Mac Settings → Do Not Disturb. Connected phone DND changes run the matching Mac Shortcut automatically (Desk Deck's DND toggle stays Mac-local).",
         ),
         GuideTopicEntry(
             topic = GuideTopic.FindDeviceAndPing,
             title = "Find Device & Ping Mac",
-            summary = "Ring your misplaced phone from Mac or send Ping Mac from Android Desk Deck.",
+            summary = "Ring your misplaced phone loudly from Mac or Ping Mac from Desk Deck.",
             iconRes = R.drawable.ic_phone,
-            body = "Open Mac Features → Find Device (or the menu-bar companion) to trigger a continuous audible alarm ring on your paired phone until dismissed; Android incoming-ring permissions live in Settings → Permissions → Find Phone notifications. On Android, open Features → Mac Desk Deck → Find Mac and tap Ping Mac to send a macOS alert notification whose banner and sound follow Mac Notification settings, even when Desk Deck telemetry is stale.",
+            body = "Use Mac Features → Find Device (or the menu bar) to sound a continuous alarm ring on your paired phone until dismissed (configured under phone Settings → Permissions → Find Phone notifications). Tap Ping Mac inside Desk Deck → Find Mac to post an immediate macOS alert notification even when Desk Deck meters are stale.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.CompanionAndShortcuts,
-            title = "Menu bar, Favourites & Customization",
-            summary = "Pinned quick actions, feature reordering, themes, scaled text, and signed updates.",
+            title = "Menu bar, Favourites & Settings",
+            summary = "Sidebar/menu-bar pins, Favourites reordering, global shortcuts, themes, and updates.",
             iconRes = R.drawable.ic_star,
-            body = "Star any tool into Favourites or reorder features (long-press on Android, right-click on Mac); Mac right-click menus also customize menu-bar and sidebar pins alongside Quick Paste Tray (⌥⌘V) and Floating Key (⌥⌘K) in Mac Settings → Shortcuts. Both apps support System/Light/Dark themes, 80%–120% text scaling, device safety checks, and signed GitHub updates in Settings.",
+            body = "Star tools into Favourites or reorder features (long-press on phone, right-click on Mac); Mac right-click menus also pin tools to the sidebar and menu bar alongside Quick Paste Tray (⌥⌘V) and Floating Key (⌥⌘K) in Mac Settings → Shortcuts. Both apps support System/Light/Dark themes, 80%–120% text scaling, identity safety checks, and signed GitHub updates in Settings.",
         ),
     )
 }
@@ -185,7 +186,23 @@ internal fun GuideScreen(initialTopic: GuideTopic?) {
         if (initialTopic != null) {
             val targetIndex = rows.indexOfFirst { it is GuideRow.Topic && it.entry.topic == initialTopic }
             if (targetIndex >= 0) {
-                listState.animateScrollToItem(targetIndex + 1)
+                withFrameNanos { }
+                val targetKey = "topic-${initialTopic.name}"
+                val layoutInfo = listState.layoutInfo
+                val visible = layoutInfo.visibleItemsInfo.firstOrNull { it.key == targetKey }
+                if (visible == null) {
+                    // Account for guide-header (0), sticky guide-filter (1), and show the topic heading above it.
+                    listState.animateScrollToItem((targetIndex + 1).coerceAtLeast(1))
+                } else {
+                    val stickyBottom = layoutInfo.visibleItemsInfo
+                        .firstOrNull { it.key == "guide-filter" }
+                        ?.let { it.offset + it.size } ?: 0
+                    val overflow = (visible.offset + visible.size) - layoutInfo.viewportEndOffset
+                    val maxKeepingRoom = (visible.offset - stickyBottom).coerceAtLeast(0)
+                    if (overflow > 0 && maxKeepingRoom > 0) {
+                        listState.animateScrollBy(minOf(overflow, maxKeepingRoom).toFloat())
+                    }
+                }
             }
         }
     }
@@ -203,60 +220,65 @@ internal fun GuideScreen(initialTopic: GuideTopic?) {
             state = listState,
             modifier = Modifier.widthIn(max = 680.dp).fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(0.dp),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+            contentPadding = PaddingValues(top = 12.dp, bottom = 16.dp),
         ) {
             item(key = "guide-header") {
-                Column(
-                    Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_help),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Text(
-                            "aniCe Guide",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f).semantics { heading() },
-                        )
-                        TextButton(
-                            onClick = { forceExpandAll = !allExpanded },
-                            modifier = Modifier.heightIn(min = 48.dp),
-                        ) {
-                            Text(if (allExpanded) "Collapse all" else "Expand all")
-                        }
-                    }
-
-                    Text(
-                        "Offline reference for everything built into aniCe across your Android and Mac—including system tools outside the Features list—plus shortcuts and Settings paths.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Icon(
+                        painter = painterResource(R.drawable.ic_help),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
                     )
-
-                    @OptIn(ExperimentalLayoutApi::class)
-                    FlowRow(
-                        Modifier.fillMaxWidth().selectableGroup(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    Text(
+                        "aniCe Guide",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f).semantics { heading() },
+                    )
+                    TextButton(
+                        onClick = { forceExpandAll = !allExpanded },
+                        modifier = Modifier.heightIn(min = 48.dp),
                     ) {
-                        GuideCategory.entries.forEach { category ->
-                            FilterChip(
-                                selected = selectedCategory == category,
-                                onClick = {
-                                    categoryChangedByUser = true
-                                    selectedCategory = category
-                                },
-                                label = { Text(category.label) },
-                                modifier = Modifier.defaultMinSize(minHeight = 32.dp),
-                            )
+                        Text(if (allExpanded) "Collapse all" else "Expand all")
+                    }
+                }
+            }
+            @OptIn(ExperimentalFoundationApi::class)
+            stickyHeader(key = "guide-filter") {
+                Surface(
+                    color = MaterialTheme.colorScheme.background,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.fillMaxWidth()) {
+                        @OptIn(ExperimentalLayoutApi::class)
+                        FlowRow(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 6.dp)
+                                .selectableGroup(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            GuideCategory.entries.forEach { category ->
+                                FilterChip(
+                                    selected = selectedCategory == category,
+                                    onClick = {
+                                        categoryChangedByUser = true
+                                        selectedCategory = category
+                                    },
+                                    label = { Text(category.label) },
+                                    modifier = Modifier.defaultMinSize(minHeight = 32.dp),
+                                )
+                            }
                         }
+                        HorizontalDivider(
+                            thickness = 0.5.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                        )
                     }
                 }
             }
@@ -267,7 +289,12 @@ internal fun GuideScreen(initialTopic: GuideTopic?) {
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
-                                .padding(top = if (row.first) 4.dp else 18.dp, bottom = 6.dp, start = 2.dp)
+                                .padding(
+                                    start = 18.dp,
+                                    end = 16.dp,
+                                    top = if (row.first) 12.dp else 18.dp,
+                                    bottom = 6.dp,
+                                )
                                 .semantics { heading() },
                         )
                         is GuideRow.Topic -> {
@@ -283,7 +310,7 @@ internal fun GuideScreen(initialTopic: GuideTopic?) {
                                 shape = groupShape,
                                 color = if (highlighted) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
                                 else MaterialTheme.colorScheme.surfaceContainer,
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                             ) {
                                 Column(Modifier.fillMaxWidth()) {
                                     Box(Modifier.fillMaxWidth()) {

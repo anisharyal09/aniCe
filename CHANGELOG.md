@@ -10,14 +10,12 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
-- Replace scattered inline help disclosures with a contextual toolbar/app-bar Guide action (`?`) opening an offline, categorized **aniCe Guide** (`Connect`, `Share & Files`, `Control`, `Sync & Alerts`) across all cross-device and system capabilities (including Open Link in Mac, Edge Drop, Quick Paste Tray, Floating Key, notification/call sync, Do Not Disturb sync, Control Mac and Mac Desk Deck), refine **Features** with a compact hairline **More built into aniCe** row, and polish Android **Mac Desk Deck** onto calm satin-luminous `surfaceContainer` cards.
-- Bound release-note Markdown parsing and native inline styling across Mac and Android, and prevent dismissed, closed, terminated or stale-notification update reviews from resurrecting or duplicating.
-- Refine native notification attribution, quiet updates and original-operation actions for mirrored alerts, Messages and file transfers without new wire messages or notification history.
-- Merge Android Find Mac into Desk Deck, migrate saved shortcuts and routes, and retain independent Find Phone reception without changing the alert contract.
-- Align persistent preference switches across Mac and Android, preserving existing consent, permission and saved-state behavior.
-- Share one theme-aware segmented control for mutually exclusive navigation and filters on both platforms.
-- Keep permission status and purpose details in the dedicated category on both platforms, with missing-access recovery in All and feature settings.
-- Extend the Mac design direction to optional native-glass navigation and floating surfaces while retaining solid content panels and Android's native Material presentation.
+- Add an offline, categorized **aniCe Guide** (`Connect`, `Share & Files`, `Control`, `Sync & Alerts`) opened from the subtle toolbar/app-bar `?` action, the **More built into aniCe — see guide** Features footer row, and **Settings → Guide**, with sticky category filter tags while scrolling and concise documentation covering pairing modes, device nicknames, Quick Settings tile, shortcuts, and settings paths.
+- Optimize Android **Control Mac** text reconciliation (`PhoneInputTextSync`) to navigate middle edits with Left/Right arrow transitions (`0x50` / `0x4F`) instead of deleting and retyping trailing text, and add a **Clear** button in **Type on Mac** and fullscreen trackpad to reset the local phone buffer without altering text on the Mac.
+- Refine Android **Mac Desk Deck** onto calm `surfaceContainer` sheets with soft catchlight highlights, grouped Output device and tabular volume readout, and inline **Ping Mac**.
+- Bound release-note Markdown parsing and native inline styling across Mac and Android, and prevent stale update reviews from resurrecting or duplicating.
+- Refine native notification attribution, quiet updates, and operation-bound actions for mirrored alerts, Messages, and file transfers.
+- Merge Android Find Mac into Desk Deck and align persistent preference switches, segmented controls, Permissions organization, and Mac Native Glass surfaces.
 
 ## [v0.9.0-beta.4]
 

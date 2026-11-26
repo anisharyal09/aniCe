@@ -150,6 +150,7 @@ class PhoneInputController(
             when (action) {
                 is PhoneInputTextAction.Commit -> 1
                 is PhoneInputTextAction.Backspace -> action.count * 2
+                is PhoneInputTextAction.MoveCursor -> kotlin.math.abs(action.delta) * 2
             }
         }
         if (session.sequence + messageCount + TERMINAL_MESSAGES > MAX_SEQUENCE) {
@@ -173,24 +174,32 @@ class PhoneInputController(
                         4, Cbor.Text(session.id), sequence(session), Cbor.Text(action.value),
                     ),
                 )
-                is PhoneInputTextAction.Backspace -> repeat(action.count) {
-                    enqueueSession(
-                        current, session, PhoneInputMessage.of(
-                            5, Cbor.Text(session.id), sequence(session), Cbor.Integer(BACKSPACE_USAGE.toLong()),
-                            Cbor.Integer(0), Cbor.Bool(true),
-                        ),
-                    )
-                    enqueueSession(
-                        current, session, PhoneInputMessage.of(
-                            5, Cbor.Text(session.id), sequence(session), Cbor.Integer(BACKSPACE_USAGE.toLong()),
-                            Cbor.Integer(0), Cbor.Bool(false),
-                        ),
-                    )
+                is PhoneInputTextAction.Backspace -> enqueueKeyTaps(current, session, BACKSPACE_USAGE, action.count)
+                is PhoneInputTextAction.MoveCursor -> if (action.delta != 0) {
+                    val usage = if (action.delta < 0) LEFT_ARROW_USAGE else RIGHT_ARROW_USAGE
+                    enqueueKeyTaps(current, session, usage, kotlin.math.abs(action.delta))
                 }
             }
         }
         pump(current)
         return true
+    }
+
+    private fun enqueueKeyTaps(current: Link, session: ActiveSession, usage: Int, count: Int) {
+        repeat(count) {
+            enqueueSession(
+                current, session, PhoneInputMessage.of(
+                    5, Cbor.Text(session.id), sequence(session), Cbor.Integer(usage.toLong()),
+                    Cbor.Integer(0), Cbor.Bool(true),
+                ),
+            )
+            enqueueSession(
+                current, session, PhoneInputMessage.of(
+                    5, Cbor.Text(session.id), sequence(session), Cbor.Integer(usage.toLong()),
+                    Cbor.Integer(0), Cbor.Bool(false),
+                ),
+            )
+        }
     }
 
     fun sendKey(usage: Int, modifiers: Int, pressed: Boolean): Boolean {
@@ -561,6 +570,8 @@ class PhoneInputController(
 
     companion object {
         private const val BACKSPACE_USAGE = 0x2A
+        private const val RIGHT_ARROW_USAGE = 0x4F
+        private const val LEFT_ARROW_USAGE = 0x50
         private const val START_ACCEPTED = 0L
         private const val START_TIMEOUT_MILLIS = 15_000L
         private const val MAX_QUEUED_EVENTS = 768

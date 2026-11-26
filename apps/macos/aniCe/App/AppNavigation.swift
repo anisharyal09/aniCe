@@ -62,7 +62,7 @@ enum MacSettingsCategory: String, CaseIterable {
 
   static func category(for section: String) -> Self {
     switch section {
-    case "appearance", "updates", "connection", "this-device": .general
+    case "appearance", "updates", "connection", "this-device", "guide": .general
     case "permissions": .permissions
     case "shortcuts": .shortcuts
     default: .features

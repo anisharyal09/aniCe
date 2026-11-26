@@ -322,6 +322,19 @@ struct AniCeApp: App {
     }
     .defaultSize(width: MainWindowSizing.defaultSize.width, height: MainWindowSizing.defaultSize.height)
     .windowResizability(.contentMinSize)
+    .commands {
+      CommandGroup(replacing: .help) {
+        Button("aniCe Guide") {
+          navigation.openGuide(nil)
+          delegate.openMainFromCompanion()
+        }
+        .keyboardShortcut("?", modifiers: .command)
+        Divider()
+        Button("Support aniCe") {
+          NSWorkspace.shared.open(AniCeSupport.url)
+        }
+      }
+    }
 
   }
 }

@@ -247,6 +247,24 @@ final class TransferNotifierTests: XCTestCase {
     }
   }
 
+  func testNotificationSoundRespectsPlaySoundPreference() async {
+    for soundEnabled in [false, true] {
+      let model = completedReceive(folder: tempDir)
+      model.notificationPreferences.sound = soundEnabled
+      let center = SpyNotificationCenter()
+      let notifier = MacTransferNotifier(model: model, openMainWindow: {}, center: center,
+        applicationIsActive: { false })
+      notifier.handle(.completed(fileCount: 1, totalBytes: 1024))
+      await waitForDelivery(center)
+      let request = center.added.last
+      if soundEnabled {
+        XCTAssertEqual(request?.content.sound, .default)
+      } else {
+        XCTAssertNil(request?.content.sound)
+      }
+    }
+  }
+
   func testTurningNotificationsOffCancelsACompletionWaitingForPermission() async {
     let model = completedReceive(folder: tempDir)
     let center = SpyNotificationCenter()

@@ -1436,7 +1436,7 @@ final class BetaUpdatePreferenceTests: XCTestCase {
           XCTAssertFalse(featText.contains("More built into aniCe"))
         } else {
           XCTAssertTrue(featText.contains("More built into aniCe"))
-          XCTAssertTrue(featText.contains("Open Guide"))
+          XCTAssertTrue(featText.contains("see guide"))
           if let path = ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"] {
             let directory = URL(fileURLWithPath: path, isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

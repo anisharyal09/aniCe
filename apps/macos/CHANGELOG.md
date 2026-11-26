@@ -16,7 +16,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
-- Replace inline “How … works” disclosures with a contextual detail-toolbar Guide button (`?`) opening an offline, categorized **aniCe Guide** (`Connect`, `Share & Files`, `Control`, `Sync & Alerts`) with Back/Forward history preservation and quiet grouped sheets, add a compact hairline **More built into aniCe** footer row on Features linking to Guide, and extend `AniCeHelpDisclosure` without altering Overview or sidebar primary destinations.
+- Add an offline, categorized **aniCe Guide** (`Connect`, `Share & Files`, `Control`, `Sync & Alerts`) with sticky category filter tags, clean toolbar `?` action (with Help menu **aniCe Guide** `⌘?` and **Support aniCe**), `More built into aniCe — see guide` footer in Features, and a **Guide** entry in Settings → General, covering pairing modes, device nicknames, Quick Settings tile, shortcuts, and settings paths.
 - Bound release-note Markdown blocks, lines and inline styling with linear-time source cleanup, pre-parse view blocks once and wrap update-review actions when narrow.
 - Clear Mac update review on window close and app termination, verify notification tags and cancel unlaunched update work at shutdown without resurrecting sheets.
 - Attribute mirrored alerts and SMS to their phone with credential-scoped native grouping; keep passive revisions list-only in foreground and preserve used actions during source-icon enrichment.

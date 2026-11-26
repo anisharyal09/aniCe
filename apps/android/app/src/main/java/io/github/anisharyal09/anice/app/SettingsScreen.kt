@@ -274,6 +274,24 @@ fun SettingsScreen(
                                 modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
+
+                    PreferenceSection("Guide") {
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                                .clickable(role = Role.Button, onClickLabel = "Open Guide") {
+                                    navigation.openGuide(null)
+                                }.padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("aniCe Guide", style = MaterialTheme.typography.bodyMedium)
+                                Text("Features, Quick Settings tile, shortcuts, and setup", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
+                                modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                     if (showGrantedPermissions || hasMissingPermissions) {
                         SettingsCategoryHeading(SettingsCategory.Permissions)
                         PreferenceSection("Permissions") {

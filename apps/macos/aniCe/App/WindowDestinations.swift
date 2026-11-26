@@ -612,6 +612,20 @@ extension MainWindowView {
                     }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
                   }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("This device, identity and security")
                 }
+                preferenceSection("Guide", id: "guide") {
+                  Button { navigation.openGuide(nil) } label: {
+                    HStack(spacing: 10) {
+                      VStack(alignment: .leading, spacing: 2) {
+                        Text("aniCe Guide")
+                        Text("Features, Quick Settings tile, shortcuts, and setup")
+                          .font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                      }
+                      Spacer()
+                      Image(systemName: "chevron.right").font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AniCePalette.secondaryText(colorScheme)).accessibilityHidden(true)
+                    }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
+                  }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("aniCe Guide")
+                }
                 if settingsCategory == .permissions || hasMissingPermissions {
                   settingsCategoryHeading(.permissions)
                   preferenceSection("Access", id: "permissions") {

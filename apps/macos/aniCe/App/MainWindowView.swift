@@ -205,15 +205,15 @@ struct MainWindowView: View {
     }
     .navigationTitle(MacAppStorage.applicationName)
     .toolbar {
-      ToolbarItem(placement: .primaryAction) {
-        Button {
-          navigation.openGuide(currentGuideTopic)
-        } label: {
-          Image(systemName: "questionmark.circle")
+      if #available(macOS 26.0, *) {
+        ToolbarItem(placement: .primaryAction) {
+          guideToolbarButton
         }
-        .accessibilityLabel("Open Guide")
-        .help(navigation.destination == .guide ? "Showing Guide" : "Open Guide")
-        .disabled(navigation.destination == .guide)
+        .sharedBackgroundVisibility(.hidden)
+      } else {
+        ToolbarItem(placement: .primaryAction) {
+          guideToolbarButton
+        }
       }
     }
     .toolbarBackground(nativeGlass && !reduceTransparency
@@ -265,6 +265,20 @@ struct MainWindowView: View {
     case .settings: settingsContent
     case .guide: GuideView(initialTopic: navigation.guideTopic)
     }
+  }
+
+  private var guideToolbarButton: some View {
+    Button {
+      navigation.openGuide(currentGuideTopic)
+    } label: {
+      Image(systemName: "questionmark.circle")
+        .font(.system(size: 13.5))
+        .foregroundStyle(AniCePalette.secondaryText(colorScheme).opacity(navigation.destination == .guide ? 0.35 : 0.75))
+    }
+    .buttonStyle(AniCeHoverButtonStyle(feedbackPadding: 4))
+    .accessibilityLabel("Open Guide")
+    .help(navigation.destination == .guide ? "Showing Guide" : "Open Guide")
+    .disabled(navigation.destination == .guide)
   }
 
   private var currentGuideTopic: GuideTopic? {

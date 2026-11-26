@@ -224,19 +224,24 @@ struct FeaturesView: View {
         navigation.openGuide(nil)
       } label: {
         HStack(spacing: 8) {
-          Text("More built into aniCe — shortcuts, sync, and system tools.")
-            .font(.system(size: 12 * fontScale))
-            .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-            .lineLimit(1)
-            .truncationMode(.tail)
+          (
+            Text("More built into ani")
+              .foregroundColor(AniCePalette.secondaryText(colorScheme))
+            + Text("Ce")
+              .foregroundColor(AniCePalette.accent(colorScheme))
+            + Text(" — ")
+              .foregroundColor(AniCePalette.secondaryText(colorScheme))
+            + Text("see guide")
+              .fontWeight(.medium)
+              .foregroundColor(AniCePalette.secondaryText(colorScheme))
+          )
+          .font(.system(size: 12 * fontScale))
+          .lineLimit(1)
+          .truncationMode(.tail)
           Spacer(minLength: 12)
-          HStack(spacing: 4) {
-            Text("Open Guide")
-              .font(.system(size: 12 * fontScale, weight: .medium))
-            Image(systemName: "chevron.right")
-              .font(.system(size: 10.5, weight: .medium))
-          }
-          .foregroundStyle(AniCePalette.accent(colorScheme))
+          Image(systemName: "chevron.right")
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(AniCePalette.secondaryText(colorScheme).opacity(0.7))
         }
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
@@ -244,7 +249,7 @@ struct FeaturesView: View {
       }
       .buttonStyle(AniCeHoverButtonStyle(feedbackPadding: 4))
     }
-    .accessibilityLabel("More built into aniCe. Open Guide.")
+    .accessibilityLabel("More built into aniCe — see guide")
   }
 
 }
