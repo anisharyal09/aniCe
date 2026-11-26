@@ -4,6 +4,11 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+### Fixed
+
+- Exercise synthetic LAN address restoration without host Wi-Fi, and report native Wi-Fi or Bluetooth regressions as skipped when their required capabilities are unavailable.
+- Wait for the right-to-left settings fixture to draw before checking update-action alignment.
+
 ## [v0.9.0-beta.4]
 
 Application release v0.9.0-beta.4, build 90024.

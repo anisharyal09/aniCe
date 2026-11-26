@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelStore
 import io.github.anisharyal09.anice.features.discovery.DiscoveryViewModel
 import android.net.ConnectivityManager
 import android.net.LinkProperties
+import android.net.Network
 import android.net.NetworkCapabilities
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -15,6 +16,7 @@ import io.github.anisharyal09.anice.features.session.SessionViewModel
 import io.github.anisharyal09.anice.infrastructure.connections.LanSessionController
 import kotlinx.coroutines.*
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -23,11 +25,8 @@ class LanOwnershipTest {
     @Test fun restoredAddressesRequestOneAttemptAndRespectBackgroundAndDisconnect() = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as AniCeApplication
         val controller = withContext(Dispatchers.Main) { LanSessionController(app) }
-        val manager = app.getSystemService(ConnectivityManager::class.java)
-        val wifi = requireNotNull(manager.allNetworks.firstOrNull {
-            manager.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-        })
-        val network = android.net.Network.fromNetworkHandle(wifi.networkHandle + (199999L shl 32))
+        // Public Android Network handle used only for synthetic address callbacks.
+        val network = Network.fromNetworkHandle(199999L shl 32 or 0xcafed00dL)
         val sent = mutableListOf<Int?>()
         val channel = object : io.github.anisharyal09.anice.infrastructure.connections.SecuredChannel {
             override val descriptor = io.github.anisharyal09.anice.infrastructure.connections.ChannelDescriptor(
@@ -43,7 +42,7 @@ class LanOwnershipTest {
         fun requests() = sent.count { it == 4 }
         try {
             withContext(Dispatchers.Main) {
-                org.junit.Assume.assumeTrue("Automatic LAN must be enabled", controller.automatic)
+                assumeTrue("Automatic LAN must be enabled", controller.automatic)
                 controller.rendezvous.available(channel)
                 controller.rendezvous.handle(channel.descriptor,
                     io.github.anisharyal09.anice.infrastructure.connections.LanRendezvousWire.encode(1))
@@ -258,16 +257,14 @@ class LanOwnershipTest {
             InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
                 as AniCeApplication
         val manager = app.getSystemService(ConnectivityManager::class.java)
-        val network =
-            requireNotNull(
-                manager.allNetworks.firstOrNull {
-                    manager
-                        .getNetworkCapabilities(it)
-                        ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-                }
-            ) {
-                "Wi-Fi is required for the native owner regression"
-            }
+        val network = manager.allNetworks.firstOrNull {
+            manager.getNetworkCapabilities(it)?.let { capabilities ->
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            } == true
+        }
+        assumeTrue("Wi-Fi is required for the native owner regression", network != null)
+        val wifi = requireNotNull(network)
         val local =
             withContext(Dispatchers.IO) { app.identityService.getOrCreateIdentity().identity }
         val peer = withContext(Dispatchers.Main) { app.sessionController.selected }
@@ -310,8 +307,8 @@ class LanOwnershipTest {
             val worker = withContext(Dispatchers.Main) { field("worker") as Job }
             assertFalse(app.sessionPeers.permits(foreign))
             when (action) {
-                "lost" -> callback.onLost(network)
-                "changed" -> callback.onLinkPropertiesChanged(network, LinkProperties())
+                "lost" -> callback.onLost(wifi)
+                "changed" -> callback.onLinkPropertiesChanged(wifi, LinkProperties())
                 "background" ->
                     withContext(Dispatchers.Main) {
                         val other = Any()
@@ -409,7 +406,7 @@ class LanOwnershipTest {
                 controller.connect(peer)
             }
             withTimeout(5000) { while (app.sessionPeers.permits(foreign)) delay(10) }
-            callback.onLost(network)
+            callback.onLost(wifi)
             delay(100)
             withContext(Dispatchers.Main) {
                 assertTrue(controller.state == ConnectionState.CONNECTING || controller.state == ConnectionState.SECURED)

@@ -1,20 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Protected physical device lab verification for native cross-platform interchange.
 # Runs only on self-hosted hardware with physical Android phones attached via USB.
-# NEVER triggered by untrusted pull_request code.
+# Dispatch on main when a runner and test device are available.
 name: Device Lab
 
 on:
-  schedule:
-    - cron: '0 4 * * *'
   workflow_dispatch:
     inputs:
       serial:
         description: 'Explicit Android device serial (optional)'
         required: false
         type: string
-  push:
-    branches: [main]
 
 permissions:
   contents: read
@@ -33,6 +29,7 @@ env:
 
 jobs:
   verify-native-interchange:
+    if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, macOS, device-lab]
     environment: device-lab
     timeout-minutes: 45
@@ -53,9 +50,6 @@ jobs:
         run: |
           mkdir -p build/reports/verification
           python3 scripts/check-device-health.py --serial "$ANICE_DEVICE_SERIAL" --output build/reports/verification/device-health.json
-
-      - name: Build macOS pairing native bridge
-        run: python3 scripts/build-pairing-native.py macos
 
       - name: Verify native interchange
         run: python3 scripts/verify-suite.py --only interchange --serial "$ANICE_DEVICE_SERIAL"

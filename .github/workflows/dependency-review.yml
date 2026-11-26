@@ -7,6 +7,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -26,8 +30,17 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          fetch-depth: 2
+
+      # Keep the check visible on every PR and use the full Git diff for selection.
+      - name: Detect dependency inputs
+        id: classify
+        env:
+          HEAD_SHA: ${{ github.sha }}
+        run: python3 scripts/ci_changes.py --mode dependencies --event pull_request --head "$HEAD_SHA"
 
       - name: Perform dependency review
+        if: steps.classify.outputs.review_dependencies != 'false'
         uses: actions/dependency-review-action@3b139cfc5fae8b618d3eae3675e383bb1769c019 # v4.5.0
         with:
           fail-on-severity: high
