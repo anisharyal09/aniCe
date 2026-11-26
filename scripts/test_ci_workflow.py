@@ -744,11 +744,14 @@ PY
     def test_security_workflow_policies(self):
         document = workflow_documents()["security.yml"]
         events = triggers(document)
-        self.assertNotIn("pull_request", events)
-        self.assertNotIn("pull_request_target", events)
+        self.assertEqual(events, {"push", "schedule", "workflow_dispatch"})
+        self.assertEqual(document["on"]["push"], {"branches": ["main"]})
         self.assertEqual(document.get("permissions"), {"contents": "read"})
         detector = document["jobs"]["detect-changes"]
         self.assertEqual(detector.get("runs-on"), "ubuntu-24.04")
+        classify = next(step for step in detector["steps"] if step.get("id") == "classify")
+        self.assertIn("scripts/ci_changes.py --mode codeql", classify["run"])
+        self.assertNotIn("${{", classify["run"])
         self.assertEqual(
             set(detector.get("outputs", {})),
             {"run_codeql", "codeql_languages", "run_swift"},
@@ -756,14 +759,14 @@ PY
         codeql = document["jobs"]["codeql"]
         self.assertEqual(codeql.get("permissions"), {"contents": "read", "security-events": "write"})
         self.assertEqual(codeql.get("needs"), "detect-changes")
-        self.assertEqual(codeql.get("if"), "needs.detect-changes.outputs.run_codeql == 'true'")
+        self.assertEqual(codeql.get("if"), "needs.detect-changes.outputs.run_codeql != 'false'")
         self.assertEqual(
             codeql.get("strategy", {}).get("matrix", {}).get("language"),
-            "${{ fromJSON(needs.detect-changes.outputs.codeql_languages) }}",
+            "${{ fromJSON(needs.detect-changes.outputs.codeql_languages || '[\"python\",\"actions\",\"java-kotlin\"]') }}",
         )
         codeql_swift = document["jobs"]["codeql-swift"]
         self.assertEqual(codeql_swift.get("needs"), "detect-changes")
-        self.assertEqual(codeql_swift.get("if"), "needs.detect-changes.outputs.run_swift == 'true'")
+        self.assertEqual(codeql_swift.get("if"), "needs.detect-changes.outputs.run_swift != 'false'")
         self.assertEqual(codeql_swift.get("runs-on"), "macos-15")
         self.assertIn("Xcode_26.3.app", codeql_swift.get("env", {}).get("DEVELOPER_DIR", ""))
         self.assertEqual(codeql_swift.get("permissions"), {"contents": "read", "security-events": "write"})
@@ -821,6 +824,8 @@ PY
             if line.strip() and not line.lstrip().startswith("#")
         ]
         for required in (
+            "/.gitattributes",
+            "/.github/actions/",
             "/.github/workflows/",
             "/.github/actionlint.yaml",
             "/.github/PULL_REQUEST_TEMPLATE.md",

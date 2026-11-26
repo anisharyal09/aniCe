@@ -51,9 +51,6 @@ jobs:
           mkdir -p build/reports/verification
           python3 scripts/check-device-health.py --serial "$ANICE_DEVICE_SERIAL" --output build/reports/verification/device-health.json
 
-      - name: Build macOS pairing native bridge
-        run: python3 scripts/build-pairing-native.py macos
-
       - name: Verify native interchange
         run: python3 scripts/verify-suite.py --only interchange --serial "$ANICE_DEVICE_SERIAL"
 

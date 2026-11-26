@@ -45,7 +45,7 @@ jobs:
   codeql:
     name: CodeQL Analysis
     needs: detect-changes
-    if: needs.detect-changes.outputs.run_codeql == 'true'
+    if: needs.detect-changes.outputs.run_codeql != 'false'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -54,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ${{ fromJSON(needs.detect-changes.outputs.codeql_languages) }}
+        language: ${{ fromJSON(needs.detect-changes.outputs.codeql_languages || '["python","actions","java-kotlin"]') }}
     steps:
       - name: Check out sources
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -110,7 +110,7 @@ jobs:
   codeql-swift:
     name: CodeQL Analysis (Swift)
     needs: detect-changes
-    if: needs.detect-changes.outputs.run_swift == 'true'
+    if: needs.detect-changes.outputs.run_swift != 'false'
     runs-on: macos-15
     timeout-minutes: 45
     permissions:

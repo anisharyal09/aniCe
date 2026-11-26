@@ -156,16 +156,22 @@ class SettingsRefinementTests {
         val direction = mutableStateOf(LayoutDirection.Ltr)
         try {
             val drawn = CountDownLatch(1)
+            val rtlDrawn = CountDownLatch(1)
             runner.runOnMainSync {
                 activity.setContent {
+                    val layoutDirection = direction.value
                     Fixture(true, scale.floatValue) {
-                        CompositionLocalProvider(LocalLayoutDirection provides direction.value) {
+                        CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
                             Column(Modifier.widthIn(max = 300.dp).fillMaxWidth().padding(12.dp)) {
                                 UpdateSettingsContent(false, true, UpdateStatus.Idle, null, {}, {}, {})
                             }
                         }
                     }
-                    SideEffect { activity.window.decorView.postOnAnimation { drawn.countDown() } }
+                    SideEffect {
+                        activity.window.decorView.postOnAnimation {
+                            if (layoutDirection == LayoutDirection.Rtl) rtlDrawn.countDown() else drawn.countDown()
+                        }
+                    }
                 }
             }
             assertTrue(drawn.await(10, TimeUnit.SECONDS))
@@ -184,6 +190,7 @@ class SettingsRefinementTests {
             assertTrue("Large text reflows actions instead of overlapping", options.bottom <= check.top)
             capture("automatic-updates-reflow-dark-200")
             runner.runOnMainSync { scale.floatValue = 1.2f; direction.value = LayoutDirection.Rtl }
+            assertTrue("The RTL settings fixture did not draw", rtlDrawn.await(10, TimeUnit.SECONDS))
             idle()
             awaitLabel("On launch when due; daily at 7:30 PM NPT.")
             awaitLabel("More options")
@@ -191,7 +198,8 @@ class SettingsRefinementTests {
             val rtlTree = root()
             val rtlOptions = bounds(clickable(find(rtlTree, "More options")))
             val rtlCheck = bounds(clickable(find(rtlTree, "Check for updates")))
-            assertTrue("More options follows the leading edge in RTL", rtlCheck.right <= rtlOptions.left)
+            assertTrue("More options follows the leading edge in RTL: options=$rtlOptions check=$rtlCheck",
+                rtlCheck.right <= rtlOptions.left)
             assertEquals(rtlOptions.centerY().toFloat(), rtlCheck.centerY().toFloat(),
                 3 * activity.resources.displayMetrics.density)
             capture("automatic-updates-rtl-dark-120")

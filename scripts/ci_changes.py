@@ -13,6 +13,8 @@ HEX_SHA = re.compile(r"[0-9a-f]{40}")
 ZERO_SHA = "0" * 40
 NATIVE_LANES = ("rust", "android", "macos")
 CODEQL_MATRIX = ("python", "actions", "java-kotlin")
+RUNTIME_WORKFLOW = ".github/workflows/runtime.yml"
+NATIVE_BRIDGE_SCRIPT = "scripts/build-pairing-native.py"
 
 # These files are bundled by the native builds. Their contents are not code.
 PACKAGED_NOTICES = {
@@ -34,19 +36,17 @@ GLOBAL_GATE_FILES = {
     ".github/CODEOWNERS",
     ".github/actionlint.yaml",
     "scripts/ci_changes.py",
-    "scripts/test_ci_changes.py",
-    "scripts/test_ci_workflow.py",
-    "scripts/test_verify_suite.py",
     "scripts/verify-suite.py",
 }
 
-NATIVE_BRIDGE_FILES = {
-    "scripts/build-pairing-native.py",
-    "scripts/test_pairing_build.py",
-}
 CONTRACT_ONLY_FILES = {
     ".github/dependabot.yaml",
     ".github/dependabot.yml",
+    ".github/workflows/dependency-review.yml",
+    ".github/workflows/device-lab.yml",
+    ".github/workflows/release.yml",
+    ".github/workflows/security.yml",
+    RUNTIME_WORKFLOW,
     "scripts/check-device-health.py",
     "scripts/check-structure.py",
     "scripts/dev.sh",
@@ -69,17 +69,17 @@ MANIFEST_NAMES = {
 
 
 def is_documentation(path):
-    if path in DOCUMENTATION_FILES:
+    if path in DOCUMENTATION_FILES or ("/" not in path and path.endswith(".md")):
         return True
     if path.startswith(".github/ISSUE_TEMPLATE/"):
         return path.endswith((".md", ".yaml", ".yml"))
-    if path.startswith("docs/") and path.endswith((".png", ".svg", ".jpg", ".webp")):
-        return True
-    # Markdown under app sources and fixture directories may be a resource.
-    return path.endswith(".md") and (
-        "/" not in path or path.startswith(("docs/", ".agents/", "assets/logo/", "tools/"))
-        or (path.startswith("protocol/") and not path.startswith(("protocol/fixtures/", "protocol/test-vectors/")))
-    )
+    if path.startswith("docs/"):
+        return path.endswith((".md", ".png", ".svg", ".jpg", ".webp"))
+    if not path.endswith(".md"):
+        return False
+    if path.startswith(("protocol/fixtures/", "protocol/test-vectors/")):
+        return False  # Native tests can package everything under their fixture paths.
+    return path.startswith((".agents/", "assets/logo/", "protocol/", "tools/"))
 
 
 def is_contract_only(path):
@@ -95,7 +95,7 @@ def is_contract_only(path):
 def ci_lanes_for_path(path):
     if path in PACKAGED_NOTICES:
         return PACKAGED_NOTICES[path]
-    if path.startswith(WORKFLOW_PATHS) or path in GLOBAL_GATE_FILES | NATIVE_BRIDGE_FILES:
+    if path in GLOBAL_GATE_FILES or path == NATIVE_BRIDGE_SCRIPT:
         return NATIVE_LANES
     if is_documentation(path) or is_contract_only(path):
         return ()
@@ -105,7 +105,7 @@ def ci_lanes_for_path(path):
         return ("macos",)
     if path.startswith("protocol/"):
         return ("android", "macos")
-    # Includes the shared Rust bridge and unknown build inputs.
+    # Includes the shared Rust bridge, the CI workflow and unknown build inputs.
     return NATIVE_LANES
 
 
@@ -125,7 +125,7 @@ def codeql_languages_for_path(path):
         languages.add("python")
     if path.startswith(WORKFLOW_PATHS) or path in (".github/actionlint.yaml", ".github/CODEOWNERS"):
         languages.add("actions")
-    elif path.startswith("core/rust/pairing/") or path in NATIVE_BRIDGE_FILES:
+    elif path.startswith("core/rust/pairing/") or path == NATIVE_BRIDGE_SCRIPT:
         languages.update(("java-kotlin", "swift"))
     elif path.startswith("apps/android/"):
         languages.add("java-kotlin")
@@ -170,16 +170,14 @@ def _run_git(args, repo_root):
 
 
 def _valid_sha(sha):
-    return bool(sha and HEX_SHA.fullmatch(sha) and sha != ZERO_SHA)
+    return isinstance(sha, str) and HEX_SHA.fullmatch(sha) is not None and sha != ZERO_SHA
 
 
 def _workflow_runs(repository, workflow, query):
     endpoint = f"repos/{repository}/actions/workflows/{workflow}/runs?{query}"
     response = json.loads(subprocess.check_output(["gh", "api", endpoint], text=True, timeout=20))
     runs = response.get("workflow_runs") if isinstance(response, dict) else None
-    if not isinstance(runs, list) or any(
-        not isinstance(run, dict) or type(run.get("id")) is not int for run in runs
-    ):
+    if not isinstance(runs, list) or any(not isinstance(run, dict) or type(run.get("id")) is not int for run in runs):
         raise ValueError(f"Invalid GitHub Actions response for {workflow}")
     return runs
 
@@ -188,8 +186,9 @@ def main_push_ci_succeeded(repository, commit):
     """Look up the latest main-push CI result for exactly this commit."""
     if not _valid_sha(commit):
         return False
+    query = f"head_sha={commit}&branch=main&event=push&per_page=100"
     runs = [
-        run for run in _workflow_runs(repository, "ci.yml", f"head_sha={commit}&branch=main&event=push&per_page=100")
+        run for run in _workflow_runs(repository, "ci.yml", query)
         if run.get("head_sha") == commit and run.get("head_branch") == "main" and run.get("event") == "push"
     ]
     latest = max(runs, key=lambda run: run["id"], default=None)
@@ -217,16 +216,18 @@ def _diff_commits(base_rev, head_rev, repo_root):
     return [os.fsdecode(entry) for entry in result.stdout.split(b"\0") if entry]
 
 
-def _is_shallow_github_pr_merge(head, repo_root):
-    # At depth 2, Git knows both parent IDs but may omit one parent's object
-    # when it is an ancestor through the other side of the merge.
-    if not os.environ.get("GITHUB_REF", "").startswith("refs/pull/"):
-        return False
+def _pr_base(head, repo_root):
+    # Inspect the merge header; only the first parent's tree is needed.
     commit = _run_git(["cat-file", "commit", head], repo_root)
     if commit.returncode != 0:
-        return False
+        return None
     headers = commit.stdout.split(b"\n\n", 1)[0].splitlines()
-    return sum(line.startswith(b"parent ") for line in headers) == 2
+    parents = [line.removeprefix(b"parent ") for line in headers if line.startswith(b"parent ")]
+    if len(parents) == 2:
+        base = parents[0].decode("ascii", errors="replace")
+        if _valid_sha(base):
+            return base
+    return None
 
 
 def changed_paths_for_event(event, base="", head="HEAD", repo_root=ROOT):
@@ -237,10 +238,8 @@ def changed_paths_for_event(event, base="", head="HEAD", repo_root=ROOT):
     try:
         if event == "pull_request":
             # Compare the tested synthetic merge to its first parent, the base actually used.
-            merge_parent = _run_git(["rev-parse", "--verify", "--quiet", f"{head}^2"], repo_root)
-            if merge_parent.returncode != 0 and not _is_shallow_github_pr_merge(head, repo_root):
-                return None
-            return _diff_commits(f"{head}^1", head, repo_root)
+            pr_base = _pr_base(head, repo_root)
+            return _diff_commits(pr_base, head, repo_root) if pr_base else None
         if event in ("push", "merge_group") and _valid_sha(base):
             if _run_git(["cat-file", "-e", f"{base}^{{commit}}"], repo_root).returncode != 0:
                 fetched = _run_git(["fetch", "--no-tags", "--depth=1", "origin", base], repo_root)
@@ -294,7 +293,8 @@ def main(argv=None):
 
     paths = changed_paths_for_event(event, base=base, head=args.head)
     if args.mode == "runtime":
-        decision = {"run_connected": classify_ci_paths(paths)["run_android"]}
+        runtime_changed = paths is not None and RUNTIME_WORKFLOW in paths
+        decision = {"run_connected": runtime_changed or classify_ci_paths(paths)["run_android"]}
     elif args.mode == "ci":
         decision = classify_ci_paths(paths)
     elif args.mode == "codeql":

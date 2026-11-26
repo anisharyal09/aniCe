@@ -111,12 +111,22 @@ class ChangeClassificationTests(unittest.TestCase):
         paths = [
             "scripts/requirements.txt",
             "scripts/check-structure.py",
+            "scripts/test_ci_changes.py",
+            "scripts/test_ci_workflow.py",
+            "scripts/test_pairing_build.py",
             "protocol/test-vectors/session/requirements.txt",
             "protocol/test-vectors/session/generate_session_vectors.py",
             "assets/logo/export-brand-icons.py",
         ]
         self.assertFalse(any(ci_changes.classify_ci_paths(paths).values()))
         self.assertEqual(ci_changes.classify_codeql_paths(paths)["codeql_languages"], ["python"])
+
+    def test_standalone_workflows_do_not_trigger_unrelated_ci_native_builds(self):
+        for workflow in ("dependency-review", "device-lab", "release", "runtime", "security"):
+            with self.subTest(workflow=workflow):
+                path = f".github/workflows/{workflow}.yml"
+                self.assertFalse(any(ci_changes.classify_ci_paths([path]).values()))
+                self.assertTrue(ci_changes.is_dependency_input(path))
 
     def test_different_platform_changes_are_combined(self):
         paths = ["apps/macos/new.swift", "apps/android/new.kt", "README.md"]
@@ -250,16 +260,15 @@ class ChangeClassificationTests(unittest.TestCase):
     def test_github_pr_can_diff_when_only_the_first_merge_parent_is_available(self):
         parent = b"parent " + b"a" * 40 + b"\n"
         second_parent = b"parent " + b"b" * 40 + b"\n"
-        missing = subprocess.CompletedProcess(["git"], 1)
         doc_diff = subprocess.CompletedProcess(["git"], 0, stdout=b"README.md\0")
         for parents, expected in ((parent + second_parent, ["README.md"]), (parent, None)):
-            with self.subTest(parents=parents), patch.dict(os.environ, {"GITHUB_REF": "refs/pull/42/merge"}), \
-                 patch.object(ci_changes, "_run_git", side_effect=[
-                     missing,
+            with self.subTest(parents=parents), patch.object(ci_changes, "_run_git", side_effect=[
                      subprocess.CompletedProcess(["git"], 0, stdout=parents + b"\na merge\n"),
                      doc_diff,
-                 ]):
+                 ]) as git:
                 self.assertEqual(ci_changes.changed_paths_for_event("pull_request"), expected)
+                if expected is not None:
+                    self.assertIn("a" * 40, git.call_args.args[0])
 
     def test_git_errors_select_full_verification(self):
         for error in (OSError("git unavailable"), subprocess.TimeoutExpired("git", 45)):
@@ -310,6 +319,7 @@ class ChangeClassificationTests(unittest.TestCase):
             ("schedule", "true", ["apps/macos/new.swift"], False),
             ("schedule", "true", ["apps/android/new.kt"], True),
             ("schedule", "true", ["core/rust/pairing/Cargo.lock"], True),
+            ("schedule", "true", [".github/workflows/runtime.yml"], True),
             ("schedule", "true", None, True),
             ("schedule", "false", None, True),
             ("workflow_dispatch", "true", None, True),
