@@ -6,7 +6,7 @@ Swift 6 and SwiftUI provide persistent device identity, a main window and a menu
 
 Apple Silicon and macOS 14 or newer; Intel is unsupported. Swift 6, SwiftUI/AppKit and a native Rust pairing bridge.
 
-Release candidate: **0.9.0-beta.4 · build 90024** (unpublished). See [installation and updates](../../docs/GETTING_STARTED.md), [feature guides](../../README.md#features) and [architecture](../../ARCHITECTURE.md).
+Latest release: **0.9.0-beta.4 · build 90024**. See [installation and updates](../../docs/GETTING_STARTED.md), [feature guides](../../README.md#features) and [architecture](../../ARCHITECTURE.md).
 
 ## Using the Mac app
 

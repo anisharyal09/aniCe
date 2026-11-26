@@ -92,6 +92,7 @@ fun SettingsScreen(
         val scrollState = rememberScrollState()
         LaunchedEffect(selectedCategory) {
             if (selectedCategory !in SettingsCategory.visibleEntries) selectedCategory = SettingsCategory.All
+            navigation.settingsCategory = selectedCategory.name
             scrollState.scrollTo(0)
         }
         LaunchedEffect(navigation.settingsSection) {

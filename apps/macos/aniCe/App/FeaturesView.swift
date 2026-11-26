@@ -194,9 +194,9 @@ struct FeaturesView: View {
       return switch transfer.state {
       case .incomingOffer(let batch): "\(batch.files.count) incoming files"
       case .waitingForPeerApproval: "Waiting for approval"
-      case .transferring(_, _, let name, _, _, _, _): "Sending · \(name)"
+      case .transferring(_, _, let name, _, _, _, _): "\(transfer.receiving ? "Receiving" : "Sending") · \(name)"
       case .paused: "Transfer paused"
-      case .completed(_, let count, _): "\(count) files sent"
+      case .completed(_, let count, _): "\(count) files \(transfer.receiving ? "received" : "sent")"
       case .rejected: "Transfer declined"
       case .failed: "Transfer failed"
       case .cancelled: "Transfer cancelled"

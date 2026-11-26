@@ -383,7 +383,10 @@ private fun currentGuideTopic(navigation: AppNavigation): GuideTopic? {
                 "Notification sync" -> GuideTopic.NotificationsAndCalls
                 "File transfer" -> GuideTopic.FilesAndEdgeDrop
                 "Connection" -> GuideTopic.PairingAndConnection
-                else -> null
+                else -> when (navigation.settingsCategory) {
+                    "Permissions" -> GuideTopic.Permissions
+                    else -> null
+                }
             }
         }
     }

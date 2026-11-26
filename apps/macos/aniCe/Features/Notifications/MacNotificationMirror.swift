@@ -160,6 +160,18 @@ final class MacNotificationMirrorNotifier: NSObject {
     }
   }
 
+  func postActionFeedback(peerKey: String, appName: String, title: String, body: String) {
+    let identifier = Self.identifier(peerKey: peerKey, sourceId: "feedback-" + UUID().uuidString.lowercased())
+    let content = UNMutableNotificationContent()
+    content.title = title
+    content.subtitle = appName
+    content.body = body
+    content.categoryIdentifier = Self.categoryPrefix + "FEEDBACK"
+    content.sound = .default
+    content.interruptionLevel = .active
+    center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil), withCompletionHandler: nil)
+  }
+
   private func sourceIconAttachment(_ data: Data?) -> (value: UNNotificationAttachment, url: URL)? {
     guard let data,
           let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
@@ -289,6 +301,12 @@ final class MacNotificationMirrorModel: FeatureHandler {
     let channel: any SecuredChannel
     var remoteCapability = false
   }
+  private struct PendingAction {
+    let peerKey: String
+    let appName: String
+    let actionTitle: String
+    let isDismiss: Bool
+  }
   private var links: [String: Link] = [:]
   private var epochs: [String: String] = [:]
   private var snapshots: [String: NotificationSnapshot] = [:]
@@ -296,6 +314,8 @@ final class MacNotificationMirrorModel: FeatureHandler {
   private(set) var removals: [String: Int64] = [:]
   private var snapshotFloors: [String: Int64] = [:]
   private var sourceIcons: [String: Data] = [:]
+  private var pendingActions: [String: PendingAction] = [:]
+  private var pendingActionOrder: [String] = []
   private let notifier: MacNotificationMirrorNotifier
 
   init(notifier: MacNotificationMirrorNotifier) {
@@ -323,6 +343,8 @@ final class MacNotificationMirrorModel: FeatureHandler {
     removals = removals.filter { !$0.key.hasPrefix(peerKey + ":") }
     snapshots = snapshots.filter { $0.value.peerKey != peerKey }
     sourceIcons = sourceIcons.filter { !$0.key.hasPrefix(peerKey + ":") }
+    pendingActions = pendingActions.filter { $0.value.peerKey != peerKey }
+    pendingActionOrder.removeAll { pendingActions[$0] == nil }
     for recordKey in records.filter({ $0.value.peerKey == peerKey }).map(\.key) { records[recordKey] = nil }
     notifier.clear(peerKey: peerKey)
   }
@@ -349,7 +371,7 @@ final class MacNotificationMirrorModel: FeatureHandler {
       case 3: try remove(message, peerKey: peerKey)
       case 4: try beginSnapshot(message, peerKey: peerKey)
       case 5: try await finishSnapshot(message, peerKey: peerKey)
-      case 7: break
+      case 7: try handleActionResult(message, peerKey: peerKey)
       case 9:
         guard descriptor.transport == "lan" else { return .discarded }
         try cacheSourceIcon(message, peerKey: peerKey)
@@ -469,11 +491,65 @@ final class MacNotificationMirrorModel: FeatureHandler {
     removals = removals.filter { !$0.key.hasPrefix(snapshot.peerKey + ":") || $0.value > floor }
   }
 
+  private func handleActionResult(_ message: NotificationWireMessage, peerKey: String) throws {
+    let requestId = try message.text(0)
+    let result = try message.number(1)
+    guard let pending = removePendingAction(requestId),
+          pending.peerKey == peerKey, !pending.isDismiss else { return }
+    switch result {
+    case 0:
+      break
+    case 1:
+      notifier.postActionFeedback(peerKey: peerKey, appName: pending.appName,
+        title: "Alert expired", body: "This \(pending.appName) notification is no longer active on your phone.")
+    case 2:
+      notifier.postActionFeedback(peerKey: peerKey, appName: pending.appName,
+        title: "Action unavailable", body: "\(pending.appName) could not run this action in the background.")
+    default:
+      notifier.postActionFeedback(peerKey: peerKey, appName: pending.appName,
+        title: "Couldn't confirm — check your phone", body: "Check \(pending.appName) on your phone.")
+    }
+  }
+
+  private func removePendingAction(_ requestId: String) -> PendingAction? {
+    pendingActionOrder.removeAll { $0 == requestId }
+    return pendingActions.removeValue(forKey: requestId)
+  }
+
+  private func recordPendingAction(_ requestId: String, action: PendingAction) {
+    pendingActions[requestId] = action
+    pendingActionOrder.append(requestId)
+    while pendingActionOrder.count > 32 {
+      let oldest = pendingActionOrder.removeFirst()
+      pendingActions[oldest] = nil
+    }
+  }
+
+  private func handleSendFailure(requestId: String) {
+    guard let pending = removePendingAction(requestId), !pending.isDismiss else { return }
+    let label = pending.actionTitle.isEmpty ? pending.appName : pending.actionTitle
+    notifier.postActionFeedback(peerKey: pending.peerKey, appName: pending.appName,
+      title: "Couldn't confirm — check your phone",
+      body: "Could not reach your phone for \(label).")
+  }
+
   private func perform(peerKey: String, id: String, epoch: String, sequence: Int64,
     action: MacNotificationMirrorNotifier.UserAction) {
-    guard let record = records[peerKey + ":" + id], record.value.epoch == epoch, record.value.sequence == sequence,
-          let channel = links.values.map(\.channel).filter({ key($0.descriptor.peer) == peerKey })
-            .sorted(by: { $0.descriptor.transport == "lan" && $1.descriptor.transport != "lan" }).first else { return }
+    guard let record = records[peerKey + ":" + id], record.value.epoch == epoch, record.value.sequence == sequence else {
+      if case .invoke = action {
+        notifier.postActionFeedback(peerKey: peerKey, appName: "aniCe",
+          title: "Alert expired", body: "This notification is no longer active.")
+      }
+      return
+    }
+    guard let channel = links.values.map(\.channel).filter({ key($0.descriptor.peer) == peerKey })
+            .sorted(by: { $0.descriptor.transport == "lan" && $1.descriptor.transport != "lan" }).first else {
+      if case .invoke = action {
+        notifier.postActionFeedback(peerKey: peerKey, appName: record.value.appName,
+          title: "Couldn't confirm — check your phone", body: "Phone is disconnected.")
+      }
+      return
+    }
     let requestId = UUID().uuidString.lowercased()
     let message: NotificationWireMessage
     switch action {
@@ -482,6 +558,9 @@ final class MacNotificationMirrorModel: FeatureHandler {
       message = NotificationWireMessage(kind: 6, fields: [
         .text(requestId), .text(id), .text(epoch), .integer(sequence), .integer(Int64(index)), .text(safeText),
       ])
+      let title = record.value.actions.first(where: { $0.index == index })?.title ?? ""
+      recordPendingAction(requestId, action: PendingAction(
+        peerKey: peerKey, appName: record.value.appName, actionTitle: title, isDismiss: false))
     case .dismiss:
       message = NotificationWireMessage(kind: 8, fields: [
         .text(requestId), .text(id), .text(epoch), .integer(sequence),
@@ -489,11 +568,19 @@ final class MacNotificationMirrorModel: FeatureHandler {
       records[peerKey + ":" + id] = nil
       rememberRemoval(peerKey: peerKey, id: id, sequence: sequence)
     }
-    send(message, on: channel)
+    send(message, on: channel, requestId: requestId)
   }
 
-  private func send(_ message: NotificationWireMessage, on channel: any SecuredChannel) {
-    Task { try? await channel.sendData(message.encode()) }
+  private func send(_ message: NotificationWireMessage, on channel: any SecuredChannel, requestId: String? = nil) {
+    Task { [weak self] in
+      do {
+        try await channel.sendData(message.encode())
+      } catch {
+        if let requestId {
+          self?.handleSendFailure(requestId: requestId)
+        }
+      }
+    }
   }
 
   private func key(_ peer: DeviceIdentity) -> String { peer.deviceId + ":" + peer.fingerprint }

@@ -74,6 +74,57 @@ struct SmsView: View {
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.colorScheme) private var scheme
 
+  @ViewBuilder private var phonePicker: some View {
+    // The phone picker exists only when more than one phone can serve this panel.
+    if selectable.count > 1 {
+      Picker("Phone", selection: Binding(get: { peerKey }, set: { key in selectPhone(key) })) {
+        ForEach(selectable) { record in
+          Text(record.peer.displayName).tag(record.peer.deviceId + ":" + record.peer.fingerprint)
+        }
+      }.labelsHidden().frame(maxWidth: 260)
+    }
+  }
+
+  @ViewBuilder private func peerContent(peer: DeviceIdentity, width: CGFloat) -> some View {
+    if !model.supports(peer) {
+      Text(model.connected(peer) ? "Waiting for your phone" : "Connect aniCe on your phone first")
+        .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
+    }
+    if width >= 620 {
+      splitLayout(peer: peer, width: width)
+    } else if address.isEmpty {
+      ScrollView { threads(peer).padding(.bottom, 12) }.frame(maxHeight: .infinity)
+    } else {
+      conversation(peer).frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    Color.clear.frame(height: 0).task(id: peerKey + (model.supports(peer) ? "+ready" : "")) {
+      model.requestSims(peer)
+      if model.supports(peer), !address.isEmpty, model.messages(peer, address: address).isEmpty {
+        model.requestMessages(peer, address: address)
+      }
+    }
+  }
+
+  private func splitLayout(peer: DeviceIdentity, width: CGFloat) -> some View {
+    let listWidth = min(280, max(220, width * 0.28))
+    return HStack(spacing: 0) {
+      ScrollView { threads(peer).padding(12) }
+        .frame(width: listWidth)
+      AniCePalette.separator(scheme).frame(width: 1)
+      if address.isEmpty {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Messages").font(.subheadline.weight(.medium))
+          Text("Choose a conversation to read and reply.")
+            .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
+        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+      } else {
+        conversation(peer, showBack: false).padding(12)
+      }
+    }
+    .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(AniCePalette.separator(scheme)))
+  }
+
   private var peer: DeviceIdentity? {
     peers.first { $0.peer.deviceId + ":" + $0.peer.fingerprint == peerKey }?.peer
   }
@@ -89,51 +140,12 @@ struct SmsView: View {
   var body: some View {
     GeometryReader { geometry in
       VStack(alignment: .leading, spacing: 10) {
-        // The phone picker exists only when more than one phone can serve this panel.
-        if selectable.count > 1 {
-          Picker("Phone", selection: Binding(get: { peerKey }, set: { key in selectPhone(key) })) {
-            ForEach(selectable) { record in
-              Text(record.peer.displayName).tag(record.peer.deviceId + ":" + record.peer.fingerprint)
-            }
-          }.labelsHidden().frame(maxWidth: 260)
-        }
+        phonePicker
         if !model.notificationStatus.isEmpty {
           Text(model.notificationStatus).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
         }
         if let peer {
-          if !model.supports(peer) {
-            Text(model.connected(peer) ? "Waiting for your phone" : "Connect aniCe on your phone first")
-              .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
-          }
-          if geometry.size.width >= 620 {
-            let listWidth = min(280, max(220, geometry.size.width * 0.28))
-            HStack(spacing: 0) {
-              ScrollView { threads(peer).padding(12) }
-                .frame(width: listWidth)
-              AniCePalette.separator(scheme).frame(width: 1)
-              if address.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                  Text("Messages").font(.subheadline.weight(.medium))
-                  Text("Choose a conversation to read and reply.")
-                    .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
-                }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-              } else {
-                conversation(peer, showBack: false).padding(12)
-              }
-            }
-            .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(AniCePalette.separator(scheme)))
-          } else if address.isEmpty {
-            ScrollView { threads(peer).padding(.bottom, 12) }.frame(maxHeight: .infinity)
-          } else {
-            conversation(peer).frame(maxWidth: .infinity, maxHeight: .infinity)
-          }
-          Color.clear.frame(height: 0).task(id: peerKey + (model.supports(peer) ? "+ready" : "")) {
-            model.requestSims(peer)
-            if model.supports(peer), !address.isEmpty, model.messages(peer, address: address).isEmpty {
-              model.requestMessages(peer, address: address)
-            }
-          }
+          peerContent(peer: peer, width: geometry.size.width)
         } else {
           Text("Pair a phone to relay messages.").foregroundStyle(AniCePalette.secondaryText(scheme))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

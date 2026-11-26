@@ -108,6 +108,7 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
     var favouriteFeatures by mutableStateOf(AppFeature.DEFAULT_FAVOURITES)
     var featureOrder by mutableStateOf("")
     var settingsSection by mutableStateOf<String?>(null)
+    var settingsCategory by mutableStateOf<String?>(null)
     var guideTopic by mutableStateOf<GuideTopic?>(null)
     var guideOrigin by mutableStateOf(AppDestination.Home)
     var guideOriginRoute by mutableStateOf(DeviceRoute.Overview)
@@ -173,7 +174,8 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
                     it.mediaDetails.toString(), "false", AppFeature.migrateStored(it.favouriteFeatures),
                     it.featurePanel?.name.orEmpty(), it.featureOrigin.name, AppFeature.migrateStored(it.featureOrder),
                     it.guideTopic?.name.orEmpty(), it.guideOrigin.name, it.guideOriginRoute.name,
-                    it.guideOriginSettingsRoute.name, it.guideOriginFeature?.name.orEmpty()
+                    it.guideOriginSettingsRoute.name, it.guideOriginFeature?.name.orEmpty(),
+                    it.settingsSection.orEmpty(), it.settingsCategory.orEmpty()
                 )
             },
             restore = { saved ->
@@ -199,6 +201,8 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
                     value.guideOriginRoute = DeviceRoute.entries.firstOrNull { it.name == saved.getOrNull(12) } ?: DeviceRoute.Overview
                     value.guideOriginSettingsRoute = SettingsRoute.entries.firstOrNull { it.name == saved.getOrNull(13) } ?: SettingsRoute.Overview
                     value.guideOriginFeature = AppFeature.stored(saved.getOrNull(14))
+                    value.settingsSection = saved.getOrNull(15)?.ifEmpty { null }
+                    value.settingsCategory = saved.getOrNull(16)?.ifEmpty { null }
                 }
             }
         )

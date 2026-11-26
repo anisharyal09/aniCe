@@ -317,7 +317,12 @@ struct MainWindowView: View {
       case "now-playing": return .nowPlayingAndAudio
       case "desk-deck": return .macDeskDeck
       case "connection": return .pairingAndConnection
-      default: return nil
+      default:
+        switch settingsCategory {
+        case .permissions: return .permissions
+        case .shortcuts: return .companionAndShortcuts
+        default: return nil
+        }
       }
     }
   }
