@@ -268,8 +268,6 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
   func sendHistory(_ entry: ClipboardHistoryEntry) { submit(ClipboardSample(text: entry.text), auto: false) }
   // Toggles pinned state to retain or release snippet during FIFO capacity eviction.
   func togglePin(_ entry: ClipboardHistoryEntry) { history.togglePin(entry.id) }
-  /// Removes multiple entries atomically from local history.
-  func deleteHistory(ids: Set<String>) { history.delete(ids) }
   func sendConfirmed(_ sample: ClipboardSample) { submit(sample, auto: false) }
   func clearPreview() { preview = nil }
   func inspect() { preview = native.read(); if let preview { captureLocal(preview) }; if preview == nil { status = "Copy plain text, or paste text below" }; updateObservation() }

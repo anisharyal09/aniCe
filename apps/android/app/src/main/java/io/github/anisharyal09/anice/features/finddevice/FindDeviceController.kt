@@ -141,7 +141,6 @@ class FindDeviceController(
         }
         return DataHandling.QUEUED
     }
-    fun availableFor(peer: DeviceIdentity): Boolean = selected(peer) != null
     private fun reply(m: FindDeviceMessage, result: FindResult) = FindDeviceMessage(3, m.id, m.sequence, result.ordinal.toLong())
     private fun remember(result: FindDeviceMessage, link: Link) {
         link.history.results[result.sequence] = result

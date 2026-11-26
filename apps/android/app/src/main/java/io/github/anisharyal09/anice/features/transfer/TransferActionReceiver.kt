@@ -9,17 +9,14 @@ import io.github.anisharyal09.anice.AniCeApplication
 
 class TransferActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != ACTION_CANCEL) return
         val app = context.applicationContext as? AniCeApplication ?: return
         val operationId = intent.getStringExtra(EXTRA_OPERATION_ID) ?: return
-        when (intent.action) {
-            ACTION_CANCEL -> app.transfer.cancelFromNotification(operationId)
-            ACTION_RESUME_BLE -> app.transfer.resumeFromNotification(operationId)
-        }
+        app.transfer.cancelFromNotification(operationId)
     }
 
     companion object {
         const val ACTION_CANCEL = "io.github.anisharyal09.anice.action.CANCEL_TRANSFER"
-        const val ACTION_RESUME_BLE = "io.github.anisharyal09.anice.action.RESUME_TRANSFER_OVER_BLUETOOTH"
         const val EXTRA_OPERATION_ID = "io.github.anisharyal09.anice.extra.TRANSFER_OPERATION_ID"
     }
 }

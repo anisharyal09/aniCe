@@ -149,12 +149,11 @@ protocol TransferNotificationCenter: AnyObject {
 extension UNUserNotificationCenter: TransferNotificationCenter {}
 
 // Builds transfer notification payloads without exposing incoming file names.
-struct TransferNotificationContent: Equatable {
+struct TransferNotificationContent {
   let identifier: String
   let categoryIdentifier: String
   let title: String
   let body: String
-  let userInfo: [String: String]
 
   // Offer text displays authenticated peerName, file count, and aggregate size only.
   // Peer-supplied file names are unvalidated CBOR strings that must not be presented in system banners.
@@ -166,33 +165,27 @@ struct TransferNotificationContent: Equatable {
       identifier: "transfer-offer-\(batch.idString)",
       categoryIdentifier: MacTransferNotifier.Category.offer,
       title: "Incoming files from \(batch.peerName)",
-      body: "\(countStr) · \(sizeStr)",
-      userInfo: ["batchId": batch.idString]
+      body: "\(countStr) · \(sizeStr)"
     )
   }
 
   // Reports the verified destination folder where files were published on disk.
-  static func completed(fileCount: Int, totalBytes: Int64, folder: URL?, batchId: UUID = UUID()) -> TransferNotificationContent {
+  static func completed(fileCount: Int, totalBytes: Int64, folder: URL, batchId: UUID) -> TransferNotificationContent {
     let countStr = "\(fileCount) file\(fileCount == 1 ? "" : "s")"
     let sizeStr = ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)
-    let folderName = folder?.lastPathComponent ?? "Downloads"
     return TransferNotificationContent(
       identifier: "transfer-received-\(batchId.uuidString.lowercased())",
       categoryIdentifier: MacTransferNotifier.Category.result,
       title: "Files received",
-      body: "\(countStr) (\(sizeStr)) saved to \(folderName).",
-      userInfo: ["batchId": batchId.uuidString.lowercased()]
+      body: "\(countStr) (\(sizeStr)) saved to \(folder.lastPathComponent)."
     )
   }
-
 }
 
 @MainActor final class MacTransferNotifier: NSObject {
   enum Category {
     static let offer = "FILE_TRANSFER_OFFER"
     static let result = "TRANSFER_RESULT"
-    static let paused = "FILE_TRANSFER_PAUSED"
-    static let pausedSender = "FILE_TRANSFER_PAUSED_SENDER"
   }
 
   enum Action {
@@ -200,8 +193,6 @@ struct TransferNotificationContent: Equatable {
     static let choose = "CHOOSE_ACTION"
     static let decline = "DECLINE_ACTION"
     static let showInFinder = "SHOW_IN_FINDER"
-    static let continueOverBluetooth = "CONTINUE_OVER_BLUETOOTH"
-    static let cancelTransfer = "CANCEL_TRANSFER"
   }
 
   private weak var model: MacTransferModel?
@@ -262,7 +253,6 @@ struct TransferNotificationContent: Equatable {
     }
   }
 
-  // Legacy pause categories stay recognizable for cleanup; unbound old responses are inert.
   static func notificationCategories() -> Set<UNNotificationCategory> {
     let acceptAction = UNNotificationAction(
       identifier: Action.accept,
@@ -298,30 +288,7 @@ struct TransferNotificationContent: Equatable {
       options: [.customDismissAction]
     )
 
-    let continueAction = UNNotificationAction(
-      identifier: Action.continueOverBluetooth,
-      title: "Continue over Bluetooth",
-      options: []
-    )
-    let cancelTransferAction = UNNotificationAction(
-      identifier: Action.cancelTransfer,
-      title: "Cancel transfer",
-      options: [.destructive]
-    )
-    let pausedCategory = UNNotificationCategory(
-      identifier: Category.paused,
-      actions: [cancelTransferAction],
-      intentIdentifiers: [],
-      options: []
-    )
-    let pausedSenderCategory = UNNotificationCategory(
-      identifier: Category.pausedSender,
-      actions: [continueAction, cancelTransferAction],
-      intentIdentifiers: [],
-      options: []
-    )
-
-    return [offerCategory, resultCategory, pausedCategory, pausedSenderCategory]
+    return [offerCategory, resultCategory]
   }
 
   func handle(_ event: TransferEvent) {
@@ -330,6 +297,7 @@ struct TransferNotificationContent: Equatable {
       guard preferences.enabled, !applicationIsActive() else { return }
       let content = TransferNotificationContent.offer(batch: batch)
       guard activeOfferIdentifier != content.identifier else { return }
+      clearActiveOffer()
       activeOfferIdentifier = content.identifier
       post(content, batchId: batch.id)
 
@@ -351,13 +319,11 @@ struct TransferNotificationContent: Equatable {
   }
 
   private func clearActiveOffer() {
-    if let id = activeOfferIdentifier {
-      activeOfferIdentifier = nil
-      clear(id)
-    }
+    if let id = activeOfferIdentifier { clear(id) }
   }
 
   private func clear(_ identifier: String) {
+    if activeOfferIdentifier == identifier { activeOfferIdentifier = nil }
     pending[identifier] = nil
     targets[identifier] = nil
     completionOrder.removeAll { $0 == identifier }
@@ -414,8 +380,7 @@ struct TransferNotificationContent: Equatable {
     content.title = notification.title
     content.body = notification.body
     content.categoryIdentifier = notification.categoryIdentifier
-    content.userInfo = notification.userInfo
-    content.userInfo["anice.transfer.token"] = delivery.token.uuidString.lowercased()
+    content.userInfo = ["anice.transfer.token": delivery.token.uuidString.lowercased()]
     content.threadIdentifier = "anice-file-transfer"
     content.sound = preferences.sound ? .default : nil
 
@@ -466,7 +431,6 @@ struct TransferNotificationContent: Equatable {
     guard target.content.categoryIdentifier == Category.offer, isCurrent(target) else { return }
     switch actionIdentifier {
     case Action.accept, Action.decline:
-      clearActiveOffer()
       clear(identifier)
       let generation = deliveryGeneration
       scheduleAction { [weak self] in
@@ -476,7 +440,6 @@ struct TransferNotificationContent: Equatable {
         else { await model.rejectIncomingOffer() }
       }
     case Action.choose, UNNotificationDefaultActionIdentifier:
-      clearActiveOffer()
       clear(identifier)
       openMainWindow()
     default:

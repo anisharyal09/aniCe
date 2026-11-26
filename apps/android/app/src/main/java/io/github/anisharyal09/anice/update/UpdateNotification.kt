@@ -38,12 +38,12 @@ internal class UpdateNotification(private val context: Context) {
             putExtra(OPEN_REVIEW, true)
             putExtra(EXTRA_VERSION_TAG, release.version.tag)
         }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        // A stale tap must not auto-cancel a replacement notice under the same ID.
         val notice = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("aniCe ${release.version.tag} is available")
             .setContentText("Review release notes when you’re ready.")
             .setContentIntent(open)
-            .setAutoCancel(true)
             .setSilent(true)
             .setOnlyAlertOnce(true)
             .build()

@@ -12,7 +12,6 @@ import io.github.anisharyal09.anice.infrastructure.connections.ChannelDescriptor
 import io.github.anisharyal09.anice.infrastructure.connections.DataHandling
 import io.github.anisharyal09.anice.infrastructure.connections.FeatureHandler
 import io.github.anisharyal09.anice.infrastructure.connections.SecuredChannel
-import io.github.anisharyal09.anice.infrastructure.session.Cbor
 import io.github.anisharyal09.anice.infrastructure.session.SessionBackpressure
 import io.github.anisharyal09.anice.infrastructure.session.SessionException
 import io.github.anisharyal09.anice.infrastructure.session.SessionFailure
@@ -21,7 +20,6 @@ import kotlinx.coroutines.*
 import kotlin.coroutines.coroutineContext
 import java.io.File
 import java.io.FileInputStream
-import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.channels.Channel
 
@@ -406,13 +404,7 @@ class TransferController(
     fun cancelTransfer(local: Boolean = true) { cancelTransferFlow(local) }
 
     internal fun cancelFromNotification(operationId: String) {
-        val interrupted = (interruptedOffer as? TransferState.IncomingOffer)?.batch?.id
-            ?.let { runCatching { UUID.fromString(it).toString() }.getOrNull() }
-        if (isBusy && operationId == operationID.toString() || operationId == interrupted) cancelTransfer()
-    }
-
-    internal fun resumeFromNotification(operationId: String) {
-        if (isPaused && operationId == operationID.toString()) resumeOverBluetooth()
+        if (isBusy && operationId == operationID.toString()) cancelTransfer()
     }
 
     fun dismiss() { dismissFlow() }

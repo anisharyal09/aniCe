@@ -6,7 +6,6 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
@@ -95,32 +94,28 @@ internal class AndroidUpdateManager(
     fun foregroundStopped() { foregroundActivities = (foregroundActivities - 1).coerceAtLeast(0) }
 
     fun review(expectedTag: String? = null): Job? {
-        notification.clear()
+        val current = _available.value
+        if (current != null && expectedTag != null && current.version.tag != expectedTag) return null
         val myReviewGen = ++reviewGeneration
         reviewRestoreJob?.cancel()
         reviewRestoreJob = null
-        dismissRefreshJob?.cancel()
-        dismissRefreshJob = null
-        val current = _available.value
         if (current != null) {
-            if (expectedTag != null && current.version.tag != expectedTag) return null
-            _reviewing.value = true
+            showReview()
             return null
         }
-        _reviewing.value = true
-        val job = scope.launch {
+        return scope.launch {
             restoreCachedRelease()
             val found = _available.value
-            if (reviewGeneration != myReviewGen) {
-                if (found == null) _reviewing.value = false
-                return@launch
-            }
-            if (found == null || (expectedTag != null && found.version.tag != expectedTag)) {
-                _reviewing.value = false
-            }
-        }
-        reviewRestoreJob = job
-        return job
+            if (reviewGeneration == myReviewGen && found != null &&
+                (expectedTag == null || found.version.tag == expectedTag)) showReview()
+        }.also { reviewRestoreJob = it }
+    }
+
+    private fun showReview() {
+        dismissRefreshJob?.cancel()
+        dismissRefreshJob = null
+        _reviewing.value = true
+        notification.clear()
     }
 
     fun dismissReview(refreshAutomatic: Boolean = true) {

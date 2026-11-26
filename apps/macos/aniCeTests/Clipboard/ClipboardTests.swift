@@ -193,6 +193,110 @@ final class ClipboardTests: XCTestCase {
     history.resumeCollection()
   }
 
+  @MainActor func testUndoAndRedoRespectHistoryLimitsAfterNewCaptures() async throws {
+    for capacity in [20, 100] {
+      let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+      defer { try? FileManager.default.removeItem(at: directory) }
+      let file = ClipboardHistoryFile(url: directory.appendingPathComponent("history.json"))
+      let history = ClipboardHistory(storage: file, capacity: capacity)
+      history.setEnabled(true); try await until { history.enabled }
+      for index in 0..<capacity {
+        history.record(ClipboardSample(text: "old-\(index)"), origin: "mac")
+      }
+      try await until { history.entries.count == capacity }
+      history.clear(); try await until { history.entries.isEmpty }
+      history.record(ClipboardSample(text: "new"), origin: "mac")
+      try await until { history.entries.count == 1 }
+      history.undo(); try await until { history.canRedo || history.error != nil }
+      XCTAssertNil(history.error)
+      XCTAssertEqual(history.entries.count, capacity)
+      XCTAssertEqual(history.entries.first?.text, "new")
+      XCTAssertFalse(history.entries.contains { $0.text == "old-0" })
+      XCTAssertNotNil(history.editStatus)
+      XCTAssertEqual(try file.load()?.entries, history.entries)
+      history.redo(); try await until { !history.canRedo }
+      XCTAssertEqual(history.entries.map(\.text), ["new"])
+      history.undo(); try await until { history.canRedo }
+      XCTAssertEqual(history.entries.count, capacity)
+      XCTAssertEqual(try file.load()?.entries, history.entries)
+    }
+  }
+
+  @MainActor func testUndoPinChangesAndCapacityReductionKeepPinsAndCurrentLimit() async throws {
+    let history = ClipboardHistory(capacity: 50)
+    history.setEnabled(true); try await until { history.enabled }
+    for index in 0..<50 { history.record(ClipboardSample(text: "old-\(index)"), origin: "mac") }
+    try await until { history.entries.count == 50 }
+    let pinned = try XCTUnwrap(history.entries.last)
+    history.togglePin(pinned.id); try await until { history.entries.last?.pinned == true }
+    history.clear(); try await until { history.entries.count == 1 }
+    history.setCapacity(20); try await until { history.capacity == 20 }
+    history.undo(); try await until { history.canRedo }
+    XCTAssertEqual(history.entries.count, 21)
+    XCTAssertEqual(history.entries.filter(\.pinned).map(\.id), [pinned.id])
+    XCTAssertEqual(history.entries.filter { !$0.pinned }.count, 20)
+    history.undo(); try await until { !history.entries.contains(where: \.pinned) }
+    XCTAssertEqual(history.entries.count, 20, "Unpinning through Undo also obeys the current capacity")
+    history.redo(); try await until { history.entries.contains(where: \.pinned) }
+    XCTAssertEqual(history.entries.count, 21)
+    XCTAssertEqual(history.entries.filter(\.pinned).map(\.id), [pinned.id])
+  }
+
+  @MainActor func testUndoRestoresOnlyPinsThatFitBesideNewCaptures() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = ClipboardHistoryFile(url: directory.appendingPathComponent("history.json"))
+    let pins = (0..<100).map { index in
+      ClipboardHistoryEntry(id: UUID().uuidString.lowercased(), text: "pin-\(index)", origin: "mac",
+        timestamp: Date(timeIntervalSince1970: Double(100 - index)), credential: nil, pinned: true)
+    }
+    try file.save(pins, capacity: 100)
+    let history = ClipboardHistory(storage: file)
+    try await until { history.entries.count == 100 }
+    history.delete(Set(pins.map(\.id)), fromPinned: true)
+    try await until { history.entries.isEmpty }
+    history.record(ClipboardSample(text: "new capture"), origin: "mac")
+    try await until { history.entries.count == 1 }
+    history.undo(); try await until { history.canRedo }
+    XCTAssertEqual(history.entries.count, 100)
+    XCTAssertEqual(history.entries.first?.text, "new capture")
+    XCTAssertEqual(history.entries.filter(\.pinned).count, 99)
+    XCTAssertFalse(history.entries.contains { $0.id == pins.last?.id })
+    XCTAssertNotNil(history.editStatus)
+    XCTAssertEqual(try file.load()?.entries, history.entries)
+    history.redo(); try await until { !history.canRedo }
+    XCTAssertEqual(history.entries.map(\.text), ["new capture"])
+  }
+
+  @MainActor func testFailedUndoPreservesStorageAndCanBeRetried() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let backup = directory.appendingPathExtension("backup")
+    defer {
+      try? FileManager.default.removeItem(at: directory)
+      try? FileManager.default.removeItem(at: backup)
+    }
+    let file = ClipboardHistoryFile(url: directory.appendingPathComponent("history.json"))
+    let history = ClipboardHistory(storage: file)
+    history.setEnabled(true); try await until { history.enabled }
+    history.record(ClipboardSample(text: "restore me"), origin: "mac")
+    try await until { history.entries.count == 1 }
+    history.clear(); try await until { history.entries.isEmpty }
+    let durable = try Data(contentsOf: file.url)
+    try FileManager.default.moveItem(at: directory, to: backup)
+    try Data("blocked directory".utf8).write(to: directory)
+    history.undo(); try await until { history.error != nil }
+    XCTAssertTrue(history.entries.isEmpty)
+    XCTAssertTrue(history.canUndo)
+    XCTAssertFalse(history.canRedo)
+    XCTAssertEqual(try Data(contentsOf: backup.appendingPathComponent("history.json")), durable)
+    try FileManager.default.removeItem(at: directory)
+    try FileManager.default.moveItem(at: backup, to: directory)
+    history.undo(); try await until { history.canRedo }
+    XCTAssertNil(history.error)
+    XCTAssertEqual(history.entries.map(\.text), ["restore me"])
+    XCTAssertEqual(try file.load()?.entries, history.entries)
+  }
+
   @MainActor func testUndoPreservesNewlyCollectedClips() async throws {
     let history = ClipboardHistory()
     history.setEnabled(true); try await until { history.enabled }
@@ -1115,9 +1219,8 @@ final class ClipboardTests: XCTestCase {
     XCTAssertEqual(native.sample?.text, "Combined text\nItem 2")
     XCTAssertEqual(model.status, "Copied")
 
-    // Test atomic multi-item deletion via model
     let toDelete = Set([history.entries[1].id, history.entries[3].id])
-    model.deleteHistory(ids: toDelete)
+    history.delete(toDelete)
     try await until { history.entries.count == 3 }
     let remainingTexts = history.entries.map(\.text)
     XCTAssertFalse(remainingTexts.contains("Item 2"))

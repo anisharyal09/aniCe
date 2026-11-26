@@ -2,7 +2,7 @@
 // Renders one offline, categorized guide covering built-in capabilities across Mac and Android.
 import SwiftUI
 
-struct GuideTopicEntry: Identifiable {
+private struct GuideTopicEntry: Identifiable {
   let topic: GuideTopic
   let title: String
   let summary: String
@@ -14,127 +14,132 @@ struct GuideTopicEntry: Identifiable {
     let tray = GlobalShortcutPreferences.shared.binding(.tray).label
     let floatingKey = GlobalShortcutPreferences.shared.binding(.floatingKey).label
     return [
-    GuideTopicEntry(
-      topic: .pairingAndConnection,
-      title: "Pairing & Connections",
-      summary: "Auto-pairing confirmation, QR scan, manual code entry, and device nicknames.",
-      symbol: "laptopcomputer.and.iphone",
-      body: "Confirm the 6-digit auto-pairing comparison code on both screens, scan the Mac QR code on your phone, or enter the pairing code manually on your phone. Trusted peers reconnect over Bluetooth Low Energy and switch heavier transfers, Desk Deck stats, or artwork onto local Wi-Fi when Settings → Connection → Use local network automatically is enabled on both devices (your phone adds Idle LAN in background timeouts). In Devices, rename any paired peer, set a local-only nickname with display override, pause auto-connect, or unpair without resetting your cryptographic identity."
-    ),
-    GuideTopicEntry(
-      topic: .permissions,
-      title: "Permissions & access",
-      summary: "Capabilities stay inactive until their matching Mac or phone permission is granted.",
-      symbol: "checkmark.shield",
-      body: "Mac Settings → Permissions covers Event Posting (Privacy & Security → Accessibility or Device Control, required for Control Mac and Lock Mac fallback), Notifications (alerts, Messages, Find Device, transfers, and updates), and Automatic pasteboard reading. Phone Settings → Permissions covers Nearby devices, SMS (Receive/Read/Send), Phone state (optional dual-SIM list), Find Phone notifications, Notification Access, Answer phone calls, Call log, Contacts (optional caller ID), and Do Not Disturb access."
-    ),
-    GuideTopicEntry(
-      topic: .openLinkInMac,
-      title: "Open Link in Mac",
-      summary: "Launch http or https links from your phone straight into your Mac browser.",
-      symbol: "safari",
-      body: "Highlight an http or https link on your phone and choose Send to Mac, or share from Chrome via Share → Send to Mac. Tapping Open in Mac launches it directly in your Mac’s default browser without overwriting your Mac clipboard (or tap Send as clipboard to copy it instead)."
-    ),
-    GuideTopicEntry(
-      topic: .filesAndEdgeDrop,
-      title: "Send files & Edge Drop",
-      summary: "Encrypted batches up to 128 files, phone Share sheet, and Mac Edge Drop.",
-      symbol: "arrow.up.doc",
-      body: "Send up to 128 files per batch from Send files, your phone’s Share → Send to Mac menu, or by dragging Finder items onto the Left, Right, or Top screen edge with Edge Drop (Settings → File transfer). Transfers use local Wi-Fi when available, retain 15-minute resume checkpoints across interruptions, and support custom receive folders, trusted auto-receive, and background notifications."
-    ),
-    GuideTopicEntry(
-      topic: .clipboardAndQuickSend,
-      title: "Clipboard & Quick Settings tile",
-      summary: "Manual or auto text sync, phone selection menu, and Send to Mac Quick Settings tile.",
-      symbol: "doc.on.clipboard",
-      body: "Share text manually via Clipboard → Send clipboard / Paste text here, or enable automatic sync on both devices in Settings → Clipboard. On your phone, add the Send to Mac Quick Settings tile (prompt in Clipboard → More options or Quick Settings → Edit) to push your current phone clipboard—or open an http/https link on Mac—with one notification-shade tap without opening aniCe. Text selection → Send to Mac and Share → Send to Mac also work in any app; marked sensitive items ask before sending."
-    ),
-    GuideTopicEntry(
-      topic: .pasteTrayAndPins,
-      title: "Clipboard history & Quick Paste Tray",
-      summary: "Device-local history filters, Mac pinned snippets, and tray shortcut.",
-      symbol: "tray.full",
-      body: "Local-only clipboard history stays off synced storage on each device (All, Pinned, Mac, and Phone filters with 20, 50, or 100 item capacity). On Mac, press \(tray) or click the menu-bar icon (Settings → Shortcuts) to search history, pin reusable snippets, pause collection, or Undo/Redo edits without needing an active peer connection."
-    ),
-    GuideTopicEntry(
-      topic: .controlMac,
-      title: "Control Mac (from phone)",
-      summary: "Use your phone screen and keyboard as a wireless Mac trackpad and keyboard.",
-      symbol: "keyboard.badge.ellipsis",
-      body: "While connected, open Features → Control Mac on your phone and tap Start. Use one-finger drag to move, tap or two-finger tap to left/right click, long-press drag to select, two-finger drag to scroll, or expand fullscreen trackpad. Type using your mobile keyboard (with autocorrect, Live typing, and Clear box without deleting Mac text). Requires Mac Event Posting access (Settings → Permissions)."
-    ),
-    GuideTopicEntry(
-      topic: .controlAndroidAndFloatingKey,
-      title: "Control Android & Floating Key",
-      summary: "Classic Bluetooth HID keyboard/trackpad from Mac and the \(floatingKey) Floating Key panel.",
-      symbol: "keyboard",
-      body: "Pair your Mac and phone once in system Bluetooth Settings, then link that pairing inside Mac Features → Control Android (Home, Back, and Recents controls included). Toggle the compact Floating Key overlay from any Mac app via \(floatingKey) (Settings → Shortcuts) or the menu bar, resize the trackpad, adjust pointer/scroll speed, and stop input anytime with ⌘⇧Esc."
-    ),
-    GuideTopicEntry(
-      topic: .macDeskDeck,
-      title: "Mac Desk Deck (from phone)",
-      summary: "Live Mac CPU/memory/thermal meters, quick actions, audio output, and approved apps.",
-      symbol: "slider.horizontal.3",
-      body: "View live CPU history, memory breakdown (Used, App, Wired, Compressed, Cached, Swap), thermal state, and Mac/phone power status (plus last cached snapshot offline). Trigger Mic mute, Lock Mac, Screenshot, Keep awake while charging (under Details), Ping Mac, playback controls, Output device + volume slider, up to 32 approved Mac app shortcuts (Mac Settings → Desk Deck), and a Mac-local DND Shortcut."
-    ),
-    GuideTopicEntry(
-      topic: .nowPlayingAndAudio,
-      title: "Now Playing & audio output",
-      summary: "Track metadata, album art, timeline scrubbing, player switcher, and volume sync.",
-      symbol: "music.note",
-      body: "Control Mac playback and volume from Home/Overview, Features → Now Playing, Desk Deck, or the Mac menu bar (plus notification/lock-screen media controls when phone background ownership is active). Configure Mac companion visibility and output-volume permissions in Playback setup and Settings → Now Playing."
-    ),
-    GuideTopicEntry(
-      topic: .messagesAndSms,
-      title: "Messages & SMS relay",
-      summary: "Read SMS conversations on Mac and reply directly through your phone’s SIM.",
-      symbol: "message",
-      body: "Browse recent SMS threads, unread counts, search results, dual-SIM Send from selection, and delivery status over your encrypted direct link (no cloud server). On Mac, the gear beside Search messages toggles per-phone notifications, sound, text previews, and Connection details inline (mirrored in Settings → Messages). Requires phone SMS access and Phone state permission for SIM selection."
-    ),
-    GuideTopicEntry(
-      topic: .notificationsAndCalls,
-      title: "Mirrored notifications & call controls",
-      summary: "Forward chosen phone app alerts to Mac with inline reply, dismissal, and Answer/Decline.",
-      symbol: "bell.badge",
-      body: "In phone Settings → Notification sync, grant Notification Access and choose apps under Select apps. Native Mac alerts mirror inline replies, app actions, and dismissals. Enable Mirror incoming calls (Answer phone calls plus optional Call log & Contacts for caller ID) to Answer or Decline ringing SIM calls from Mac while audio stays on your phone."
-    ),
-    GuideTopicEntry(
-      topic: .dndSync,
-      title: "Do Not Disturb sync",
-      summary: "Sync phone Do Not Disturb changes to macOS Focus using Apple Shortcuts.",
-      symbol: "moon",
-      body: "Allow Do Not Disturb access and enable Sync phone DND to Mac in phone Settings → Do Not Disturb, then configure “Turn Do Not Disturb On” and “Turn Do Not Disturb Off” Shortcuts in Mac Settings → Do Not Disturb. Connected phone DND changes run the matching Mac Shortcut automatically (Desk Deck’s DND toggle stays Mac-local)."
-    ),
-    GuideTopicEntry(
-      topic: .findDeviceAndPing,
-      title: "Find Device & Ping Mac",
-      summary: "Ring your misplaced phone loudly from Mac or Ping Mac from Desk Deck.",
-      symbol: "iphone.radiowaves.left.and.right",
-      body: "Use Mac Features → Find Device (or the menu bar) to sound a continuous alarm ring on your paired phone until dismissed (configured under phone Settings → Permissions → Find Phone notifications). Tap Ping Mac inside Desk Deck → Find Mac to post an immediate macOS alert notification even when Desk Deck meters are stale."
-    ),
-    GuideTopicEntry(
-      topic: .companionAndShortcuts,
-      title: "Menu bar, Favourites & Settings",
-      summary: "Sidebar/menu-bar pins, Favourites reordering, global shortcuts, Glass, and updates.",
-      symbol: "star",
-      body: "Star tools into Favourites or reorder them (right-click on Mac, long-press on phone); Mac right-click menus also pin tools independently to the sidebar and menu-bar companion. Customize Quick Paste Tray (\(tray)) and Floating Key (\(floatingKey)) in Settings → Shortcuts, System/Light/Dark appearance, Native Glass styling, 80%–120% text scaling, device identity safety checks, and signed updates in Settings."
-    ),
-  ]
+      GuideTopicEntry(
+        topic: .pairingAndConnection,
+        title: "Pairing & Connections",
+        summary: "Nearby confirmation, QR scan, manual code entry, and device nicknames.",
+        symbol: "laptopcomputer.and.iphone",
+        body: "In Devices, pair by comparing the six digits on both screens, scanning the Mac QR code on your phone, or entering its pairing code. Bluetooth reconnect follows the saved automatic preference; background reconnect also needs supported phone setup. Local-network setup follows Use local network automatically in Settings → Connection. Devices also lets you edit device names, choose private nicknames, pause connections or unpair."
+      ),
+      GuideTopicEntry(
+        topic: .permissions,
+        title: "Permissions & access",
+        summary: "Capabilities stay inactive until their matching Mac or phone permission is granted.",
+        symbol: "checkmark.shield",
+        body: "Grant access on the device that needs it. Phone Settings → Permissions shows SMS, SIM selection, Find Phone notifications, Notification Access, call controls, caller ID and Do Not Disturb access. Pairing requests Bluetooth or camera access when needed. Mac Settings → Permissions shows Event Posting for Control Mac and Lock Mac, notifications and automatic pasteboard reading. Return to aniCe after changing system access."
+      ),
+      GuideTopicEntry(
+        topic: .openLinkInMac,
+        title: "Open Link in Mac",
+        summary: "Launch http or https links from your phone straight into your Mac browser.",
+        symbol: "safari",
+        body: "Connect a trusted Mac, then select a single http or https link on your phone and choose Send to Mac, or use Share → Send to Mac. Tapping Open in Mac launches it directly in your Mac’s default browser without overwriting your Mac clipboard; Send as clipboard copies it instead. Open in Mac requires support on the connected Mac. A successful request confirms the browser handoff, not that the page loaded."
+      ),
+      GuideTopicEntry(
+        topic: .filesAndEdgeDrop,
+        title: "Send files & Edge Drop",
+        summary: "Encrypted batches up to 128 files, phone Share sheet, and Mac Edge Drop.",
+        symbol: "arrow.up.doc",
+        body: "Send 1–128 files from Send files, the phone Share → Send to Mac menu, or a Finder drop on Mac. Edge Drop uses the screen edge selected in Mac Settings → File transfer and accepts saved local files, not folders. Ready local-network connections are preferred; Bluetooth is slower. The receiver approves unless auto-receive is enabled for that sender. Interrupted transfers keep resume checkpoints for up to 15 minutes."
+      ),
+      GuideTopicEntry(
+        topic: .clipboardAndQuickSend,
+        title: "Clipboard & Quick Settings tile",
+        summary: "Manual or auto text sync, phone selection menu, and Send to Mac Quick Settings tile.",
+        symbol: "doc.on.clipboard",
+        body: "Use Clipboard → Send clipboard or paste text manually. Automatic sharing is off by default; enable it for the peer on both devices. Android reads the clipboard only while aniCe has input focus. Add Send to Mac from Clipboard → Share → More options or Quick Settings → Edit. Tapping the tile opens a focused panel: review the captured item, then tap Send to Mac. Sensitive-marked clipboard items ask for confirmation. To open a link on Mac, use the phone selection or Share menu."
+      ),
+      GuideTopicEntry(
+        topic: .pasteTrayAndPins,
+        title: "Clipboard history & Quick Paste Tray",
+        summary: "Device-local history filters, Mac pinned snippets, and tray shortcut.",
+        symbol: "tray.full",
+        body: "Enable Keep clipboard history separately on each device to save eligible text locally. History capacity is 20, 50 or 100 items; Mac pins are kept separately within 100 clips overall. Android has All/Mac/Phone filters; Mac also has Pinned. Open the Mac Paste tray from the menu bar or \(tray) to search, pin and copy saved clips. On Mac, Clipboard → History also provides Undo/Redo and a collection pause; pausing history does not pause sharing."
+      ),
+      GuideTopicEntry(
+        topic: .controlMac,
+        title: "Control Mac (from phone)",
+        summary: "Use your phone screen and keyboard as a wireless Mac trackpad and keyboard.",
+        symbol: "keyboard.badge.ellipsis",
+        body: "Connect over Bluetooth, open phone Features → Control Mac and tap Start control. Move with one finger, tap to click, long-press to drag, or use two fingers for right-click and scrolling. Type with the phone keyboard; Live typing includes composing text. Clear resets only the phone editor. Input goes to the focused Mac app and needs Mac Event Posting access. After moving the Mac caret or changing documents, stop and start control before typing again."
+      ),
+      GuideTopicEntry(
+        topic: .controlAndroidAndFloatingKey,
+        title: "Control Android & Floating Key",
+        summary: "Classic Bluetooth HID keyboard/trackpad from Mac and the \(floatingKey) Floating Key panel.",
+        symbol: "keyboard",
+        body: "Trust the phone in aniCe, pair it separately in system Bluetooth Settings, then link that pairing in Mac Features → Control Android. Click the trackpad to arm pointer and keyboard input; turn off Use keyboard and trackpad together for separate areas. Toggle Floating Key from the menu bar or \(floatingKey), configurable in Mac Settings → Shortcuts. Press ⌘⇧Esc while an input surface has focus to stop. Bluetooth HID input stays separate from aniCe’s BLE and local-network connections."
+      ),
+      GuideTopicEntry(
+        topic: .macDeskDeck,
+        title: "Mac Desk Deck (from phone)",
+        summary: "Live Mac CPU/memory/thermal meters, quick actions, audio output, and approved apps.",
+        symbol: "slider.horizontal.3",
+        body: "Open phone Features → Mac Desk Deck for CPU, memory, thermal pressure and device power readings. Stale readings keep their timestamp. Available Mac controls include input mute, Lock Mac, Screenshot, audio output and volume, approved apps and a Mac-local DND Shortcut; support and permissions determine which work. Ping Mac has separate readiness. Details → Keep awake while charging keeps the phone screen awake only while Desk Deck is visible and the phone has external power."
+      ),
+      GuideTopicEntry(
+        topic: .nowPlayingAndAudio,
+        title: "Now Playing & audio output",
+        summary: "Track details, artwork, player selection and supported playback and volume controls.",
+        symbol: "music.note",
+        body: "Use Home, Features → Now Playing or the Mac menu bar for playback. Player selection, seeking, artwork and volume depend on the source and connection; artwork needs the local network. Audio stays on the Mac. Mac output volume and selected-player volume are separate controls, and phone volume keys adjust supported Mac output while playback is active. Grant player-control access in Mac Playback setup. Background phone media controls require existing companion ownership."
+      ),
+      GuideTopicEntry(
+        topic: .messagesAndSms,
+        title: "Messages & SMS relay",
+        summary: "Read SMS conversations on Mac and reply directly through your phone’s SIM.",
+        symbol: "message",
+        body: "Grant SMS access in the phone Messages panel, then browse conversations, search and send replies over an existing connection. Choose SIM requests an optional active-SIM list; missing Phone state access is recovered in phone Settings → Permissions → SIM selection. Default-SIM sending does not need that list. The Mac Messages gear opens per-phone notification settings and Connection details inline. Radio acceptance is not recipient delivery; an unconfirmed reply may have been sent and is not retried automatically."
+      ),
+      GuideTopicEntry(
+        topic: .notificationsAndCalls,
+        title: "Mirrored notifications & call controls",
+        summary: "Forward chosen phone app alerts to Mac with inline reply, dismissal, and Answer/Decline.",
+        symbol: "bell.badge",
+        body: "In phone Settings → Notification sync, enable Notification Access and choose apps under Select apps. Mac alerts expose replies, actions and dismissal only when the phone’s source notification supports them. Mirror incoming calls also uses Phone state and Answer phone calls access for SIM controls; Call log and Contacts add optional caller ID. Audio stays on the phone. Both devices need a live connection, and macOS notification and Focus settings control presentation."
+      ),
+      GuideTopicEntry(
+        topic: .dndSync,
+        title: "Do Not Disturb sync",
+        summary: "Sync phone Do Not Disturb changes to macOS Focus using Apple Shortcuts.",
+        symbol: "moon",
+        body: "On the phone, allow Do Not Disturb access and enable Sync phone DND to Mac in Settings → Do Not Disturb. Create and choose separate On and Off Shortcuts in Mac Settings → Do Not Disturb. Connected phone DND changes run the matching Shortcut; disconnected changes are not replayed. Desk Deck’s DND button uses a separate Mac-local toggle Shortcut. Mac Focus changes are not synced back to the phone."
+      ),
+      GuideTopicEntry(
+        topic: .findDeviceAndPing,
+        title: "Find Device & Ping Mac",
+        summary: "Ring a connected phone or request a Mac notification from Desk Deck.",
+        symbol: "iphone.radiowaves.left.and.right",
+        body: "With a live connection, Mac Features → Find Device rings the phone for up to 60 seconds or until stopped. Phone Settings → Permissions → Find Phone notifications controls incoming alert access. Ping Mac in phone Desk Deck requests a native Mac notification even when telemetry is stale. Alarm volume, Do Not Disturb and macOS Focus can limit alerts. Find Device does not track location, wake a sleeping Mac or start a stopped app."
+      ),
+      GuideTopicEntry(
+        topic: .companionAndShortcuts,
+        title: "Menu bar, Favourites & Settings",
+        summary: "Sidebar/menu-bar pins, Favourites reordering, global shortcuts, Glass, and updates.",
+        symbol: "star",
+        body: "Add tools to Favourites or reorder them with right-click on Mac and long-press on phone. Mac feature menus also pin tools independently to the sidebar and menu bar. Mac Settings → Shortcuts configures Paste tray (\(tray)) and Floating Key (\(floatingKey)). Settings also holds appearance, 80%–120% text size, connection preferences and updates. New releases are reviewed before installation; automatic checking and beta inclusion are separate choices."
+      ),
+    ]
   }
 }
 
 private struct GuideFilterMinYKey: PreferenceKey {
-  nonisolated(unsafe) static var defaultValue: CGFloat = .infinity
+  static let defaultValue: CGFloat = .infinity
   static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 struct GuideView: View {
   let initialTopic: GuideTopic?
   @State private var selectedCategory: GuideCategory = .all
-  @State private var forceExpandAll: Bool? = nil
+  @State private var expandedTopics: Set<GuideTopic>
   @State private var filterPinned = false
   @Environment(\.colorScheme) private var scheme
   @AppStorage("ui.fontScale") private var fontScale = 1.0
+
+  init(initialTopic: GuideTopic?) {
+    self.initialTopic = initialTopic
+    _expandedTopics = State(initialValue: Set([initialTopic].compactMap { $0 }))
+  }
 
   private var visibleCategories: [GuideCategory] {
     selectedCategory == .all ? GuideCategory.allCases.filter { $0 != .all } : [selectedCategory]
@@ -143,28 +148,31 @@ struct GuideView: View {
   var body: some View {
     ScrollViewReader { proxy in
       ScrollView {
+        let entries = GuideTopicEntry.allEntries
         VStack(alignment: .leading, spacing: 18) {
           header
           filterBar
             .opacity(filterPinned ? 0 : 1)
+            .accessibilityHidden(filterPinned)
+            .allowsHitTesting(!filterPinned)
             .background {
               GeometryReader { geo in
                 Color.clear.preference(key: GuideFilterMinYKey.self, value: geo.frame(in: .named("guideScroll")).minY)
               }
             }
           ForEach(visibleCategories) { category in
-            let entries = GuideTopicEntry.allEntries.filter { $0.topic.category == category }
-            if !entries.isEmpty {
+            let categoryEntries = entries.filter { $0.topic.category == category }
+            if !categoryEntries.isEmpty {
               VStack(alignment: .leading, spacing: 6) {
                 Text(category.rawValue)
                   .font(.system(size: 12.5 * fontScale, weight: .semibold))
                   .foregroundStyle(AniCePalette.secondaryText(scheme))
                   .padding(.leading, 2)
                 VStack(spacing: 0) {
-                  ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                  ForEach(Array(categoryEntries.enumerated()), id: \.element.id) { index, entry in
                     topicRow(entry)
                       .id(entry.topic)
-                    if index < entries.count - 1 {
+                    if index < categoryEntries.count - 1 {
                       AniCePalette.separator(scheme)
                         .opacity(0.6)
                         .frame(height: 0.5)
@@ -199,48 +207,34 @@ struct GuideView: View {
           .background(AniCePalette.background(scheme))
         }
       }
-      .onAppear {
-        if let initialTopic {
-          selectedCategory = .all
-          DispatchQueue.main.async {
-            withAnimation(.easeOut(duration: 0.2)) {
-              proxy.scrollTo(initialTopic, anchor: .center)
-            }
-          }
-        }
-      }
-      .onChange(of: initialTopic) { _, updated in
-        forceExpandAll = nil
-        if let updated {
-          selectedCategory = .all
-          withAnimation(.easeOut(duration: 0.2)) {
-            proxy.scrollTo(updated, anchor: .center)
-          }
+      .task {
+        guard let initialTopic, initialTopic != .pairingAndConnection else { return }
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+        withAnimation(.easeOut(duration: 0.2)) {
+          proxy.scrollTo(initialTopic, anchor: .center)
         }
       }
     }
   }
 
   private var header: some View {
-    let allExpanded = forceExpandAll == true
-    return VStack(alignment: .leading, spacing: 6) {
-      HStack(spacing: 10) {
-        Image(systemName: "questionmark.circle")
-          .font(.system(size: 18 * fontScale, weight: .semibold))
-          .foregroundStyle(AniCePalette.accent(scheme))
-        Text("aniCe Guide")
-          .font(.system(size: 20 * fontScale, weight: .semibold))
-          .foregroundStyle(AniCePalette.primaryText(scheme))
-        Spacer()
-        Button(allExpanded ? "Collapse all" : "Expand all") {
-          forceExpandAll = allExpanded ? false : true
-        }
-        .buttonStyle(AniCeHoverButtonStyle(feedbackPadding: 4))
-        .font(.system(size: 12.5 * fontScale, weight: .medium))
+    let allExpanded = expandedTopics.count == GuideTopic.allCases.count
+    return HStack(spacing: 10) {
+      Image(systemName: "questionmark.circle")
+        .font(.system(size: 18 * fontScale, weight: .semibold))
         .foregroundStyle(AniCePalette.accent(scheme))
-        .accessibilityLabel(allExpanded ? "Collapse all" : "Expand all")
-        .help(allExpanded ? "Collapse all Guide sections" : "Expand all Guide sections")
+      Text("aniCe Guide")
+        .font(.system(size: 20 * fontScale, weight: .semibold))
+        .foregroundStyle(AniCePalette.primaryText(scheme))
+      Spacer()
+      Button(allExpanded ? "Collapse all" : "Expand all") {
+        expandedTopics = allExpanded ? [] : Set(GuideTopic.allCases)
       }
+      .buttonStyle(AniCeHoverButtonStyle(feedbackPadding: 4))
+      .font(.system(size: 12.5 * fontScale, weight: .medium))
+      .foregroundStyle(AniCePalette.accent(scheme))
+      .help(allExpanded ? "Collapse all Guide sections" : "Expand all Guide sections")
     }
   }
 
@@ -278,15 +272,40 @@ struct GuideView: View {
 
   private func topicRow(_ entry: GuideTopicEntry) -> some View {
     let highlighted = initialTopic == entry.topic
-    let shouldExpand = forceExpandAll ?? highlighted
-    return AniCeHelpDisclosure(
-      title: entry.title,
-      bodyText: entry.body,
-      summary: entry.summary,
-      symbol: entry.symbol,
-      highlighted: highlighted,
-      initiallyExpanded: shouldExpand
-    )
+    return DisclosureGroup(isExpanded: Binding(get: { expandedTopics.contains(entry.topic) }, set: { expanded in
+      if expanded { expandedTopics.insert(entry.topic) }
+      else { expandedTopics.remove(entry.topic) }
+    })) {
+      Text(entry.body)
+        .font(.system(size: 12 * fontScale))
+        .foregroundStyle(AniCePalette.secondaryText(scheme))
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 48)
+        .padding(.trailing, 8)
+        .padding(.top, 4)
+        .padding(.bottom, 2)
+    } label: {
+      HStack(spacing: 10) {
+        Image(systemName: entry.symbol)
+          .font(.system(size: 14 * fontScale))
+          .foregroundStyle(highlighted ? AniCePalette.accent(scheme) : AniCePalette.secondaryText(scheme))
+          .frame(width: 20)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(entry.title)
+            .font(.system(size: 13 * fontScale, weight: .medium))
+            .foregroundStyle(AniCePalette.primaryText(scheme))
+          Text(entry.summary)
+            .font(.system(size: 12 * fontScale))
+            .foregroundStyle(AniCePalette.secondaryText(scheme))
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        Spacer(minLength: 4)
+      }
+      .padding(.vertical, 2)
+      .contentShape(Rectangle())
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.horizontal, 14)
     .padding(.vertical, 10)
     .background(highlighted ? AniCePalette.subtleAccent(scheme).opacity(0.6) : .clear)

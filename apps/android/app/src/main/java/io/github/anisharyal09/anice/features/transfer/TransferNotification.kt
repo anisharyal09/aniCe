@@ -22,8 +22,7 @@ class TransferNotification(
     private val isForeground: () -> Boolean = { false },
 ) {
     private val manager = context.getSystemService(NotificationManager::class.java)
-    private var announcedOffer: String? = null
-    private var announcedNeedsApp: Boolean? = null
+    private var announcedOffer: Pair<String, Boolean>? = null
     private var lastProgressAt = 0L
     private var lastProgressKey: String? = null
 
@@ -32,65 +31,69 @@ class TransferNotification(
             description = "Required transfer service and incoming file offers"
             setShowBadge(false)
         })
+        manager.cancel(OFFER_NOTIFICATION_ID)
     }
 
     @SuppressLint("NotificationPermission")
     fun update(force: Boolean = false) {
-        activeProgressNotice()?.let { progress ->
+        updateOffer()
+        val progress = activeProgressNotice()
+        if (progress != null) {
             val now = SystemClock.elapsedRealtime()
             if (force || progress.key != lastProgressKey || lastProgressAt == 0L || now - lastProgressAt >= PROGRESS_UPDATE_INTERVAL_MS) {
                 manager.notify(NOTIFICATION_ID, progress.build())
                 lastProgressAt = now
                 lastProgressKey = progress.key
             }
-            announcedOffer = null
-            announcedNeedsApp = null
             return
         }
         lastProgressAt = 0L
         lastProgressKey = null
 
+        if (!controller.backgroundAllowed || !controller.isBusy) manager.cancel(NOTIFICATION_ID)
+    }
+
+    @SuppressLint("NotificationPermission")
+    internal fun updateOffer() {
         val offer = controller.state as? TransferState.IncomingOffer
-            ?: (controller.interruptedOffer as? TransferState.IncomingOffer)
-        if (offer == null) {
-            announcedOffer = null
-            announcedNeedsApp = null
-            // The service owns its single ongoing notice; progress ticks do not resubmit notifications.
-            if (!controller.backgroundAllowed || !controller.isBusy) manager.cancel(NOTIFICATION_ID)
+        if (offer == null || controller.backgroundAllowed) {
+            clearOffer()
             return
         }
-        val paused = controller.state is TransferState.Paused
-        val needsApp = controller.automaticReceiveNeedsApp || paused
-        val autoAccepted = !paused && controller.pendingAutomaticReceive?.batchId == offer.batch.id && !needsApp
-        if (autoAccepted) {
-            announcedOffer = offer.batch.id
-            announcedNeedsApp = null
+        val needsApp = controller.automaticReceiveNeedsApp
+        if (!needsApp && controller.pendingAutomaticReceive?.batchId == offer.batch.id) {
+            clearOffer()
             return
         }
-        if (isForeground() || announcedOffer == offer.batch.id && announcedNeedsApp == needsApp) return
-        // State delivery can announce the offer before foreground eligibility is known; replace the notice when it changes.
-        announcedOffer = offer.batch.id
-        announcedNeedsApp = needsApp
-        val open = openIntent(context, UUID.fromString(offer.batch.id).toString())
-        val decline = cancelIntent(context, UUID.fromString(offer.batch.id).toString(), requestCode = 1)
+        if (isForeground()) {
+            // Keep the announcement recorded so leaving the app does not revive it.
+            manager.cancel(OFFER_NOTIFICATION_ID)
+            return
+        }
+        val offerKey = offer.batch.id to needsApp
+        if (announcedOffer == offerKey) return
+        val operationId = UUID.fromString(offer.batch.id).toString()
         val files = "${offer.batch.files.size} file${if (offer.batch.files.size == 1) "" else "s"}"
-        val title = when {
-            paused && controller.automaticReceiveNeedsApp -> "Open aniCe to receive"
-            paused -> "Open aniCe to review files"
-            needsApp -> "Open aniCe to receive"
-            else -> "Incoming files from ${offer.batch.peerName}"
-        }
+        val title = if (needsApp) "Open aniCe to receive" else "Incoming files from ${offer.batch.peerName}"
         val body = if (needsApp) "$files from ${offer.batch.peerName}"
             else "${files} (${Formatter.formatFileSize(context, offer.batch.totalBytes)})"
         val notice = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_file_send)
             .setContentTitle(title)
             .setContentText(body).setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setContentIntent(open).setAutoCancel(true).setSilent(true).setOnlyAlertOnce(true)
+            .setContentIntent(openIntent(context, operationId)).setAutoCancel(true).setSilent(true).setOnlyAlertOnce(true)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", decline)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline",
+                cancelIntent(context, operationId, requestCode = 1))
             .build()
-        manager.notify(NOTIFICATION_ID, notice)
+        manager.notify(OFFER_NOTIFICATION_ID, notice)
+        announcedOffer = offerKey
+    }
+
+    private fun clearOffer() {
+        if (announcedOffer == null) return
+        manager.cancel(OFFER_NOTIFICATION_ID)
+        announcedOffer = null
     }
 
     private inner class ProgressNotice(
@@ -181,6 +184,8 @@ class TransferNotification(
         const val OPEN = "io.github.anisharyal09.anice.action.OPEN_TRANSFER"
         const val CHANNEL_ID = "anice_file_transfer"
         const val NOTIFICATION_ID = 2002
+        // Foregrounding can remove an offer without removing the service's progress notice.
+        internal const val OFFER_NOTIFICATION_ID = 2004
         private const val PROGRESS_MAX = 1000
         private const val PROGRESS_UPDATE_INTERVAL_MS = 1000L
     }

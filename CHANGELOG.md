@@ -10,12 +10,16 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Changed
 
-- Add an offline, categorized **aniCe Guide** (`Connect`, `Share & Files`, `Control`, `Sync & Alerts`) opened from the subtle toolbar/app-bar `?` action, the **More built into aniCe — see guide** Features footer row, and **Settings → Guide**, with sticky category filter tags while scrolling and concise documentation covering pairing modes, device nicknames, Quick Settings tile, shortcuts, and settings paths.
+- Add a categorized offline Guide with contextual help, wrapping sticky filters and entry points in Features and Settings. Explain connection, permission and device limits for clipboard sharing, input, notifications and Find Device.
 - Optimize Android **Control Mac** text reconciliation (`PhoneInputTextSync`) to navigate middle edits with Left/Right arrow transitions (`0x50` / `0x4F`) instead of deleting and retyping trailing text, and add a **Clear** button in **Type on Mac** and fullscreen trackpad to reset the local phone buffer without altering text on the Mac.
 - Refine Android **Mac Desk Deck** onto calm `surfaceContainer` sheets with soft catchlight highlights, grouped Output device and tabular volume readout, and inline **Ping Mac**.
 - Bound release-note Markdown parsing and native inline styling across Mac and Android, and prevent stale update reviews from resurrecting or duplicating.
 - Refine native notification attribution, quiet updates, and operation-bound actions for mirrored alerts, Messages, and file transfers.
 - Merge Android Find Mac into Desk Deck and align persistent preference switches, segmented controls, Permissions organization, and Mac Native Glass surfaces.
+
+### Fixed
+
+- Keep Guide filter and expansion choices through Android recreation, make Guide bulk actions apply to every topic, and keep obsolete update actions from clearing a newer release notice.
 
 ## [v0.9.0-beta.4]
 

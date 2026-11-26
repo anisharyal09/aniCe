@@ -73,24 +73,6 @@ class TransferControllerTests {
         assertEquals(terminal, owner.state)
     }
 
-    @Test fun unboundNotificationResumeDoesNotChangePausedRoutingOrCreateConnectionDemand() {
-        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
-        val batch = TransferBatch(UUID.randomUUID().toString(),
-            listOf(TransferFile(UUID.randomUUID().toString(), "review.bin", 1024, ByteArray(32))),
-            1024, "Test Mac")
-        owner.currentBatch = batch
-        owner.state = TransferState.Paused(batch, 1, "review.bin", 0, 1024, 0, "Disconnected", true)
-        var demands = 0
-        owner.onLanRequired = { demands++ }
-        val previous = owner.state
-        owner.resumeFromNotification(UUID.randomUUID().toString())
-        owner.resumeFromNotification("")
-        assertEquals(previous, owner.state)
-        assertEquals(0, demands)
-        assertNull(owner.resumeJob)
-        owner.dismiss()
-    }
-
     @Test fun notificationReviewIsOneShotAndCannotOpenAReplacementOperation() {
         val owner = TransferController(dispatcher = Dispatchers.Unconfined)
         fun batch() = TransferBatch(UUID.randomUUID().toString(),

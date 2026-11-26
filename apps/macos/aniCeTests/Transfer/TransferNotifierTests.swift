@@ -38,17 +38,16 @@ final class TransferNotifierTests: XCTestCase {
     XCTAssertEqual(offerContent.title, "Incoming files from Pixel 9")
     XCTAssertTrue(offerContent.body.contains("2 files"))
     XCTAssertEqual(offerContent.categoryIdentifier, MacTransferNotifier.Category.offer)
-    XCTAssertEqual(offerContent.userInfo["batchId"], batch.idString)
+    XCTAssertEqual(offerContent.identifier, "transfer-offer-\(batch.idString)")
     XCTAssertFalse(offerContent.body.contains("photo1.jpg"), "Offer body must not contain unvalidated peer file names")
 
     let downloadFolder = tempDir.appendingPathComponent("Downloads")
-    let completedContent = TransferNotificationContent.completed(fileCount: 2, totalBytes: batch.totalBytes, folder: downloadFolder)
+    let completedContent = TransferNotificationContent.completed(fileCount: 2, totalBytes: batch.totalBytes,
+      folder: downloadFolder, batchId: batchId)
     XCTAssertEqual(completedContent.title, "Files received")
     XCTAssertTrue(completedContent.body.contains("2 files"))
     XCTAssertTrue(completedContent.body.contains("saved to Downloads."))
     XCTAssertEqual(completedContent.categoryIdentifier, MacTransferNotifier.Category.result)
-    XCTAssertNil(completedContent.userInfo["receivedFolder"], "The native response must not carry a local destination URL")
-
   }
 
   func testEventSinkFiresIncomingOfferCompletedAndFailedOnlyWhenReceiving() async throws {
@@ -153,16 +152,6 @@ final class TransferNotifierTests: XCTestCase {
     XCTAssertFalse(windowOpened, "Unbound legacy actions do not select a successor operation")
   }
 
-  func testLegacyPausedCategoriesRetainTheirActions() throws {
-    let categories = MacTransferNotifier.notificationCategories()
-    let paused = try XCTUnwrap(categories.first { $0.identifier == MacTransferNotifier.Category.paused })
-    XCTAssertEqual(paused.actions.map(\.identifier), [MacTransferNotifier.Action.cancelTransfer])
-    let pausedSender = try XCTUnwrap(categories.first { $0.identifier == MacTransferNotifier.Category.pausedSender })
-    XCTAssertEqual(pausedSender.actions.map(\.identifier),
-      [MacTransferNotifier.Action.continueOverBluetooth, MacTransferNotifier.Action.cancelTransfer])
-    XCTAssertTrue(try XCTUnwrap(pausedSender.actions.last).options.contains(.destructive))
-  }
-
   func testPauseFailureAndUnverifiedCompletionNeverPostAlerts() {
     let model = MacTransferModel()
     XCTAssertFalse(model.notificationPreferences.enabled)
@@ -207,6 +196,7 @@ final class TransferNotifierTests: XCTestCase {
     XCTAssertEqual(center.added.count, 1)
     XCTAssertEqual(notice.content.title, "Files received")
     XCTAssertNil(notice.content.userInfo["receivedFolder"])
+    XCTAssertNil(notice.content.userInfo["batchId"])
     notifier.handleAction(MacTransferNotifier.Action.showInFinder, identifier: notice.identifier,
       category: notice.content.categoryIdentifier, sourceToken: notice.content.userInfo["anice.transfer.token"] as? String)
     XCTAssertEqual(revealed, [folder], "An old result must not open the next batch's folder")
@@ -383,7 +373,7 @@ final class TransferNotifierTests: XCTestCase {
     model.state = .incomingOffer(batch: first)
     let center = SpyNotificationCenter()
     center.holdAdd = true
-    center.pendingIdentifiers = ["transfer-offer-old", "anice-sms-keep"]
+    center.pendingIdentifiers = ["transfer-offer-old", "transfer-paused-legacy", "anice-sms-keep"]
     center.deliveredIdentifiers = ["transfer-received-old", "find-device-keep"]
     var scheduled: [@MainActor () async -> Void] = []
     let notifier = MacTransferNotifier(model: model, openMainWindow: {}, center: center,
@@ -392,6 +382,7 @@ final class TransferNotifierTests: XCTestCase {
     await waitForDelivery(center)
     let request = try XCTUnwrap(center.added.last)
     XCTAssertTrue(center.removedPending.contains("transfer-offer-old"))
+    XCTAssertTrue(center.removedPending.contains("transfer-paused-legacy"))
     XCTAssertFalse(center.removedPending.contains("anice-sms-keep"))
     XCTAssertFalse(center.removedDelivered.contains("find-device-keep"))
     model.state = .idle
@@ -430,16 +421,30 @@ final class TransferNotifierTests: XCTestCase {
     XCTAssertTrue(offer.options.contains(.customDismissAction))
   }
 
-  func testPausedActionsAreIgnoredUnlessTheBatchIsStillPaused() {
+  func testFailedNativeDeliveryAllowsTheCurrentOfferToBeAnnouncedAgain() async throws {
     let model = MacTransferModel()
+    let batch = makeBatch(count: 1)
+    model.notificationPreferences.enabled = true
+    model.state = .incomingOffer(batch: batch)
     let center = SpyNotificationCenter()
-    let notifier = MacTransferNotifier(model: model, openMainWindow: {}, center: center)
-
-    notifier.handleAction(MacTransferNotifier.Action.continueOverBluetooth)
-    notifier.handleAction(MacTransferNotifier.Action.cancelTransfer)
-
-    XCTAssertEqual(model.state, .idle)
-    XCTAssertTrue(center.removedDelivered.isEmpty)
+    center.holdAdd = true
+    let notifier = MacTransferNotifier(model: model, openMainWindow: {}, center: center, applicationIsActive: { false })
+    notifier.handle(.incomingOffer(batch))
+    await waitForDelivery(center)
+    let request = try XCTUnwrap(center.added.last)
+    center.removedDelivered.removeAll()
+    center.pendingAdds[0](CocoaError(.featureUnsupported))
+    for _ in 0..<50 where !center.removedDelivered.contains(request.identifier) {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertTrue(center.removedDelivered.contains(request.identifier))
+    center.holdAdd = false
+    notifier.handle(.incomingOffer(batch))
+    for _ in 0..<50 where center.added.count < 2 {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(center.added.count, 2)
+    XCTAssertEqual(model.pendingOffer?.id, batch.id)
   }
 
   private func makeBatch(count: Int) -> TransferBatch {

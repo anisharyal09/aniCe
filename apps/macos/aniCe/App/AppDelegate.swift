@@ -64,8 +64,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         mirrorEpoch: String? = nil, mirrorSequence: Int64? = nil, transferToken: String? = nil, smsToken: String? = nil,
         updateTag: String? = nil) {
         if category == MacUpdateModel.notificationCategory {
-            if action == UNNotificationDefaultActionIdentifier,
-                updateModel.review(expectedTag: updateTag) {
+            if action == UNNotificationDefaultActionIdentifier, let updateTag,
+                 updateModel.review(expectedTag: updateTag) {
                 openMainFromCompanion()
             }
         } else if category == MacFindDeviceNotifier.category {
@@ -76,8 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         } else if category.hasPrefix(MacNotificationMirrorNotifier.categoryPrefix) {
             _ = notificationMirrorNotifier?.handleAction(category: category, action: action, identifier: identifier,
                 userText: userText, sourceEpoch: mirrorEpoch, sourceSequence: mirrorSequence)
-        } else if category == MacTransferNotifier.Category.offer || category == MacTransferNotifier.Category.result ||
-            category == MacTransferNotifier.Category.paused || category == MacTransferNotifier.Category.pausedSender {
+        } else if category == MacTransferNotifier.Category.offer || category == MacTransferNotifier.Category.result {
             notifier?.handleAction(action, identifier: identifier, category: category, sourceToken: transferToken)
         }
     }
@@ -91,7 +90,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let category = content.categoryIdentifier
         let known = category == MacFindDeviceNotifier.category || category == MacSmsNotifier.category || category == MacSmsNotifier.resultCategory ||
             category == MacTransferNotifier.Category.offer || category == MacTransferNotifier.Category.result ||
-            category == MacTransferNotifier.Category.paused || category == MacTransferNotifier.Category.pausedSender ||
             category.hasPrefix(MacNotificationMirrorNotifier.categoryPrefix)
         guard known else { return [] }
         // Reconnect snapshots and revisions remain quiet even while aniCe is the foreground app.
@@ -172,9 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         mainWindowRestoreTask = Task { @MainActor [weak self] in
             for _ in 0..<10 {
                 guard let self else { return }
-                if let window = NSApp.windows.first(where: {
-                    $0.identifier?.rawValue == "main" || $0.title == "aniCe" || $0.title == MacAppStorage.applicationName
-                }) {
+                if let window = NSApp.windows.first(where: \.isAniCeMainWindow) {
                     if window.isMiniaturized { window.deminiaturize(nil) }
                     window.makeKeyAndOrderFront(nil)
                     NSApp.activate(ignoringOtherApps: true)
@@ -188,8 +184,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private var hasVisibleMainWindow: Bool {
-        NSApp.windows.contains {
-            $0.isVisible && ($0.identifier?.rawValue == "main" || $0.title == "aniCe" || $0.title == MacAppStorage.applicationName)
-        }
+        NSApp.windows.contains { $0.isVisible && $0.isAniCeMainWindow }
+    }
+}
+
+extension NSWindow {
+    var isAniCeMainWindow: Bool {
+        identifier?.rawValue == "main" || title == "aniCe" || title == MacAppStorage.applicationName
     }
 }

@@ -204,7 +204,6 @@ enum WindowAppearance: String, CaseIterable {
   }
   var details = false
   var diagnostics = false
-  var findDetails = false
   var automaticAfterPairing = true
   var automaticLanAfterPairing = true
 
@@ -233,7 +232,6 @@ enum WindowAppearance: String, CaseIterable {
   private func restore(_ target: Route) {
     route = target
     details = false
-    findDetails = target.featurePanel == .findDevice
   }
 
   func select(_ destination: AppDestination) {
@@ -243,7 +241,6 @@ enum WindowAppearance: String, CaseIterable {
       if destination == .devices { $0.deviceRoute = .overview }
     }
     details = false
-    findDetails = false
   }
 
   func showSettings(_ settingsRoute: SettingsRoute) {
@@ -261,7 +258,6 @@ enum WindowAppearance: String, CaseIterable {
       $0.featurePanel = feature
       $0.destination = .features
     }
-    findDetails = feature == .findDevice
   }
 
   func closeFeature() {
@@ -269,7 +265,6 @@ enum WindowAppearance: String, CaseIterable {
       $0.featurePanel = nil
       $0.destination = $0.featureOrigin
     }
-    findDetails = false
   }
 
   func open(_ destination: AppDestination, peer: String? = nil, route: DeviceRoute = .overview, present: () -> Void) {

@@ -23,7 +23,7 @@ The phone editor uses the selected Android keyboard. In keyboard-committed mode,
 
 The editor is temporary and capped at 64 KiB per session. AniCe does not log or persist typed text. The Android keyboard remains a system component, so its own settings and privacy behavior still apply. If an edit changes more than 256 already-sent graphemes at once or exceeds the session limit, the session stops rather than silently producing different text on the Mac.
 
-Corrections assume the Mac caret remains after the text sent by the phone. After moving the caret or changing documents, stop and start a new session before typing again.
+Corrections assume the Mac caret remains at the insertion position established by the last phone edit. Moving the caret on the Mac, clicking into text with the phone trackpad, or changing documents can invalidate that position; stop and start a new session before typing again.
 
 ## Trackpad behavior
 

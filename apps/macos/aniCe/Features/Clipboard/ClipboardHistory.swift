@@ -199,16 +199,22 @@ struct ClipboardHistoryFile: ClipboardHistoryStorage {
   func setCapacity(_ value: Int) {
     guard [20, 50, 100].contains(value) else { return }
     command {
-      let limit = min(value, 100 - self.entries.filter(\.pinned).count)
-      var count = 0
-      let rows = self.entries.filter { entry in
-        if entry.pinned { return true }
-        count += 1; return count <= limit
-      }
+      let rows = Self.retained(self.entries, capacity: value)
       let storage = self.storage, enabled = self.enabled
       try await Task.detached { try storage?.save(rows, enabled: enabled, capacity: value) }.value
       self.capacity = value; self.entries = rows
       self.preferences?.set(value, forKey: "clipboard.historyCapacity")
+    }
+  }
+  // Callers supply newest-first rows; pins share the hard 100-item storage ceiling.
+  private static func retained(_ rows: [ClipboardHistoryEntry], capacity: Int) -> [ClipboardHistoryEntry] {
+    let pins = Set(rows.filter(\.pinned).prefix(100).map(\.id))
+    let limit = min(capacity, 100 - pins.count)
+    var unpinned = 0
+    return rows.filter { row in
+      if row.pinned { return pins.contains(row.id) }
+      unpinned += 1
+      return unpinned <= limit
     }
   }
   private func command(_ block: @escaping @MainActor () async throws -> Void) {
@@ -249,19 +255,7 @@ struct ClipboardHistoryFile: ClipboardHistoryStorage {
         )
         let withoutRow = self.entries.filter { $0.id != row.id }
         let updated = [row] + withoutRow
-        // Priority retention: keep all pinned items, plus newest unpinned items up to configured capacity.
-        let unpinnedLimit = min(self.capacity, 100 - updated.filter(\.pinned).count)
-        var unpinnedCount = 0
-        let filtered = updated.filter { entry in
-          if entry.pinned { return true }
-          if unpinnedCount < unpinnedLimit {
-            unpinnedCount += 1
-            return true
-          }
-          return false
-        }
-        // Bound absolute total at 100 items matching the envelope storage limit.
-        let rows = Array(filtered.prefix(100))
+        let rows = Self.retained(updated, capacity: self.capacity)
         let storage = self.storage, capacity = self.capacity
         try await Task.detached { try storage?.save(rows, enabled: true, capacity: capacity) }.value
         self.entries = rows
@@ -305,7 +299,8 @@ struct ClipboardHistoryFile: ClipboardHistoryStorage {
   func clear() { replace { $0.filter(\.pinned) } }
   private func replace(_ transform: @escaping ([ClipboardHistoryEntry]) -> [ClipboardHistoryEntry]) { command {
     let before = self.entries
-    let rows = transform(before), storage = self.storage, enabled = self.enabled, capacity = self.capacity
+    let rows = Self.retained(transform(before), capacity: self.capacity)
+    let storage = self.storage, enabled = self.enabled, capacity = self.capacity
     try await Task.detached { try storage?.save(rows, enabled: enabled, capacity: capacity) }.value
     self.entries = rows
     guard rows != before else { return }
@@ -324,7 +319,8 @@ struct ClipboardHistoryFile: ClipboardHistoryStorage {
       let changed = Set((source + target).map(\.id)).filter { id in
         source.first { $0.id == id } != target.first { $0.id == id }
       }
-      var rows = self.entries
+      let before = self.entries
+      var rows = before
       for id in changed {
         let expected = source.first { $0.id == id }
         let replacement = target.first { $0.id == id }
@@ -332,14 +328,31 @@ struct ClipboardHistoryFile: ClipboardHistoryStorage {
         rows.removeAll { $0.id == id }
         if let replacement { rows.append(replacement) }
       }
-      guard rows.count <= 100 else { throw CocoaError(.fileWriteOutOfSpace) }
-      rows.sort { $0.timestamp > $1.timestamp }
-      let snapshot = rows
+      rows.sort { $0.timestamp == $1.timestamp ? $0.id < $1.id : $0.timestamp > $1.timestamp }
+      // Restoration fills remaining room without evicting clips collected since the edit.
+      let currentIDs = Set(before.map(\.id))
+      let current = Self.retained(rows.filter { currentIDs.contains($0.id) }, capacity: self.capacity)
+      let restored = rows.filter { !currentIDs.contains($0.id) }
+      let pins = Array(restored.filter(\.pinned).prefix(100 - current.count))
+      let unpinnedRoom = min(self.capacity - current.filter { !$0.pinned }.count,
+        100 - current.count - pins.count)
+      let unpinned = restored.filter { !$0.pinned }.prefix(unpinnedRoom)
+      let snapshot = (current + pins + unpinned).sorted {
+        $0.timestamp == $1.timestamp ? $0.id < $1.id : $0.timestamp > $1.timestamp
+      }
+      let omitted = rows.count - snapshot.count
       let storage = self.storage, enabled = self.enabled, capacity = self.capacity
       try await Task.detached { try storage?.save(snapshot, enabled: enabled, capacity: capacity) }.value
       self.entries = snapshot
-      if undoing { self.undoEdits.removeLast(); self.redoEdits.append(edit) }
-      else { self.redoEdits.removeLast(); self.undoEdits.append(edit) }
+      self.editStatus = omitted > 0
+        ? "\(omitted) clip\(omitted == 1 ? "" : "s") could not be kept within the history limit" : nil
+      if undoing {
+        self.undoEdits.removeLast()
+        self.redoEdits.append(Edit(before: snapshot, after: before))
+      } else {
+        self.redoEdits.removeLast()
+        self.undoEdits.append(Edit(before: before, after: snapshot))
+      }
     }
   }
 }

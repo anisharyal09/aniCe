@@ -1114,7 +1114,8 @@ final class BetaUpdatePreferenceTests: XCTestCase {
     XCTAssertEqual(accessibleLabel(control), nativeLabel)
     XCTAssertEqual((control.accessibilityValue() as? NSNumber)?.boolValue, false)
     XCTAssertFalse(elements.contains { $0.accessibilityRole() == .button }, "Visible label is not a second accessibility action")
-    XCTAssertTrue(control.accessibilityPerformPress())
+    // SwiftUI can return false after performing the press; verify the binding and single callback.
+    _ = control.accessibilityPerformPress()
     try await settle(host)
     XCTAssertTrue(state.checked)
     XCTAssertEqual(state.requests, [true])
@@ -1124,6 +1125,10 @@ final class BetaUpdatePreferenceTests: XCTestCase {
     try await settle(host)
     let disabled = try XCTUnwrap(accessibilityElements(host).first { $0.accessibilityRole() == .checkBox })
     XCTAssertFalse(disabled.isAccessibilityEnabled())
+    _ = disabled.accessibilityPerformPress()
+    try await settle(host)
+    XCTAssertTrue(state.checked)
+    XCTAssertEqual(state.requests, [true], "Disabled accessibility activation must not change the binding")
   }
 
   func testSegmentedControlKeepsOneSelectionAcrossThemes() async throws {
@@ -1378,19 +1383,6 @@ final class BetaUpdatePreferenceTests: XCTestCase {
       clipboard.invalidate()
     }
 
-    for (title, body) in [
-      ("Open Link in Mac", "Launch any http or https link from Android straight into your Mac’s default browser."),
-      ("Control Mac (from Android)", "Turn your Android screen and keyboard into a wireless touchpad and keyboard for Mac."),
-    ] {
-      let host = NSHostingView(rootView: AniCeHelpDisclosure(title: title, bodyText: body)
-        .disclosureGroupStyle(ClickableDisclosureStyle())
-        .padding(12).frame(width: 340)
-        .defaultAppStorage(defaults))
-      host.frame.size = host.fittingSize
-      host.layoutSubtreeIfNeeded()
-      XCTAssertLessThan(host.bounds.height, 75, "\(title) must stay collapsed by default")
-    }
-
     for scheme in [ColorScheme.light, .dark] {
       let inlineCheck = VStack(alignment: .leading, spacing: 12) {
         TransferView(model: transfer, peers: [], compact: false, overview: false)
@@ -1511,15 +1503,24 @@ final class BetaUpdatePreferenceTests: XCTestCase {
       try await settle(guideHost)
       XCTAssertTrue(try recognizedText(guideHost).contains("Expand all"))
 
-      let contextualHost = NSHostingView(rootView: GuideView(initialTopic: .openLinkInMac)
+      let contextualHost = NSHostingView(rootView: GuideView(initialTopic: .pairingAndConnection)
         .disclosureGroupStyle(ClickableDisclosureStyle())
-        .frame(width: 680, height: 640)
+        .frame(width: 680, height: 780)
         .background(AniCePalette.background(scheme))
         .environment(\.colorScheme, scheme)
         .defaultAppStorage(defaults))
-      contextualHost.frame.size = CGSize(width: 680, height: 640)
-      let contextualText = try recognizedText(contextualHost)
-      XCTAssertTrue(contextualText.contains("launches it directly"))
+      window.contentView = contextualHost
+      contextualHost.frame.size = CGSize(width: 680, height: 780)
+      try await settle(contextualHost)
+      XCTAssertTrue(try recognizedText(contextualHost).contains("Bluetooth reconnect"))
+      let pairingPoint = try XCTUnwrap(try textCenter(contextualHost, matching: "Pairing & Connections"))
+      try click(contextualHost, in: window, at: pairingPoint)
+      try await settle(contextualHost)
+      XCTAssertFalse(try recognizedText(contextualHost).contains("Bluetooth reconnect"))
+      let expandContext = try XCTUnwrap(try textCenter(contextualHost, matching: "Expand all"))
+      try click(contextualHost, in: window, at: expandContext)
+      try await settle(contextualHost)
+      XCTAssertTrue(try recognizedText(contextualHost).contains("Bluetooth reconnect"))
     }
   }
 
@@ -1566,8 +1567,16 @@ final class BetaUpdatePreferenceTests: XCTestCase {
     return [element] + (element.accessibilityChildren() ?? []).flatMap { accessibilityElements($0) }
   }
   private func accessibleLabel(_ element: any NSAccessibilityProtocol) -> String? {
-    element.accessibilityLabel() ??
-      (element.accessibilityTitleUIElement() as? any NSAccessibilityProtocol)?.accessibilityValue() as? String
+    if let label = element.accessibilityLabel() { return label }
+    // SwiftUI title proxies implement public getters without declaring the full accessibility protocol.
+    guard let node = element.accessibilityTitleUIElement() as? NSObject else { return nil }
+    for selector in [#selector(NSAccessibilityProtocol.accessibilityLabel),
+      #selector(NSAccessibilityProtocol.accessibilityTitle), #selector(NSAccessibilityStaticText.accessibilityValue)] {
+      if node.responds(to: selector), let text = node.perform(selector)?.takeUnretainedValue() as? String {
+        return text
+      }
+    }
+    return nil
   }
 
   private func click(_ host: NSView, in window: NSWindow, at point: NSPoint) throws {

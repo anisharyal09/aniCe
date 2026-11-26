@@ -1306,6 +1306,42 @@ final class KeyboardTrackpadTests: XCTestCase {
     XCTAssertFalse(model.canSendShortcut)
   }
 
+  @MainActor func testCombinedPadCapsLockUsesEachActivationClickAsItsBaseline() throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let model = readyModel(peer: peer, transport: transport)
+    defer { model.shutdown() }
+    model.connect()
+    let pad = MousePadNSView()
+    pad.model = model
+    model.enterPanel(id: pad.presentationID, automaticallyConnect: false, refreshPairedDevices: false)
+    let window = KeyboardTrackpadTestWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 100),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.contentView = pad
+    defer { window.contentView = nil }
+    for initial: NSEvent.ModifierFlags in [[.capsLock], [], [.capsLock]] {
+      model.stopControl(owner: pad.captureOwner)
+      let click = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: .zero,
+        modifierFlags: initial, timestamp: 0, windowNumber: window.windowNumber, context: nil,
+        eventNumber: 0, clickCount: 1, pressure: 1))
+      pad.mouseDown(with: click)
+      XCTAssertTrue(model.isControlling(owner: pad.captureOwner))
+      transport.writes.removeAll()
+      let next: NSEvent.ModifierFlags = initial.isEmpty ? [.capsLock] : []
+      let event = try XCTUnwrap(NSEvent.keyEvent(with: .flagsChanged, location: .zero,
+        modifierFlags: next, timestamp: 0, windowNumber: window.windowNumber, context: nil,
+        characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 0x39))
+      pad.flagsChanged(with: event)
+      pad.flagsChanged(with: event)
+      XCTAssertEqual(transport.writes, [.keyboard(0, [0x39]), .keyboard(0, [])])
+      model.stopControl(owner: pad.captureOwner)
+      transport.writes.removeAll()
+      pad.flagsChanged(with: event)
+      XCTAssertTrue(transport.writes.isEmpty)
+    }
+  }
+
   @MainActor func testCapsLockChangesSendOneTapAndPreserveHeldKeys() throws {
     let peer = try phone("Phone")
     let transport = FakeKeyboardTrackpadTransport()

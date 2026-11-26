@@ -4,7 +4,6 @@ package io.github.anisharyal09.anice.app
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.selection.selectable
@@ -12,14 +11,11 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
@@ -33,21 +29,14 @@ import kotlinx.coroutines.launch
 import androidx.lifecycle.repeatOnLifecycle
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.ui.theme.AniCeWordmark
-import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityScreen
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityViewModel
-import io.github.anisharyal09.anice.features.discovery.DiscoveryScreen
 import io.github.anisharyal09.anice.features.discovery.DiscoveryViewModel
-import io.github.anisharyal09.anice.features.pairing.PairingScreen
 import io.github.anisharyal09.anice.features.pairing.PairingViewModel
 import io.github.anisharyal09.anice.features.pairing.completedPairingPeer
-import io.github.anisharyal09.anice.features.session.SessionPanel
 import io.github.anisharyal09.anice.features.session.SessionViewModel
 import io.github.anisharyal09.anice.features.backgroundprobe.rememberCompanionSetup
 import io.github.anisharyal09.anice.features.backgroundprobe.CompanionSetupEffects
 import io.github.anisharyal09.anice.features.backgroundprobe.CompanionSetupStatus
-import io.github.anisharyal09.anice.ui.theme.Appearance
-import io.github.anisharyal09.anice.ui.theme.appearancePreference
-import io.github.anisharyal09.anice.ui.theme.saveAppearance
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -321,9 +310,15 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                 }
             }
             Box(Modifier.weight(1f)) {
+                val destination = navigation.destination
+                // Retain the Guide while the activity is recreated, within a single visit.
+                if (destination == AppDestination.Guide) {
+                    GuideScreen(navigation.guideTopic)
+                    return@Box
+                }
                 // Destination keys retain scroll and local presentation state while another section is shown.
-                pageState.SaveableStateProvider(navigation.destination.name) {
-                    when (navigation.destination) {
+                pageState.SaveableStateProvider(destination.name) {
+                    when (destination) {
                         AppDestination.Home, AppDestination.Devices -> pageState.SaveableStateProvider("devices-" + navigation.route.name) {
                             DevicesScreen(pairing, discovery, session, navigation, nearbyOwner, automaticAfterPairing, { automaticAfterPairing=it }, automaticLanAfterPairing, { automaticLanAfterPairing=it }, identity = identity,
                                 nearbySetup = {
@@ -351,7 +346,6 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                         AppDestination.Favourites -> FeaturesScreen(session, pairing.peers, navigation,
                             favouritesOnly = true, trustedPeersLoaded = pairing.trustedPeersLoaded)
                         AppDestination.About, AppDestination.Settings -> SettingsScreen(identity, snackbars, navigation, context, pairing.peers)
-                        AppDestination.Guide -> GuideScreen(navigation.guideTopic)
                     }
                 }
             }

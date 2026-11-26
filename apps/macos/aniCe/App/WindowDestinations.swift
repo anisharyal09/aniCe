@@ -380,7 +380,7 @@ extension MainWindowView {
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
         Text("About").font(.system(size: 18 * fontScale, weight: .medium))
-        Text("Android + Mac, like never before.")
+        Text("Connect Android and Mac seamlessly, like never before.")
           .font(.system(size: 14 * fontScale, weight: .regular))
           .foregroundStyle(AniCePalette.secondaryText(colorScheme))
         VStack(spacing: 0) {

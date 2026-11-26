@@ -2,11 +2,15 @@
 // Checks update ownership, review, beta consent and About layout on isolated emulators.
 package io.github.anisharyal09.anice.app
 
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationManager
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.ComponentName
 import android.app.job.JobInfo
 import android.app.job.JobScheduler
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Rect
 import android.os.Build
@@ -28,6 +32,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.MainActivity
@@ -35,7 +40,6 @@ import io.github.anisharyal09.anice.features.nowplaying.MediaController
 import io.github.anisharyal09.anice.features.nowplaying.MediaView
 import io.github.anisharyal09.anice.features.transfer.TransferController
 import io.github.anisharyal09.anice.features.transfer.TransferView
-import io.github.anisharyal09.anice.ui.ExpandableHelpNote
 import io.github.anisharyal09.anice.ui.theme.AniCeTheme
 import io.github.anisharyal09.anice.update.AndroidUpdateManager
 import io.github.anisharyal09.anice.update.AvailableRelease
@@ -49,9 +53,11 @@ import io.github.anisharyal09.anice.update.UpdateSettingsContent
 import io.github.anisharyal09.anice.update.UpdateStatus
 import io.github.anisharyal09.anice.update.UpdateVersion
 import io.github.anisharyal09.anice.update.UpdateCheckService
+import io.github.anisharyal09.anice.update.UpdateNotification
 import io.github.anisharyal09.anice.update.UPDATE_JOB_ID
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -1019,6 +1025,18 @@ class SettingsRefinementTests {
         val calls = AtomicInteger()
         lateinit var manager: AndroidUpdateManager
         var check: Job? = null
+        val context = runner.targetContext
+        if (Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            ParcelFileDescriptor.AutoCloseInputStream(runner.uiAutomation.executeShellCommand(
+                "pm grant ${context.packageName} android.permission.POST_NOTIFICATIONS"
+            )).use { it.readBytes() }
+        }
+        val notices = UpdateNotification(context)
+        val system = context.getSystemService(NotificationManager::class.java)
+        fun hasNotice(version: String) = system.activeNotifications.any {
+            it.notification.extras.getString(Notification.EXTRA_TITLE) == "aniCe $version is available"
+        }
         try {
             runner.runOnMainSync {
                 manager = AndroidUpdateManager(runner.targetContext, ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ ->
@@ -1028,9 +1046,17 @@ class SettingsRefinementTests {
                 check = manager.check(force = true)
             }
             withTimeout(5000) { check!!.join() }
+            assertTrue(notices.post(requireNotNull(manager.available.value)))
+            withTimeout(5000) { while (!hasNotice(tag)) delay(50) }
             runner.runOnMainSync {
                 manager.review(expectedTag = "v0.8.0")
                 assertFalse("A stale notification tag must not open a different release", manager.reviewing.value)
+                val restarted = AndroidUpdateManager(context, ReleaseDiscovery(preferences))
+                check = restarted.review(expectedTag = "v0.8.0")
+            }
+            withTimeout(5000) { check!!.join() }
+            assertTrue("A stale response must leave the newer notice up", hasNotice(tag))
+            runner.runOnMainSync {
                 manager.review(expectedTag = tag)
                 assertTrue(manager.reviewing.value)
                 manager.hostDestroyed(changingConfigurations = true)
@@ -1039,8 +1065,10 @@ class SettingsRefinementTests {
                 assertFalse("Activity termination dismisses review so later launches do not resurrect it", manager.reviewing.value)
                 manager.dismissReview()
             }
+            withTimeout(5000) { while (hasNotice(tag)) delay(50) }
             assertEquals(1, calls.get())
         } finally {
+            notices.clear()
             assertTrue(preferences.edit().clear().commit())
         }
     }
@@ -1248,10 +1276,9 @@ class SettingsRefinementTests {
                 val contextualTopic = navigation.featurePanel
                 assertEquals(AppFeature.Files, contextualTopic)
                 click("Open Guide")
-                awaitLabel("aniCe Guide")
                 assertEquals(AppDestination.Guide, navigation.destination)
                 assertEquals(GuideTopic.FilesAndEdgeDrop, navigation.guideTopic)
-                awaitLabel("trusted auto-receive")
+                awaitLabel("resume checkpoints")
 
                 click("Back")
                 awaitLabel("Open Guide")
@@ -1279,7 +1306,7 @@ class SettingsRefinementTests {
                 awaitNoLabel("Pairing & Connections")
                 assertNotNull(find(root(), "Open Link in Mac"))
                 click("Control")
-                awaitLabel("Control Mac")
+                awaitLabel("Control Mac (from phone)")
                 click("All")
                 awaitLabel("Pairing & Connections")
 
@@ -1296,6 +1323,30 @@ class SettingsRefinementTests {
                 runner.runOnMainSync { transfer.dismiss(); activity.finish() }
                 runner.waitForIdleSync()
             }
+        }
+    }
+
+    @Test fun guideRestoresItsFilterAndBulkActionsOverrideManualChanges() {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        ActivityScenario.launch<MainActivity>(Intent(runner.targetContext, MainActivity::class.java)).use { scenario ->
+            idle()
+            awaitLabel("Open Guide")
+            click("Open Guide")
+            click("Connect")
+            awaitNoLabel("Open Link in Mac")
+            click("Expand all")
+            awaitLabel("Bluetooth reconnect")
+
+            scenario.recreate()
+            idle()
+            awaitLabel("Collapse all")
+            awaitLabel("Bluetooth reconnect")
+            click("Collapse all")
+            awaitNoLabel("Bluetooth reconnect")
+            assertNull("A restored Connect filter must still hide the next category", find(root(), "Open Link in Mac"))
+            click("All")
+            awaitLabel("Open Link in Mac")
         }
     }
 

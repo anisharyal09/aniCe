@@ -6,11 +6,11 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Changed
 
-- Add an offline, categorized **aniCe Guide** (`GuideScreen`) with sticky category filter tags, app-bar `?` action, `More built into aniCe — see guide` footer in Features, and a **Guide** entry in Settings → General, covering pairing modes, device nicknames, Quick Settings tile, shortcuts, and settings paths.
+- Add a categorized offline Guide with contextual help, wrapping sticky filters and entry points in Features and Settings. Explain connection, permission and device limits for clipboard sharing, input, notifications and Find Device.
 - Optimize **Control Mac** live typing with cursor-aware middle-edit reconciliation (`MoveCursor` via Left/Right arrow transitions instead of deleting and retyping trailing text) and add a **Clear** button in **Type on Mac** and fullscreen trackpad to reset only the phone's local buffer.
 - Refine **Mac Desk Deck** onto calm `surfaceContainer` sheets with soft catchlight highlights, tabular meters and volume readout, inline **Ping Mac**, and grouped **Output device** + **Output volume** controls.
-- Bound release-note Markdown blocks, lines and inline spans in linear time, add horizontal rules and duplicate version-heading suppression on Android, and dismiss update review on activity termination or stale notification intents without cancelling active downloads.
-- Expand native transfer progress with current-file context and private visibility, update state/job actions immediately and open only the original active transfer from a notice; bind legacy Bluetooth continuation to that operation.
+- Bound release-note Markdown blocks, lines and inline spans in linear time, add horizontal rules and duplicate version-heading suppression, and dismiss update review on activity termination without cancelling active downloads.
+- Expand native transfer progress with current-file context and private visibility, update state/job actions immediately and open only the original active transfer from a notice.
 - Place Find Mac below Desk Deck status with independent capability/readiness and peer-scoped feedback; move incoming Find Phone notification recovery to Permissions and keep its native ringing service/receiver unchanged.
 - Redirect saved Find Device routes, order and favourites into one Desk Deck entry; preserve explicitly empty favourites, wrap Mac choices and keep compact last-reading timestamps visible.
 - Add direct SIM-selection permission recovery and refresh choices on conversation resume; serialize local/remote SIM-list reads off the UI thread and fence obsolete request results.
@@ -22,6 +22,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Retain the Guide category, scroll position and expanded topics when the activity is recreated. Expand all and Collapse all use the same state as individual topics.
+- Withdraw the incoming-offer notice while the app is open without disturbing ongoing transfer progress. Ignore obsolete or untagged update taps without clearing the current notice.
 - Remove redundant switch semantics, guard disabled accessibility activation and align presentation checks with Compose's role; initialize emulator accessibility before permission fixtures.
 - Restore the 20/50/100-item history capacity menu in grouped Clipboard settings and History without enabling collection; correct segmented selection colors and no-match history copy.
 - Restore compact Home/Settings action faces and show granted/missing SMS, notification, call, caller-ID and DND access with their purposes.

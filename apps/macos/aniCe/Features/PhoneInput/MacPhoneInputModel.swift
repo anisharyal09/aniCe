@@ -130,11 +130,6 @@ import Observation
     statusMessage = "Phone input stopped."
   }
 
-  func disarmAll() {
-    disarmCurrent()
-    statusMessage = "Phone input is off."
-  }
-
   func available(_ channel: any SecuredChannel) {
     let descriptor = channel.descriptor
     guard descriptor.transport == "ble", descriptor.peer.platform == "android" else { return }

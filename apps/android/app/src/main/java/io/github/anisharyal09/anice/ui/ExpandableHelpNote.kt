@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Presents a compact, collapsed-by-default offline help disclosure without altering control state.
+// Presents an offline Guide topic with one accessible disclosure action.
 package io.github.anisharyal09.anice.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -20,21 +19,16 @@ import androidx.compose.ui.unit.dp
 import io.github.anisharyal09.anice.R
 
 @Composable
-fun ExpandableHelpNote(
+internal fun ExpandableHelpNote(
     title: String,
+    summary: String,
     body: String,
+    iconRes: Int,
+    expanded: Boolean,
+    highlighted: Boolean,
+    onToggle: () -> Unit,
     modifier: Modifier = Modifier,
-    expandedByDefault: Boolean = false,
-    summary: String? = null,
-    iconRes: Int? = null,
-    highlighted: Boolean = false,
 ) {
-    var expanded by rememberSaveable(title) { mutableStateOf(expandedByDefault) }
-    var syncedDefault by rememberSaveable(title) { mutableStateOf(expandedByDefault) }
-    if (expandedByDefault != syncedDefault) {
-        expanded = expandedByDefault
-        syncedDefault = expandedByDefault
-    }
     val layoutDirection = LocalLayoutDirection.current
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
@@ -43,31 +37,27 @@ fun ExpandableHelpNote(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 48.dp)
-                .clickable(role = Role.Button) { expanded = !expanded }
+                .clickable(role = Role.Button, onClick = onToggle)
                 .padding(horizontal = 4.dp, vertical = 10.dp)
                 .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" },
         ) {
-            if (iconRes != null) {
-                Icon(
-                    painter = painterResource(iconRes),
-                    contentDescription = null,
-                    tint = if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                tint = if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                if (!summary.isNullOrBlank()) {
-                    Text(
-                        text = summary,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Text(
+                    text = summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             Icon(
                 painter = painterResource(R.drawable.ic_chevron_forward),
@@ -84,9 +74,8 @@ fun ExpandableHelpNote(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth()
-                    .padding(start = if (iconRes != null) 34.dp else 4.dp, end = 24.dp, bottom = 10.dp),
+                    .padding(start = 34.dp, end = 24.dp, bottom = 10.dp),
             )
         }
     }
 }
-

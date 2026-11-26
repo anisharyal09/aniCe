@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.graphics.Bitmap
+import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.AniCeApplication
 import io.github.anisharyal09.anice.MainActivity
@@ -25,6 +26,43 @@ import org.junit.rules.TestRule
 
 class TransferProgressNotificationTest {
     @get:Rule val presentation: TestRule = EmulatorPresentationRule()
+
+    @Test fun bringingAniCeForwardClearsAnOfferWithoutChangingTheBatch() = runBlocking {
+        val runner = InstrumentationRegistry.getInstrumentation()
+        val context = runner.targetContext
+        assumeTrue(Build.HARDWARE in setOf("ranchu", "goldfish"))
+        assumeTrue(context.packageName == "io.github.anisharyal09.anice.preview")
+        if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED) {
+            shell("pm grant ${context.packageName} android.permission.POST_NOTIFICATIONS")
+        }
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val owner = (context.applicationContext as AniCeApplication).transfer
+        val file = TransferFile(UUID.randomUUID().toString(), "Offer.bin", 1024, ByteArray(32))
+        val batch = TransferBatch(UUID.randomUUID().toString(), listOf(file), file.size, "Preview Mac")
+        val offer = TransferState.IncomingOffer(batch)
+        fun offerVisible() = manager.activeNotifications.any { it.id == TransferNotification.OFFER_NOTIFICATION_ID }
+        try {
+            runner.runOnMainSync {
+                owner.dismiss()
+                owner.receiving = true
+                owner.currentBatch = batch
+                owner.state = offer
+                owner.onStateChanged?.invoke(offer)
+            }
+            withTimeout(5_000) { while (!offerVisible()) delay(50) }
+            ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)).use { scenario ->
+                withTimeout(5_000) { while (offerVisible()) delay(50) }
+                scenario.onActivity { assertEquals(offer, owner.state) }
+            }
+            runner.runOnMainSync { owner.onStateChanged?.invoke(offer) }
+            assertFalse("Backgrounding the same offer must not revive its notice", offerVisible())
+        } finally {
+            runner.runOnMainSync { owner.dismiss() }
+            manager.cancel(TransferNotification.OFFER_NOTIFICATION_ID)
+        }
+    }
+
     @Test fun receivingLargeFilesShowsNativeProgressAndCancelWithoutACompletionAlert() = runBlocking(Dispatchers.Main) {
         val runner = InstrumentationRegistry.getInstrumentation()
         val context = runner.targetContext
@@ -185,6 +223,7 @@ class TransferProgressNotificationTest {
         val manager = context.getSystemService(NotificationManager::class.java)
         val file = TransferFile(UUID.randomUUID().toString(), "Preview document with a long name.pdf", 512L * 1024 * 1024, ByteArray(32))
         val batch = TransferBatch(UUID.randomUUID().toString(), listOf(file), file.size, "Preview Mac")
+        val title = "Receiving from Preview Mac"
         try {
             for (dark in listOf(false, true)) for (size in listOf(0.8f, 1.2f)) {
                 shell("cmd uimode night ${if (dark) "yes" else "no"}")
@@ -196,15 +235,15 @@ class TransferProgressNotificationTest {
                     owner.state = TransferState.Transferring(batch, 1, file.name, file.size / 2, file.size, file.size / 2, 0.0)
                     native.update(force = true)
                 }
-                delay(150)
+                withTimeout(5_000) {
+                    while (manager.activeNotifications.none { it.id == TransferNotification.NOTIFICATION_ID }) delay(50)
+                }
                 shell("cmd statusbar expand-notifications")
                 runner.uiAutomation.waitForIdle(250, 5_000)
-                withTimeout(5_000) {
-                    while (runner.uiAutomation.rootInActiveWindow?.let { hasText(it, "Receiving from Preview Mac") } != true) delay(50)
-                }
                 fun expand(node: android.view.accessibility.AccessibilityNodeInfo?): Boolean {
                     if (node == null) return false
-                    if (node.text?.toString()?.contains("Receiving from Preview Mac") == true) {
+                    if (node.text?.toString()?.contains(title) == true ||
+                        node.contentDescription?.toString()?.contains(title) == true) {
                         var current: android.view.accessibility.AccessibilityNodeInfo? = node
                         repeat(6) {
                             val container = current
@@ -220,11 +259,18 @@ class TransferProgressNotificationTest {
                     }
                     return (0 until node.childCount).any { expand(node.getChild(it)) }
                 }
-                expand(runner.uiAutomation.rootInActiveWindow)
-                runner.uiAutomation.waitForIdle(250, 5_000)
-                withTimeout(5_000) {
-                    while (runner.uiAutomation.rootInActiveWindow?.let { hasText(it, "Preview document with a long name.pdf") } != true) delay(50)
+                val shown = withTimeoutOrNull(5_000) {
+                    var expanded = false
+                    while (true) {
+                        if (Build.VERSION.SDK_INT >= 34) runner.uiAutomation.clearCache()
+                        val shade = runner.uiAutomation.rootInActiveWindow
+                        if (hasText(shade, file.name)) break
+                        if (!expanded) expanded = expand(shade)
+                        delay(50)
+                    }
+                    true
                 }
+                assertTrue("Expanded shade must show the current file at $size scale (dark=$dark)", shown == true)
                 capture("transfer-shade-${if (dark) "dark" else "light"}-${(size * 100).toInt()}")
                 shell("cmd statusbar collapse")
             }

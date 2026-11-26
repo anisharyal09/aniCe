@@ -559,11 +559,13 @@ final class ReleaseDiscoveryTests: XCTestCase {
     let transport = FakeReleaseTransport([releaseResponse(tag)])
     let name = "aniCe.UpdateTests.\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: name))
     defer { defaults.removePersistentDomain(forName: name) }
+    var visibleNotice: String?
     let model = MacUpdateModel(discovery: MacReleaseDiscovery(defaults: defaults, transport: transport),
-      automaticLifecycleEnabled: true)
+      automaticLifecycleEnabled: true, clearNotification: { visibleNotice = nil })
     defer { model.stopAutomaticChecks() }
     await model.check(force: true)
     XCTAssertEqual(model.release?.version.tag, tag)
+    visibleNotice = tag
 
     let delegate = AppDelegate()
     var reopened = 0
@@ -575,13 +577,17 @@ final class ReleaseDiscoveryTests: XCTestCase {
     // A stale notification for an older version must not open the review or bring forward the window.
     delegate.handleNotificationAction(category: MacUpdateModel.notificationCategory,
       action: UNNotificationDefaultActionIdentifier, identifier: "anice.update", updateTag: "v0.8.0")
+    delegate.handleNotificationAction(category: MacUpdateModel.notificationCategory,
+      action: UNNotificationDefaultActionIdentifier, identifier: "anice.update")
     XCTAssertFalse(model.reviewing)
     XCTAssertEqual(reopened, 0)
+    XCTAssertEqual(visibleNotice, tag)
 
     delegate.handleNotificationAction(category: MacUpdateModel.notificationCategory,
       action: UNNotificationDefaultActionIdentifier, identifier: "anice.update", updateTag: tag)
     XCTAssertTrue(model.reviewing)
     XCTAssertEqual(reopened, 1)
+    XCTAssertNil(visibleNotice)
 
     // Closing the main window dismisses review without resurrecting it or issuing an extra network check.
     defaults.set(0, forKey: "updates.lastSuccess")

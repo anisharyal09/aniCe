@@ -556,7 +556,6 @@ private fun AudioOutputCard(
     LaunchedEffect(fresh, routeSwitchAvailable, owner.outputRoutes) {
         if (!fresh || !routeSwitchAvailable || owner.outputRoutes.isEmpty()) outputMenuExpanded = false
     }
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     DeckSurfaceCard {
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (routeSample != null) {
@@ -597,27 +596,9 @@ private fun AudioOutputCard(
                     }
                     Box(Modifier.fillMaxWidth()) {
                         val selectorShape = RoundedCornerShape(10.dp)
-                        val selectorFill = MaterialTheme.colorScheme.surfaceVariant.copy(
-                            alpha = if (dark) (if (canInteractSelector) 0.58f else 0.34f)
-                            else (if (canInteractSelector) 0.48f else 0.30f),
-                        )
-                        val selectorBorder = if (outputMenuExpanded) {
-                            BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.75f))
-                        } else {
-                            BorderStroke(
-                                0.75.dp,
-                                Brush.verticalGradient(
-                                    listOf(
-                                        Color.White.copy(alpha = if (dark) 0.11f else 0.85f),
-                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (dark) 0.22f else 0.40f),
-                                    ),
-                                ),
-                            )
-                        }
                         Surface(
                             shape = selectorShape,
-                            color = selectorFill,
-                            border = selectorBorder,
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (canInteractSelector) 0.5f else 0.32f),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 48.dp)
@@ -699,22 +680,17 @@ private fun AudioOutputCard(
                             }
                         }
                     }
-                    if (owner.outputCatalogLoaded && owner.outputRoutes.isEmpty()) {
-                        Text(
-                            "No available Mac output devices.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    } else if (!routeSwitchAvailable) {
+                    if (!routeSwitchAvailable && hasRoutes) {
                         Text(
                             "Output switching is unavailable on this Mac.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    if (owner.actionFeedback(10L).isNotBlank()) {
+                    val routeFeedback = owner.actionFeedback(10L)
+                    if (routeFeedback.isNotBlank()) {
                         Text(
-                            owner.actionFeedback(10L),
+                            routeFeedback,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

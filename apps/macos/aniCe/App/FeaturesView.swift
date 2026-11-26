@@ -63,15 +63,21 @@ struct FeaturesView: View {
   }
   var body: some View {
     GeometryReader { geometry in
-    if !favouritesOnly, navigation.featurePanel == .messages {
-      VStack(alignment: .leading, spacing: 16) {
-        Text(AppFeature.messages.title).font(.title2.weight(.semibold))
-        SmsView(model: sms, peers: peers, preferences: smsPreferences)
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      if !favouritesOnly, navigation.featurePanel == .messages {
+        VStack(alignment: .leading, spacing: 16) {
+          Text(AppFeature.messages.title).font(.title2.weight(.semibold))
+          SmsView(model: sms, peers: peers, preferences: smsPreferences)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      } else {
+        featuresScrollContent(width: geometry.size.width)
       }
-      .padding(24)
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    } else {
+    }
+  }
+
+  private func featuresScrollContent(width: CGFloat) -> some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
         if !favouritesOnly, let panel = navigation.featurePanel {
@@ -104,7 +110,7 @@ struct FeaturesView: View {
             }
             .padding(.top, 8)
           }
-          LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .top), count: geometry.size.width >= 850 ? 2 : 1), alignment: .leading, spacing: 0) {
+          LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .top), count: width >= 850 ? 2 : 1), alignment: .leading, spacing: 0) {
             ForEach(displayedFeatures) { item in
               feature(item, in: displayedFeatures)
             }
@@ -113,12 +119,9 @@ struct FeaturesView: View {
             moreBuiltInCard
           }
         }
-
       }
       .padding(24)
       .frame(maxWidth: .infinity, alignment: .leading)
-    }
-    }
     }
   }
 

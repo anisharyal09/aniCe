@@ -414,10 +414,6 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
 
     private fun hasCallPermission(permission: String) = ContextCompat.checkSelfPermission(app, permission) == PackageManager.PERMISSION_GRANTED
 
-    private fun hasPhoneCallControlPermissions() =
-        hasCallPermission(Manifest.permission.READ_PHONE_STATE) &&
-            hasCallPermission(Manifest.permission.ANSWER_PHONE_CALLS)
-
     private fun isSystemPhoneCallNotification(sbn: StatusBarNotification): Boolean {
         val notification = sbn.notification
         val extras = notification.extras ?: return false

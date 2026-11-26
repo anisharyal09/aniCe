@@ -6,8 +6,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
-- Add default-on combined keyboard/pointer control in armed native pads, with a saved exclusive-mode fallback and release on mode changes.
-- Protect pinned clips from ordinary deletion, add bounded local history Undo/Redo and a separate persistent history pause with custom duration.
+- Add default-on combined keyboard/pointer control in armed native pads, with a saved exclusive-mode fallback, release on mode changes and Caps Lock transition tracking from each activation.
+- Protect pinned clips from ordinary deletion, add local history Undo/Redo that respects current capacity and preserves newer captures, and add a separate persistent history pause with custom duration.
 - Add independent sidebar feature pins, wrapping Overview/companion shortcuts and a quiet companion support link.
 - Add configurable clipboard-tray and Floating Key global shortcuts with focused recording, Reset, collision reporting and preservation of the last working registration.
 - Show a brief recipient-bound Edge Drop preparation acknowledgment before progress continues in aniCe; retain verified completion feedback.
@@ -16,7 +16,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
-- Add an offline, categorized **aniCe Guide** (`Connect`, `Share & Files`, `Control`, `Sync & Alerts`) with sticky category filter tags, clean toolbar `?` action (with Help menu **aniCe Guide** `⌘?` and **Support aniCe**), `More built into aniCe — see guide` footer in Features, and a **Guide** entry in Settings → General, covering pairing modes, device nicknames, Quick Settings tile, shortcuts, and settings paths.
+- Add a categorized offline Guide with contextual help, wrapping sticky filters and entry points in Features and Settings. Explain connection, permission and device limits for clipboard sharing, input, notifications and Find Device. The Help menu also provides aniCe Guide (⌘?) and Support aniCe.
 - Bound release-note Markdown blocks, lines and inline styling with linear-time source cleanup, pre-parse view blocks once and wrap update-review actions when narrow.
 - Clear Mac update review on window close and app termination, verify notification tags and cancel unlaunched update work at shutdown without resurrecting sheets.
 - Attribute mirrored alerts and SMS to their phone with credential-scoped native grouping; keep passive revisions list-only in foreground and preserve used actions during source-icon enrichment.
@@ -27,10 +27,12 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Use content-sized themed segments for glass style and Clipboard navigation/filters, roomier Share/History tabs and stronger theme-aware hover, pressed and focus feedback.
 - Confine granted-access descriptions to Permissions, align glass/pause controls and support broader global shortcut combinations while preserving native system/editing keys and legacy bindings.
 - Use desktop-sampling companion vibrancy, stronger light-mode Vibrant tint and quieter secondary button faces.
-- Organize Settings into ordered category sections, remove the duplicate jump strip and route Clipboard/Messages gears to their settings.
+- Organize Settings into ordered category sections, remove the duplicate jump strip and route the Clipboard gear to its settings.
 
 ### Fixed
 
+- Apply Guide bulk actions to every topic, including a manually collapsed contextual topic. Expose a single set of category filters when the filter bar is pinned.
+- Release failed transfer-offer notification state so the current offer can be announced again. Ignore obsolete or untagged update taps without clearing the current notice.
 - Restore the Mac Messages gear toggle so per-phone notification settings and **Connection details** open inline inside Messages instead of redirecting to Settings.
 - Unify the Auto connect label and capsule action, and remove obsolete preference-size/theme configuration.
 - Restore 20/50/100-item history capacity menus in compact Clipboard settings and History, retain paused/off access and remove duplicate feedback layers and unused clipboard helpers.

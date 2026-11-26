@@ -128,8 +128,9 @@ class MainActivity : ComponentActivity() {
     private fun updateNavigation(intent: Intent?) {
         if (intent == null || (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return
         if (intent.getBooleanExtra(io.github.anisharyal09.anice.update.UpdateNotification.OPEN_REVIEW, false)) {
-            val tag = intent.getStringExtra(io.github.anisharyal09.anice.update.UpdateNotification.EXTRA_VERSION_TAG)
-            (application as AniCeApplication).updates.review(expectedTag = tag)
+            intent.getStringExtra(io.github.anisharyal09.anice.update.UpdateNotification.EXTRA_VERSION_TAG)?.let { tag ->
+                (application as AniCeApplication).updates.review(expectedTag = tag)
+            }
             intent.removeExtra(io.github.anisharyal09.anice.update.UpdateNotification.OPEN_REVIEW)
             intent.removeExtra(io.github.anisharyal09.anice.update.UpdateNotification.EXTRA_VERSION_TAG)
             if (intent.data?.scheme == "anice-update") intent.data = null

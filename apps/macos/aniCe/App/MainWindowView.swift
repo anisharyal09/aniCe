@@ -76,17 +76,15 @@ struct MainWindowView: View {
         ForEach([AppDestination.home, .devices, .features, .favourites]) { sidebarItem($0) }
         if !AppFeature.favourites(in: sidebarPinnedFeatures).isEmpty {
           Text("Pinned").font(.system(size: 11 * fontScale))
-            .foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.top, 12).padding(.bottom, 8)
+            .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            .padding(.horizontal, MainWindowSizing.sidebarInset).padding(.top, 12).padding(.bottom, 12)
           ForEach(AppFeature.favourites(in: sidebarPinnedFeatures)) { feature in
-            Button { navigation.openFeature(feature) } label: {
-              Label(feature.title, systemImage: feature.symbol)
-                .font(.system(size: 13 * fontScale)).frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 8).contentShape(Rectangle())
-            }.buttonStyle(AniCeHoverButtonStyle())
-              .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-              .contextMenu {
-                Button("Unpin from Sidebar") { sidebarPinnedFeatures = feature.toggled(in: sidebarPinnedFeatures) }
-              }
+            sidebarButton(title: feature.title, symbol: feature.symbol, selected: false) {
+              navigation.openFeature(feature)
+            }
+            .contextMenu {
+              Button("Unpin from Sidebar") { sidebarPinnedFeatures = feature.toggled(in: sidebarPinnedFeatures) }
+            }
           }
         }
         }
@@ -140,7 +138,6 @@ struct MainWindowView: View {
       }
     }
     .onChange(of: identity.local?.identity.fingerprint) { _, _ in Task { await pairing.refresh() } }
-    .onAppear { updateKeyboardTrackpadTargets() }
     .onChange(of: pairing.peers.map(\.peer)) { _, _ in updateKeyboardTrackpadTargets() }
     .onChange(of: pairing.peers.isEmpty) { _, empty in
       if !empty && !pairing.active && discovery.nearbyAvailable { discovery.stop() }
@@ -155,16 +152,17 @@ struct MainWindowView: View {
         pairing.nearbyAvailabilityChanged()
       }
     }
-    .onChange(of:navigation.destination) { _,_ in if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) } }
-    .onChange(of:navigation.featurePanel) { _,_ in if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) } }
-    .onChange(of:playback.showOnMac) { _,_ in if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) } }
-    .onDisappear { playback.presented("main",false); updates.windowClosed() }
+    .onChange(of: navigation.destination) { _, _ in if !IdentityView.isTesting { playback.presented("main", mediaSurfaceVisible) } }
+    .onChange(of: navigation.featurePanel) { _, _ in if !IdentityView.isTesting { playback.presented("main", mediaSurfaceVisible) } }
+    .onChange(of: playback.showOnMac) { _, _ in if !IdentityView.isTesting { playback.presented("main", mediaSurfaceVisible) } }
+    .onDisappear { playback.presented("main", false); updates.windowClosed() }
     .onAppear {
-      if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) }
+      updateKeyboardTrackpadTargets()
+      if !IdentityView.isTesting { playback.presented("main", mediaSurfaceVisible) }
       let action = openWindow
       delegate.reopenMainWindow = {
         action(id: "main")
-        playback.presented("main",mediaSurfaceVisible)
+        playback.presented("main", mediaSurfaceVisible)
       }
     }
   }
@@ -204,18 +202,7 @@ struct MainWindowView: View {
       destinationContent
     }
     .navigationTitle(MacAppStorage.applicationName)
-    .toolbar {
-      if #available(macOS 26.0, *) {
-        ToolbarItem(placement: .primaryAction) {
-          guideToolbarButton
-        }
-        .sharedBackgroundVisibility(.hidden)
-      } else {
-        ToolbarItem(placement: .primaryAction) {
-          guideToolbarButton
-        }
-      }
-    }
+    .modifier(GuideToolbarModifier(button: guideToolbarButton))
     .toolbarBackground(nativeGlass && !reduceTransparency
       ? (NativeGlassStyle.stored(nativeGlassStyle) == .vibrant
         ? AnyShapeStyle(.thinMaterial) : AnyShapeStyle(.regularMaterial))
@@ -263,7 +250,7 @@ struct MainWindowView: View {
     case .favourites: featureDestination(favouritesOnly: true)
     case .about: aboutContent
     case .settings: settingsContent
-    case .guide: GuideView(initialTopic: navigation.guideTopic)
+    case .guide: GuideView(initialTopic: navigation.guideTopic).id(navigation.guideTopic)
     }
   }
 
@@ -279,6 +266,27 @@ struct MainWindowView: View {
     .accessibilityLabel("Open Guide")
     .help(navigation.destination == .guide ? "Showing Guide" : "Open Guide")
     .disabled(navigation.destination == .guide)
+  }
+
+  private struct GuideToolbarModifier<Item: View>: ViewModifier {
+    let button: Item
+
+    func body(content: Content) -> some View {
+      if #available(macOS 26.0, *) {
+        content.toolbar {
+          ToolbarItem(placement: .primaryAction) {
+            button
+          }
+          .sharedBackgroundVisibility(.hidden)
+        }
+      } else {
+        content.toolbar {
+          ToolbarItem(placement: .primaryAction) {
+            button
+          }
+        }
+      }
+    }
   }
 
   private var currentGuideTopic: GuideTopic? {
@@ -329,12 +337,17 @@ struct MainWindowView: View {
 
   private func sidebarItem(_ destination: AppDestination) -> some View {
     let selected = navigation.destination == destination
-    return Button {
+    return sidebarButton(title: destination.rawValue, symbol: destination.symbol, selected: selected) {
       navigation.select(destination)
-    } label: {
+    }
+    .accessibilityAddTraits(selected ? [.isSelected] : [])
+  }
+
+  private func sidebarButton(title: String, symbol: String, selected: Bool, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
       HStack(spacing: 12) {
-        Image(systemName: destination.symbol).frame(width: 18).accessibilityHidden(true)
-        Text(destination.rawValue).font(.system(size: 13 * fontScale, weight: selected ? .medium : .regular))
+        Image(systemName: symbol).frame(width: 18).accessibilityHidden(true)
+        Text(title).font(.system(size: 13 * fontScale, weight: selected ? .medium : .regular))
         Spacer(minLength: 0)
       }
       .foregroundStyle(selected ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
@@ -349,7 +362,6 @@ struct MainWindowView: View {
       .contentShape(RoundedRectangle(cornerRadius: 7))
     }
     .buttonStyle(AniCeHoverButtonStyle())
-    .accessibilityAddTraits(selected ? [.isSelected] : [])
     .padding(.bottom, 4)
   }
 

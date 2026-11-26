@@ -1137,6 +1137,7 @@ private struct MousePadSurface: NSViewRepresentable {
     model?.cancelScrollGesture(owner: captureOwner)
     let wasActivePad = model?.isControlling(owner: captureOwner) == true
     consumingArmingGesture = !wasActivePad
+    if !wasActivePad { combinedCapsLock = event.modifierFlags.contains(.capsLock) }
     window?.makeFirstResponder(self)
     if wasActivePad { model?.pointerButtonDown(owner: captureOwner) }
     else { model?.requestControl(owner: captureOwner) }

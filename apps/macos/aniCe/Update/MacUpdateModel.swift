@@ -11,6 +11,7 @@ import UserNotifications
   static let shared = MacUpdateModel()
   private let discovery: MacReleaseDiscovery
   private let automaticLifecycleEnabled: Bool
+  private let clearNotification: @MainActor () -> Void
   private(set) var release: AvailableMacRelease?
   private(set) var status = ""
   private(set) var recoveryMessage: String?
@@ -58,7 +59,7 @@ import UserNotifications
       discovery.includeBeta = includeBeta
       if !includeBeta { clearNotification() }
       if !includeBeta, release?.version.prerelease == true {
-        release = nil; dismissReview(refreshAutomatic: false); clearNotification()
+        release = nil; dismissReview(refreshAutomatic: false)
       }
       if automaticChecks && !terminating {
         Task { [weak self] in
@@ -69,9 +70,11 @@ import UserNotifications
     }
   }
   init(discovery: MacReleaseDiscovery = MacReleaseDiscovery(),
-    automaticLifecycleEnabled: Bool = !IdentityView.isTesting) {
+    automaticLifecycleEnabled: Bool = !IdentityView.isTesting,
+    clearNotification: @escaping @MainActor () -> Void = MacUpdateModel.removeUpdateNotification) {
     self.discovery = discovery
     self.automaticLifecycleEnabled = automaticLifecycleEnabled
+    self.clearNotification = clearNotification
     self.includeBeta = discovery.includeBeta
     self.automaticChecks = discovery.automaticChecks
   }
@@ -229,14 +232,8 @@ import UserNotifications
   func review(expectedTag: String? = nil) -> Bool {
     guard !terminating else { return false }
     restoreCachedRelease()
-    guard let release, discovery.isEligible(release) else {
-      clearNotification()
-      return false
-    }
-    if let expectedTag, release.version.tag != expectedTag {
-      clearNotification()
-      return false
-    }
+    guard let release, discovery.isEligible(release),
+      expectedTag == nil || release.version.tag == expectedTag else { return false }
     refreshTask?.cancel(); refreshTask = nil
     reviewing = true
     clearNotification()
@@ -284,7 +281,7 @@ import UserNotifications
     }
   }
 
-  private func clearNotification() {
+  private static func removeUpdateNotification() {
     guard !IdentityView.isTesting, !MacAppStorage.isPreview else { return }
     let center = UNUserNotificationCenter.current()
     center.removeDeliveredNotifications(withIdentifiers: [Self.notificationIdentifier])
