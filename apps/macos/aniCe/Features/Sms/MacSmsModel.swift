@@ -1127,15 +1127,15 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     conversation.sortDates.removeValue(forKey: send.rowId)
   }
 
-  func upsertCard(_ state: PeerState, address: String, snippet: String, dateMillis: Int64, unread: Int64, forceSnippet: Bool = false) {
+  func upsertCard(_ state: PeerState, address: String, snippet: String, dateMillis: Int64, unread: Int64) {
     let normalized = smsNormalizedAddress(address)
     guard !normalized.isEmpty else { return }
     let text = smsTruncate(smsSanitizeText(snippet), maxBytes: 160)
     if let index = state.threads.firstIndex(where: { $0.key == normalized }) {
       var card = state.threads[index]
-      if forceSnippet || dateMillis >= card.dateMillis {
+      if dateMillis >= card.dateMillis {
         card.snippet = text
-        card.dateMillis = max(card.dateMillis, dateMillis)
+        card.dateMillis = dateMillis
       }
       card.address = address.isEmpty ? card.address : address
       card.unreadCount += unread

@@ -32,6 +32,8 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 ### Fixed
 
 - Apply Guide bulk actions to every topic, including a manually collapsed contextual topic. Expose a single set of category filters when the filter bar is pinned.
+- Report expired, unavailable and unconfirmed mirrored actions in a single quiet native notice. Confirm call-action dispatch without implying that the call connected.
+- Keep the latest SMS conversation preview when an older message arrives out of order.
 - Release failed transfer-offer notification state so the current offer can be announced again. Ignore obsolete or untagged update taps without clearing the current notice.
 - Restore the Mac Messages gear toggle so per-phone notification settings and **Connection details** open inline inside Messages instead of redirecting to Settings.
 - Unify the Auto connect label and capsule action, and remove obsolete preference-size/theme configuration.

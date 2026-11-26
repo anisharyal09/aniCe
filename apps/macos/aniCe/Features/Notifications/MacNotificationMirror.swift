@@ -68,6 +68,8 @@ extension UNUserNotificationCenter: MacMirrorNotificationCenter {
 @MainActor
 final class MacNotificationMirrorNotifier: NSObject {
   nonisolated static let categoryPrefix = "ANICE_MIRROR_"
+  private static let feedbackCategory = "ANICE_MIRROR_FEEDBACK"
+  private static let feedbackIdentifier = "anice-mirror-action-feedback"
   private struct Target {
     let peerKey: String
     let sourceId: String
@@ -82,6 +84,9 @@ final class MacNotificationMirrorNotifier: NSObject {
     case invoke(index: Int, text: String)
     case dismiss
   }
+  enum ActionFeedback {
+    case submitted, stale, unavailable, failed, unconfirmed, disconnected
+  }
 
   var onAction: (String, String, String, Int64, UserAction) -> Void = { _, _, _, _, _ in }
   private let center: any MacMirrorNotificationCenter
@@ -93,6 +98,8 @@ final class MacNotificationMirrorNotifier: NSObject {
 
   init(center: any MacMirrorNotificationCenter = UNUserNotificationCenter.current()) {
     self.center = center
+    center.removePendingNotificationRequests(withIdentifiers: [Self.feedbackIdentifier])
+    center.removeDeliveredNotifications(withIdentifiers: [Self.feedbackIdentifier])
     startupCleanup = Task { @MainActor [weak center] in
       guard let center else { return }
       let pending = await withCheckedContinuation { continuation in
@@ -102,7 +109,7 @@ final class MacNotificationMirrorNotifier: NSObject {
         center.mirrorDeliveredIdentifiers { continuation.resume(returning: $0) }
       }
       let ids = Set(pending + delivered)
-        .filter { $0.hasPrefix(Self.identifierPrefix) }
+        .filter { $0.hasPrefix(Self.identifierPrefix) && $0 != Self.feedbackIdentifier }
       center.removePendingNotificationRequests(withIdentifiers: Array(ids))
       center.removeDeliveredNotifications(withIdentifiers: Array(ids))
     }
@@ -160,16 +167,32 @@ final class MacNotificationMirrorNotifier: NSObject {
     }
   }
 
-  func postActionFeedback(peerKey: String, appName: String, title: String, body: String) {
-    let identifier = Self.identifier(peerKey: peerKey, sourceId: "feedback-" + UUID().uuidString.lowercased())
+  func postActionFeedback(_ feedback: ActionFeedback, appName: String = "") {
     let content = UNMutableNotificationContent()
-    content.title = title
     content.subtitle = appName
-    content.body = body
-    content.categoryIdentifier = Self.categoryPrefix + "FEEDBACK"
-    content.sound = .default
+    switch feedback {
+    case .submitted:
+      content.title = "Request sent to phone"
+      content.body = "Check your phone if the action didn’t take effect."
+    case .stale:
+      content.title = "Notification out of date"
+      content.body = "Use the current notification on your phone."
+    case .unavailable:
+      content.title = "Action unavailable"
+      content.body = "Use the notification on your phone."
+    case .failed:
+      content.title = "Couldn’t run the action"
+      content.body = "Use the notification on your phone."
+    case .unconfirmed:
+      content.title = "Couldn’t confirm the action"
+      content.body = "Check your phone before trying again."
+    case .disconnected:
+      content.title = "Phone connection unavailable"
+      content.body = "Reconnect in aniCe or use the notification on your phone."
+    }
+    content.categoryIdentifier = Self.feedbackCategory
     content.interruptionLevel = .active
-    center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil), withCompletionHandler: nil)
+    center.add(UNNotificationRequest(identifier: Self.feedbackIdentifier, content: content, trigger: nil), withCompletionHandler: nil)
   }
 
   private func sourceIconAttachment(_ data: Data?) -> (value: UNNotificationAttachment, url: URL)? {
@@ -218,8 +241,18 @@ final class MacNotificationMirrorNotifier: NSObject {
   @discardableResult
   func handleAction(category: String, action: String, identifier: String, userText: String,
     sourceEpoch: String?, sourceSequence: Int64?) -> Bool {
-    guard category.hasPrefix(Self.categoryPrefix), var target = targets[identifier], target.category == category,
-          target.epoch == sourceEpoch, target.sequence == sourceSequence else { return false }
+    guard category.hasPrefix(Self.categoryPrefix), category != Self.feedbackCategory,
+          identifier.hasPrefix(Self.identifierPrefix), let sourceEpoch, let sourceSequence else { return false }
+    let actionPrefix = "ANICE_MIRROR_ACTION_"
+    let index = action.hasPrefix(actionPrefix) ? Int(action.dropFirst(actionPrefix.count)) : nil
+    guard var target = targets[identifier], target.category == category,
+          target.epoch == sourceEpoch, target.sequence == sourceSequence else {
+      if action == UNNotificationDefaultActionIdentifier ||
+        index.map({ (0..<Int(NotificationWireMessage.maxActions)).contains($0) }) == true {
+        postActionFeedback(.stale)
+      }
+      return false
+    }
     if action == UNNotificationDismissActionIdentifier {
       clear(identifier: identifier)
       onAction(target.peerKey, target.sourceId, target.epoch, target.sequence, .dismiss)
@@ -231,8 +264,7 @@ final class MacNotificationMirrorNotifier: NSObject {
       onAction(target.peerKey, target.sourceId, target.epoch, target.sequence, .invoke(index: -1, text: ""))
       return true
     }
-    guard action.hasPrefix("ANICE_MIRROR_ACTION_"),
-          let index = Int(action.dropFirst("ANICE_MIRROR_ACTION_".count)), target.actions[index] != nil else { return false }
+    guard let index, target.actions[index] != nil else { return false }
     guard target.consumedActions.insert(action).inserted else { return false }
     targets[identifier] = target
     let text = notificationText(userText, maxBytes: 1024)
@@ -304,8 +336,8 @@ final class MacNotificationMirrorModel: FeatureHandler {
   private struct PendingAction {
     let peerKey: String
     let appName: String
-    let actionTitle: String
-    let isDismiss: Bool
+    let confirmSubmission: Bool
+    let timeoutTask: Task<Void, Never>
   }
   private var links: [String: Link] = [:]
   private var epochs: [String: String] = [:]
@@ -316,10 +348,12 @@ final class MacNotificationMirrorModel: FeatureHandler {
   private var sourceIcons: [String: Data] = [:]
   private var pendingActions: [String: PendingAction] = [:]
   private var pendingActionOrder: [String] = []
+  private let actionTimeout: Duration
   private let notifier: MacNotificationMirrorNotifier
 
-  init(notifier: MacNotificationMirrorNotifier) {
+  init(notifier: MacNotificationMirrorNotifier, actionTimeout: Duration = .seconds(8)) {
     self.notifier = notifier
+    self.actionTimeout = actionTimeout
     notifier.onAction = { [weak self] peerKey, id, epoch, sequence, action in
       self?.perform(peerKey: peerKey, id: id, epoch: epoch, sequence: sequence, action: action)
     }
@@ -343,8 +377,8 @@ final class MacNotificationMirrorModel: FeatureHandler {
     removals = removals.filter { !$0.key.hasPrefix(peerKey + ":") }
     snapshots = snapshots.filter { $0.value.peerKey != peerKey }
     sourceIcons = sourceIcons.filter { !$0.key.hasPrefix(peerKey + ":") }
-    pendingActions = pendingActions.filter { $0.value.peerKey != peerKey }
-    pendingActionOrder.removeAll { pendingActions[$0] == nil }
+    let disconnectedIds = pendingActionOrder.filter { pendingActions[$0]?.peerKey == peerKey }
+    for requestId in disconnectedIds { finishUnconfirmed(requestId) }
     for recordKey in records.filter({ $0.value.peerKey == peerKey }).map(\.key) { records[recordKey] = nil }
     notifier.clear(peerKey: peerKey)
   }
@@ -494,91 +528,89 @@ final class MacNotificationMirrorModel: FeatureHandler {
   private func handleActionResult(_ message: NotificationWireMessage, peerKey: String) throws {
     let requestId = try message.text(0)
     let result = try message.number(1)
-    guard let pending = removePendingAction(requestId),
-          pending.peerKey == peerKey, !pending.isDismiss else { return }
+    guard pendingActions[requestId]?.peerKey == peerKey,
+          let pending = removePendingAction(requestId) else { return }
+    let feedback: MacNotificationMirrorNotifier.ActionFeedback
     switch result {
     case 0:
-      break
-    case 1:
-      notifier.postActionFeedback(peerKey: peerKey, appName: pending.appName,
-        title: "Alert expired", body: "This \(pending.appName) notification is no longer active on your phone.")
-    case 2:
-      notifier.postActionFeedback(peerKey: peerKey, appName: pending.appName,
-        title: "Action unavailable", body: "\(pending.appName) could not run this action in the background.")
-    default:
-      notifier.postActionFeedback(peerKey: peerKey, appName: pending.appName,
-        title: "Couldn't confirm — check your phone", body: "Check \(pending.appName) on your phone.")
+      guard pending.confirmSubmission else { return }
+      feedback = .submitted
+    case 1: feedback = .stale
+    case 2: feedback = .unavailable
+    case 3: feedback = .failed
+    default: return
     }
+    notifier.postActionFeedback(feedback, appName: pending.appName)
   }
 
   private func removePendingAction(_ requestId: String) -> PendingAction? {
     pendingActionOrder.removeAll { $0 == requestId }
-    return pendingActions.removeValue(forKey: requestId)
+    let removed = pendingActions.removeValue(forKey: requestId)
+    removed?.timeoutTask.cancel()
+    return removed
   }
 
-  private func recordPendingAction(_ requestId: String, action: PendingAction) {
-    pendingActions[requestId] = action
+  private func recordPendingAction(_ requestId: String, peerKey: String, value: MirroredNotification, index: Int) {
+    // v1 carries labels without action roles. Limit positive notices to recognizable call buttons.
+    let actionTitle = value.actions.first(where: { $0.index == index && $0.replyPlaceholder.isEmpty })?.title ?? ""
+    let confirmSubmission = ["answer", "answer call", "answer video", "answer video call",
+      "accept call", "decline", "decline call", "reject call"]
+      .contains(actionTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    let timeoutTask = Task { [weak self, actionTimeout] in
+      do { try await Task.sleep(for: actionTimeout) }
+      catch { return }
+      self?.finishUnconfirmed(requestId)
+    }
+    pendingActions[requestId] = PendingAction(
+      peerKey: peerKey, appName: value.appName, confirmSubmission: confirmSubmission, timeoutTask: timeoutTask)
     pendingActionOrder.append(requestId)
-    while pendingActionOrder.count > 32 {
-      let oldest = pendingActionOrder.removeFirst()
-      pendingActions[oldest] = nil
+    if pendingActionOrder.count > 32, let oldest = pendingActionOrder.first {
+      finishUnconfirmed(oldest)
     }
   }
 
-  private func handleSendFailure(requestId: String) {
-    guard let pending = removePendingAction(requestId), !pending.isDismiss else { return }
-    let label = pending.actionTitle.isEmpty ? pending.appName : pending.actionTitle
-    notifier.postActionFeedback(peerKey: pending.peerKey, appName: pending.appName,
-      title: "Couldn't confirm — check your phone",
-      body: "Could not reach your phone for \(label).")
+  private func finishUnconfirmed(_ requestId: String) {
+    guard let pending = removePendingAction(requestId) else { return }
+    notifier.postActionFeedback(.unconfirmed, appName: pending.appName)
   }
 
   private func perform(peerKey: String, id: String, epoch: String, sequence: Int64,
     action: MacNotificationMirrorNotifier.UserAction) {
     guard let record = records[peerKey + ":" + id], record.value.epoch == epoch, record.value.sequence == sequence else {
-      if case .invoke = action {
-        notifier.postActionFeedback(peerKey: peerKey, appName: "aniCe",
-          title: "Alert expired", body: "This notification is no longer active.")
-      }
+      if case .invoke = action { notifier.postActionFeedback(.stale) }
       return
     }
-    guard let channel = links.values.map(\.channel).filter({ key($0.descriptor.peer) == peerKey })
-            .sorted(by: { $0.descriptor.transport == "lan" && $1.descriptor.transport != "lan" }).first else {
-      if case .invoke = action {
-        notifier.postActionFeedback(peerKey: peerKey, appName: record.value.appName,
-          title: "Couldn't confirm — check your phone", body: "Phone is disconnected.")
-      }
+    let candidates = links.values.filter { $0.remoteCapability && key($0.channel.descriptor.peer) == peerKey }
+    guard let channel = (candidates.first { $0.channel.descriptor.transport == "lan" } ?? candidates.first)?.channel else {
+      if case .invoke = action { notifier.postActionFeedback(.disconnected, appName: record.value.appName) }
       return
     }
     let requestId = UUID().uuidString.lowercased()
-    let message: NotificationWireMessage
     switch action {
     case .invoke(let index, let text):
       let safeText = notificationText(text, maxBytes: 1024)
-      message = NotificationWireMessage(kind: 6, fields: [
+      let message = NotificationWireMessage(kind: 6, fields: [
         .text(requestId), .text(id), .text(epoch), .integer(sequence), .integer(Int64(index)), .text(safeText),
       ])
-      let title = record.value.actions.first(where: { $0.index == index })?.title ?? ""
-      recordPendingAction(requestId, action: PendingAction(
-        peerKey: peerKey, appName: record.value.appName, actionTitle: title, isDismiss: false))
+      recordPendingAction(requestId, peerKey: peerKey, value: record.value, index: index)
+      send(message, on: channel, requestId: requestId)
     case .dismiss:
-      message = NotificationWireMessage(kind: 8, fields: [
+      let message = NotificationWireMessage(kind: 8, fields: [
         .text(requestId), .text(id), .text(epoch), .integer(sequence),
       ])
       records[peerKey + ":" + id] = nil
       rememberRemoval(peerKey: peerKey, id: id, sequence: sequence)
+      send(message, on: channel)
     }
-    send(message, on: channel, requestId: requestId)
   }
 
   private func send(_ message: NotificationWireMessage, on channel: any SecuredChannel, requestId: String? = nil) {
     Task { [weak self] in
+      if let requestId, self?.pendingActions[requestId] == nil { return }
       do {
         try await channel.sendData(message.encode())
       } catch {
-        if let requestId {
-          self?.handleSendFailure(requestId: requestId)
-        }
+        if let requestId { self?.finishUnconfirmed(requestId) }
       }
     }
   }

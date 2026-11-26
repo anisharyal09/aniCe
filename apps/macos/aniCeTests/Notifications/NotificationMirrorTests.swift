@@ -459,12 +459,15 @@ final class NotificationMirrorTests: XCTestCase {
     XCTAssertFalse(notifier.handleAction(category: first.content.categoryIdentifier,
       action: UNNotificationDefaultActionIdentifier, identifier: first.identifier, userText: "",
       sourceEpoch: epoch, sourceSequence: 1))
+    let feedback = try XCTUnwrap(center.added.last)
+    XCTAssertEqual(feedback.content.title, "Notification out of date")
+    XCTAssertNil(feedback.content.sound)
     XCTAssertFalse(channel.sentData.contains { (try? NotificationWireMessage.decode($0)?.kind) == 6 },
       "a queued action from the old alert must not target the newer revision")
 
     center.resumeCategoryRead()
     await updateTask.value
-    await waitFor("second revision") { center.added.count == 2 }
+    await waitFor("second revision") { center.added.last?.content.userInfo["anice.mirror.sequence"] as? Int64 == 2 }
   }
 
   func testDisconnectCancelsPresentationWaitingForCategoryRegistration() async throws {
@@ -571,8 +574,9 @@ final class NotificationMirrorTests: XCTestCase {
     XCTAssertFalse(notifier.handleAction(category: first.content.categoryIdentifier,
       action: UNNotificationDefaultActionIdentifier, identifier: first.identifier, userText: "",
       sourceEpoch: epoch, sourceSequence: 1))
+    let countAfterFeedback = center.added.count
     try await incoming(model, channel: channel, id: String(format: "%064x", 1), sequence: 1, token: "", title: "Late")
-    XCTAssertEqual(center.added.count, 129)
+    XCTAssertEqual(center.added.count, countAfterFeedback)
   }
 
   func testProgrammaticCleanupDoesNotDismissAndDeniedSubmissionHasNoActionTarget() async throws {
@@ -639,5 +643,102 @@ final class NotificationMirrorTests: XCTestCase {
     unsupportedModel.available(macPeerChannel)
     for _ in 0..<8 { await Task.yield() }
     XCTAssertTrue(macPeerChannel.sentData.isEmpty, "Mac must not start mirroring to another Mac peer")
+  }
+
+  func testCallActionResultFeedbackHandlesSuccessStaleUnsupportedDuplicatesDisconnectAndTimeout() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let notifier = MacNotificationMirrorNotifier(center: center)
+    let model = MacNotificationMirrorModel(notifier: notifier, actionTimeout: .milliseconds(300))
+    let channel = MockSecuredChannel(transport: "lan", peer: try androidPeer())
+    let otherPhone = MockSecuredChannel(transport: "ble", peer: try androidPeer())
+    try await ready(model, otherPhone)
+    try await ready(model, channel)
+
+    func postCall(sequence: Int64, actionTitle: String = "Answer") async throws -> String {
+      let actions: [SessionCBOR] = [.array([.integer(0), .text(actionTitle), .text("")])]
+      _ = await model.handle(try wire(2, [
+        .text(""), .text(id), .text(epoch), .integer(sequence),
+        .text("com.whatsapp"), .text("WhatsApp"), .text("Incoming call"), .text("Caller"), .array(actions),
+      ]), on: channel.descriptor)
+      let added = try XCTUnwrap(center.added.last)
+      XCTAssertEqual(added.content.userInfo["anice.mirror.sequence"] as? Int64, sequence)
+      XCTAssertTrue(notifier.handleAction(
+        category: added.content.categoryIdentifier,
+        action: "ANICE_MIRROR_ACTION_0",
+        identifier: added.identifier,
+        userText: "",
+        sourceEpoch: epoch,
+        sourceSequence: sequence))
+      func sentAction() -> NotificationWireMessage? {
+        channel.sentData.compactMap { try? NotificationWireMessage.decode($0) }.first {
+          $0.kind == 6 && (try? $0.number(3)) == sequence
+        }
+      }
+      await waitFor("kind 6 sent for revision \(sequence)") { sentAction() != nil }
+      let sent = try XCTUnwrap(sentAction())
+      return try sent.text(0)
+    }
+
+    let req0 = try await postCall(sequence: 1)
+    let beforeFeedback0 = center.added.count
+    let accepted = try wire(7, [.text(req0), .integer(0)])
+    _ = await model.handle(accepted, on: otherPhone.descriptor)
+    XCTAssertEqual(center.added.count, beforeFeedback0, "another peer cannot consume the original request")
+    _ = await model.handle(accepted, on: channel.descriptor)
+    XCTAssertEqual(center.added.count, beforeFeedback0 + 1)
+    let feedback = try XCTUnwrap(center.added.last)
+    XCTAssertEqual(feedback.content.title, "Request sent to phone")
+    XCTAssertNil(feedback.content.sound)
+    _ = await model.handle(accepted, on: channel.descriptor)
+    XCTAssertEqual(center.added.count, beforeFeedback0 + 1, "duplicate kind 7 must be ignored")
+
+    let req1 = try await postCall(sequence: 2)
+    _ = await model.handle(try wire(7, [.text(req1), .integer(1)]), on: channel.descriptor)
+    XCTAssertEqual(center.added.last?.content.title, "Notification out of date")
+    XCTAssertEqual(center.added.last?.identifier, feedback.identifier, "feedback replaces the previous notice")
+
+    let req2 = try await postCall(sequence: 3)
+    _ = await model.handle(try wire(7, [.text(req2), .integer(2)]), on: channel.descriptor)
+    XCTAssertEqual(center.added.last?.content.title, "Action unavailable")
+
+    let reqQuiet = try await postCall(sequence: 4, actionTitle: "Decline invitation")
+    let beforeQuiet = center.added.count
+    _ = await model.handle(try wire(7, [.text(reqQuiet), .integer(0)]), on: channel.descriptor)
+    XCTAssertEqual(center.added.count, beforeQuiet)
+
+    let reqTimeout = try await postCall(sequence: 5)
+    let beforeTimeout = center.added.count
+    await waitFor("timeout feedback") { center.added.count > beforeTimeout }
+    XCTAssertEqual(center.added.last?.content.title, "Couldn’t confirm the action")
+    _ = await model.handle(try wire(7, [.text(reqTimeout), .integer(0)]), on: channel.descriptor)
+    XCTAssertEqual(center.added.count, beforeTimeout + 1, "late results cannot replace timeout feedback")
+
+    _ = try await postCall(sequence: 6)
+    let beforeDisconnect = center.added.count
+    model.retired(channel.descriptor)
+    XCTAssertEqual(center.added.count, beforeDisconnect + 1)
+    XCTAssertEqual(center.added.last?.content.title, "Couldn’t confirm the action")
+  }
+
+  func testActionUsesReadyBluetoothWhileLanIsNegotiatingAndReportsSendFailure() async throws {
+    let center = MirrorNotificationCenterSpy()
+    let notifier = MacNotificationMirrorNotifier(center: center)
+    let model = MacNotificationMirrorModel(notifier: notifier)
+    let ble = MockSecuredChannel(transport: "ble", peer: try androidPeer())
+    let lan = MockSecuredChannel(transport: "lan", peer: ble.descriptor.peer)
+    try await ready(model, ble)
+    model.available(lan)
+    ble.onSendData = { bytes in
+      if try NotificationWireMessage.decode(bytes)?.kind == 6 { throw SessionBackpressure() }
+    }
+    _ = await model.handle(try notification(sequence: 1, title: "Incoming call",
+      actions: [[.integer(0), .text("Answer"), .text("")]]), on: ble.descriptor)
+    let request = try XCTUnwrap(center.added.last)
+    XCTAssertTrue(notifier.handleAction(category: request.content.categoryIdentifier,
+      action: "ANICE_MIRROR_ACTION_0", identifier: request.identifier, userText: "",
+      sourceEpoch: epoch, sourceSequence: 1))
+    await waitFor("send failure feedback") { center.added.last?.content.title == "Couldn’t confirm the action" }
+    XCTAssertEqual(ble.sentData.compactMap { try? NotificationWireMessage.decode($0) }.filter { $0.kind == 6 }.count, 1)
+    XCTAssertFalse(lan.sentData.contains { (try? NotificationWireMessage.decode($0)?.kind) == 6 })
   }
 }

@@ -142,7 +142,7 @@ fun NotificationSettings(
             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
             onClick = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
             modifier = permissionButtonModifier,
-        ) { Text("Enable notification access") }
+        ) { Text(if (permissions.notificationAccess) "Open Notification Access" else "Enable notification access") }
     }
     val phoneAction: @Composable () -> Unit = {
         OutlinedButton(
@@ -195,12 +195,16 @@ fun NotificationSettings(
                 Text("Allow notification access to mirror selected alerts.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 notificationAction()
+            } else if (!owner.listenerReady) {
+                Text("Access is allowed, but aniCe isn’t receiving alerts. If it stays disconnected, turn Notification Access for aniCe off and back on.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                notificationAction()
             }
             AutomaticConnectionToggle(
                 checked = mirrorIncomingCalls,
                 enabled = true,
                 label = "Mirror incoming calls",
-                description = "Answer or decline calls from your Mac (audio stays on phone).",
+                description = "Include supported calls from apps outside Select apps. Answer and Decline depend on the phone and source app.",
                 compact = true,
                 onCheckedChange = { enabled ->
                     owner.preferences.setMirrorIncomingCalls(enabled)

@@ -41,14 +41,14 @@ private object GuideCatalog {
             title = "Pairing & Connections",
             summary = "Nearby confirmation, QR scan, manual code entry, and device nicknames.",
             iconRes = R.drawable.ic_devices,
-            body = "In Devices, pair by comparing the six digits on both screens, scanning the Mac QR code on your phone, or entering its pairing code. Bluetooth reconnect follows the saved automatic preference; background reconnect also needs supported phone setup. Local-network setup follows Use local network automatically in Settings → Connection. Devices also lets you edit device names, choose private nicknames, pause connections or unpair.",
+            body = "Pair in Devices. For nearby pairing, compare all six digits on both screens and confirm on both. With Manual pair, scan the Mac’s QR code or enter its PIN on the phone.\n\nIf you’re already paired, check Bluetooth and Local network separately in Devices. Resume if paused, or reconnect without pairing again. Bluetooth reconnect in the background needs Android’s native approval. To set up Wi-Fi automatically, enable Use local network automatically in Settings → Connection on both devices.\n\nEdit This device to share a new name, or set a private nickname for a paired device.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.Permissions,
             title = "Permissions & access",
             summary = "Capabilities stay inactive until their matching phone or Mac permission is granted.",
             iconRes = R.drawable.ic_settings,
-            body = "Grant access on the device that needs it. Phone Settings → Permissions shows SMS, SIM selection, Find Phone notifications, Notification Access, call controls, caller ID and Do Not Disturb access. Pairing requests Bluetooth or camera access when needed. Mac Settings → Permissions shows Event Posting for Control Mac and Lock Mac, notifications and automatic pasteboard reading. Return to aniCe after changing system access.",
+            body = "Open Settings → Permissions in aniCe on the device that needs access. On the phone, this covers SMS, SIM selection, Find Phone notifications, Notification Access, SIM-call controls, optional caller ID and Do Not Disturb. Bluetooth and camera access are requested during setup when needed.\n\nOn Mac, Event Posting is used by Control Mac and Lock Mac. Notifications and automatic pasteboard reading are separate. Return to aniCe after changing access so the status can refresh.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.OpenLinkInMac,
@@ -62,14 +62,14 @@ private object GuideCatalog {
             title = "Send files & Edge Drop",
             summary = "Encrypted batches up to 128 files, phone Share sheet, and Mac Edge Drop.",
             iconRes = R.drawable.ic_file_send,
-            body = "Send 1–128 files from Send files, the phone Share → Send to Mac menu, or a Finder drop on Mac. Edge Drop uses the screen edge selected in Mac Settings → File transfer and accepts saved local files, not folders. Ready local-network connections are preferred; Bluetooth is slower. The receiver approves unless auto-receive is enabled for that sender. Interrupted transfers keep resume checkpoints for up to 15 minutes.",
+            body = "Open Features → Send files to send a batch of 1–128 files. On your phone, you can also use Share → Send to Mac. On Mac, drag local Finder files to the Edge Drop edge chosen in Settings → File transfer. Edge Drop accepts files, not folders.\n\nChoose Automatically receive files per sender and set the save folder in Mac Settings → File transfer or in the phone’s Send files panel. Without auto-receive, the receiver reviews the offer.\n\nLocal network is faster than Bluetooth. Interrupted transfers keep resume checkpoints for up to 15 minutes. Reconnect to the same peer; after local-network loss, continuing over Bluetooth needs your approval.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.ClipboardAndQuickSend,
             title = "Clipboard & Quick Settings tile",
             summary = "Manual or auto text sync, phone selection menu, and Send to Mac Quick Settings tile.",
             iconRes = R.drawable.ic_clipboard,
-            body = "Use Clipboard → Send clipboard or paste text manually. Automatic sharing is off by default; enable it for the peer on both devices. Android reads the clipboard only while aniCe has input focus. Add Send to Mac from Clipboard → Share → More options or Quick Settings → Edit. Tapping the tile opens a focused panel: review the captured item, then tap Send to Mac. Sensitive-marked clipboard items ask for confirmation. To open a link on Mac, use the phone selection or Share menu.",
+            body = "Use Clipboard → Send clipboard or paste text manually. For automatic sharing, turn it on for the peer on both devices. Android can read the clipboard only while aniCe has input focus.\n\nAdd the Send to Mac tile from Clipboard → Share → More options (Android 13+) or Quick Settings → Edit. The tile opens a panel showing size and sensitivity, then waits for Send to Mac. Sensitive items marked by the phone ask for confirmation. To open a link in the Mac browser, use the phone’s text selection or Share menu instead.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.PasteTrayAndPins,
@@ -83,28 +83,28 @@ private object GuideCatalog {
             title = "Control Mac (from phone)",
             summary = "Use your phone screen and keyboard as a wireless Mac trackpad and keyboard.",
             iconRes = R.drawable.ic_laptop,
-            body = "Connect over Bluetooth, open phone Features → Control Mac and tap Start control. Move with one finger, tap to click, long-press to drag, or use two fingers for right-click and scrolling. Type with the phone keyboard; Live typing includes composing text. Clear resets only the phone editor. Input goes to the focused Mac app and needs Mac Event Posting access. After moving the Mac caret or changing documents, stop and start control before typing again.",
+            body = "Connect over Bluetooth, open phone Features → Control Mac and tap Start control. If access is blocked, open Settings → Permissions → Event Posting in aniCe on Mac.\n\nMove with one finger, tap to click, long-press and move to drag, or scroll with two fingers. Type with the phone keyboard; Live typing also sends text as you compose it. Clear only resets the phone editor. If you move the text cursor on Mac or change documents, stop and start control before typing again.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.ControlAndroidAndFloatingKey,
             title = "Control Android & Floating Key",
-            summary = "Classic Bluetooth HID keyboard/trackpad from Mac and the Floating Key panel.",
+            summary = "Use your Mac keyboard and trackpad on the phone, with a floating shortcut.",
             iconRes = R.drawable.ic_keyboard,
-            body = "Trust the phone in aniCe, pair it separately in system Bluetooth Settings, then link that pairing in Mac Features → Control Android. Click the trackpad to arm pointer and keyboard input; turn off Use keyboard and trackpad together for separate areas. Toggle Floating Key from the menu bar or ⌥⌘K, configurable in Mac Settings → Shortcuts. Press ⌘⇧Esc while an input surface has focus to stop. Bluetooth HID input stays separate from aniCe’s BLE and local-network connections.",
+            body = "Pair in aniCe and in system Bluetooth Settings, then choose Link device in Mac Features → Control Android. Click the trackpad to start pointer and keyboard control. Turn off Use keyboard and trackpad together for separate input areas.\n\nOn Mac, ⌥⌘K shows or hides Floating Key; ⌃⌘K starts or stops typing through it. Those are defaults; see Mac Settings → Shortcuts for current bindings. When the controls have focus, ⌘⇧Esc stops input.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.MacDeskDeck,
             title = "Mac Desk Deck (from phone)",
             summary = "Live Mac CPU/memory/thermal meters, quick actions, audio output, and approved apps.",
             iconRes = R.drawable.ic_features,
-            body = "Open phone Features → Mac Desk Deck for CPU, memory, thermal pressure and device power readings. Stale readings keep their timestamp. Available Mac controls include input mute, Lock Mac, Screenshot, audio output and volume, approved apps and a Mac-local DND Shortcut; support and permissions determine which work. Ping Mac has separate readiness. Details → Keep awake while charging keeps the phone screen awake only while Desk Deck is visible and the phone has external power.",
+            body = "Open phone Features → Mac Desk Deck for CPU, memory, thermal pressure and battery. If readings are stale, open Details and tap Refresh readings. Ping Mac can work independently of the readings.\n\nInput mute, Lock Mac and audio controls depend on hardware and permissions. Screenshot opens capture controls on Mac; the image stays there. Allow app shortcuts in Mac Settings → Desk Deck. Choose the DND mode Shortcut in Mac Settings → Do Not Disturb.\n\nDetails → Keep awake while charging applies only while Desk Deck is visible and the phone has external power.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.NowPlayingAndAudio,
             title = "Now Playing & audio output",
             summary = "Track details, artwork, player selection and supported playback and volume controls.",
             iconRes = R.drawable.ic_media_note,
-            body = "Use Home, Features → Now Playing or the Mac menu bar for playback. Player selection, seeking, artwork and volume depend on the source and connection; artwork needs the local network. Audio stays on the Mac. Mac output volume and selected-player volume are separate controls, and phone volume keys adjust supported Mac output while playback is active. Grant player-control access in Mac Playback setup. Background phone media controls require existing companion ownership.",
+            body = "Open Features → Now Playing to control Mac playback. Home and the Mac menu bar also offer playback controls when available. Check Mac Playback setup if your player needs access. Artwork needs a local-network connection; audio stays on the Mac.\n\nOutput volume changes the Mac’s audio output; player volume changes only the selected player. Phone volume buttons can adjust supported Mac output while the playback panel is active. Phone notification and lock-screen controls need Android background connection setup.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.MessagesAndSms,
@@ -116,9 +116,9 @@ private object GuideCatalog {
         GuideTopicEntry(
             topic = GuideTopic.NotificationsAndCalls,
             title = "Mirrored notifications & call controls",
-            summary = "Forward chosen phone app alerts to Mac with inline reply, dismissal, and Answer/Decline.",
+            summary = "Choose which alerts appear on Mac and what to do when a call action fails.",
             iconRes = R.drawable.ic_phone,
-            body = "In phone Settings → Notification sync, enable Notification Access and choose apps under Select apps. Mac alerts expose replies, actions and dismissal only when the phone’s source notification supports them. Mirror incoming calls also uses Phone state and Answer phone calls access for SIM controls; Call log and Contacts add optional caller ID. Audio stays on the phone. Both devices need a live connection, and macOS notification and Focus settings control presentation.",
+            body = "On your phone, open Settings → Notification sync. Allow Notification Access and use Select apps for regular alerts. Mirror incoming calls adds supported call alerts from apps outside that list. Turning it off still allows alerts from selected apps.\n\nPhone state and Answer phone calls are for SIM-call controls. Call log and Contacts add optional SIM caller ID. With apps like WhatsApp, Android and the source app decide whether Answer or Decline works.\n\nRequest sent to phone confirms dispatch only. If the call is still ringing or aniCe can’t confirm the action, use the phone. Call audio stays on the phone. If no alerts arrive, check the connection in Devices, Notification sync on the phone, and notification and Focus settings on Mac.",
         ),
         GuideTopicEntry(
             topic = GuideTopic.DndSync,
@@ -139,7 +139,7 @@ private object GuideCatalog {
             title = "Menu bar, Favourites & Settings",
             summary = "Sidebar/menu-bar pins, Favourites reordering, global shortcuts, themes, and updates.",
             iconRes = R.drawable.ic_star,
-            body = "Add tools to Favourites or reorder them with right-click on Mac and long-press on phone. Mac feature menus also pin tools independently to the sidebar and menu bar. Mac Settings → Shortcuts configures Paste tray (default ⌥⌘V) and Floating Key (default ⌥⌘K); check there for custom bindings. Settings also holds appearance, 80%–120% text size, connection preferences and updates. New releases are reviewed before installation; automatic checking and beta inclusion are separate choices.",
+            body = "Star tools to add them to Favourites. To reorder, right-click on Mac or long-press on the phone. Mac feature menus also pin tools separately to the sidebar or menu bar. Closing the Mac window leaves its menu-bar companion running.\n\nMac Settings → Shortcuts shows the current bindings for Paste tray, Floating Key and Floating Key typing. Use Settings → Appearance for theme and text size. In Settings → Updates, you can check manually, choose automatic checks or opt into betas. Review release notes before installing.",
         ),
     )
 }

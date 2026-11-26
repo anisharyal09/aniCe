@@ -22,6 +22,7 @@ Shared product changes, repository structure, documentation and development conv
 ### Fixed
 
 - Keep Guide filter and expansion choices through Android recreation, make Guide bulk actions apply to every topic, and keep obsolete update actions from clearing a newer release notice.
+- Explain why mirrored call alerts may appear outside the selected-app list and show actionable feedback when an alert tap expires, fails or goes unconfirmed.
 - Include failing Android test names in GitHub annotations and preserve JUnit results when Gradle reports test failures.
 
 ## [v0.9.0-beta.4]

@@ -220,7 +220,8 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
     private val sourceIcons = object : LinkedHashMap<String, ByteArray>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ByteArray>?) = size > MAX_ICON_CACHE_ENTRIES
     }
-    private var listener: NotificationMirrorService? = null
+    private var listener: NotificationMirrorService? by mutableStateOf(null)
+    internal val listenerReady: Boolean get() = listener != null
     private var accessEnabled = false
     private val callStates = mutableMapOf<Int, Int>()
     private val callTelephonyManagers = mutableMapOf<Int, TelephonyManager>()

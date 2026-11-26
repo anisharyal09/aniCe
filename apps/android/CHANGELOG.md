@@ -7,6 +7,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 ### Changed
 
 - Add a categorized offline Guide with contextual help, wrapping sticky filters and entry points in Features and Settings. Explain connection, permission and device limits for clipboard sharing, input, notifications and Find Device.
+- Clarify call mirroring and show a recovery action when Notification Access is allowed but the listener isn’t connected.
 - Optimize **Control Mac** live typing with cursor-aware middle-edit reconciliation (`MoveCursor` via Left/Right arrow transitions instead of deleting and retyping trailing text) and add a **Clear** button in **Type on Mac** and fullscreen trackpad to reset only the phone's local buffer.
 - Refine **Mac Desk Deck** onto calm `surfaceContainer` sheets with soft catchlight highlights, tabular meters and volume readout, inline **Ping Mac**, and grouped **Output device** + **Output volume** controls.
 - Bound release-note Markdown blocks, lines and inline spans in linear time, add horizontal rules and duplicate version-heading suppression, and dismiss update review on activity termination without cancelling active downloads.

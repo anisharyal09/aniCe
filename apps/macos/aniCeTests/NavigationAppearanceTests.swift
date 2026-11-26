@@ -1285,8 +1285,9 @@ final class BetaUpdatePreferenceTests: XCTestCase {
           host.frame.size = host.fittingSize
           host.layoutSubtreeIfNeeded()
           XCTAssertEqual(host.bounds.width, width, accuracy: 1)
-          XCTAssertLessThan(host.bounds.height, width == 300 ? 520 : 380,
-            "Narrow recorder groups reflow below their labels; wide groups remain on one row")
+          // The typing-focus shortcut adds one recorder row, including a label line in the narrow layout.
+          XCTAssertLessThan(host.bounds.height, width == 300 ? 595 : 430,
+            "Three shortcut recorders reflow without runaway height")
           XCTAssertEqual(preferences.edge, .right, "Rendering must not change the selected edge")
           let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
           host.cacheDisplay(in: host.bounds, to: bitmap)
@@ -1512,15 +1513,15 @@ final class BetaUpdatePreferenceTests: XCTestCase {
       window.contentView = contextualHost
       contextualHost.frame.size = CGSize(width: 680, height: 780)
       try await settle(contextualHost)
-      XCTAssertTrue(try recognizedText(contextualHost).contains("Bluetooth reconnect"))
+      XCTAssertTrue(try recognizedText(contextualHost).contains("compare all six digits"))
       let pairingPoint = try XCTUnwrap(try textCenter(contextualHost, matching: "Pairing & Connections"))
       try click(contextualHost, in: window, at: pairingPoint)
       try await settle(contextualHost)
-      XCTAssertFalse(try recognizedText(contextualHost).contains("Bluetooth reconnect"))
+      XCTAssertFalse(try recognizedText(contextualHost).contains("compare all six digits"))
       let expandContext = try XCTUnwrap(try textCenter(contextualHost, matching: "Expand all"))
       try click(contextualHost, in: window, at: expandContext)
       try await settle(contextualHost)
-      XCTAssertTrue(try recognizedText(contextualHost).contains("Bluetooth reconnect"))
+      XCTAssertTrue(try recognizedText(contextualHost).contains("compare all six digits"))
     }
   }
 

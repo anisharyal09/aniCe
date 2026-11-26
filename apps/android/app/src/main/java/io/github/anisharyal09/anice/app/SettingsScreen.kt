@@ -119,7 +119,13 @@ fun SettingsScreen(
                     SettingsCategory.visibleEntries.forEach { category ->
                         FilterChip(
                             selected = activeCategory == category,
-                            onClick = { selectedCategory = category },
+                            onClick = {
+                                if (category != activeCategory) {
+                                    navigation.settingsSection = null
+                                    navigation.settingsCategory = category.name
+                                    selectedCategory = category
+                                }
+                            },
                             label = { Text(category.label) },
                             modifier = Modifier.defaultMinSize(minHeight = 32.dp),
                         )

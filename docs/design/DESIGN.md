@@ -155,6 +155,7 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 - Keep macOS and Android notification surfaces OS-owned: no custom banner renderer, private API, forced alert style or Focus bypass. Source-app icons remain content attachments on Mac, not replacement sender icons.
 - Mirrored notifications identify the source app and phone and group per phone/source. Only the first live revision may request a banner/sound; passive snapshots, revisions and source-icon enrichment stay list-only even while aniCe is foreground.
 - All actions bind to their original native submission and current feature operation/revision. Dismissal and programmatic cleanup are separate: cleanup does not send remote dismissal or approve/cancel an unrelated job.
+- Mirrored action feedback uses one silent native Mac notice. A submitted call action confirms dispatch; stale, unavailable and unconfirmed actions send the user back to the current notification on the phone.
 
 ### Clipboard
 - Automatic clipboard sharing toggle (default off). Off means manual sharing via explicit Send Clipboard action.

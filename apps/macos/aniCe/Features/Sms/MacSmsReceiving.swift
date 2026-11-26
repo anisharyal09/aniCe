@@ -105,7 +105,7 @@ extension MacSmsModel {
         subscriptionId: assembly.subscriptionId)
       conversation.live.append(row)
       noteArrival(conversation, assembly.messageId)
-      upsertCard(state, address: assembly.address, snippet: body, dateMillis: assembly.dateMillis, unread: assembly.unread ? 1 : 0, forceSnippet: true)
+      upsertCard(state, address: assembly.address, snippet: body, dateMillis: assembly.dateMillis, unread: assembly.unread ? 1 : 0)
     }
     if announced { return }
     state.status = "Message received"

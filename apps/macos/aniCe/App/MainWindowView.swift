@@ -308,7 +308,11 @@ struct MainWindowView: View {
     case .settings:
       if navigation.settingsRoute == .about { return nil }
       if navigation.settingsRoute == .identity { return .pairingAndConnection }
-      switch navigation.settingsSection {
+      if settingsCategory == .permissions { return .permissions }
+      if settingsCategory == .shortcuts { return .companionAndShortcuts }
+      guard let section = navigation.settingsSection,
+        settingsCategory == .all || MacSettingsCategory.category(for: section) == settingsCategory else { return nil }
+      switch section {
       case "permissions": return .permissions
       case "shortcuts": return .companionAndShortcuts
       case "clipboard": return .clipboardAndQuickSend
@@ -318,12 +322,7 @@ struct MainWindowView: View {
       case "now-playing": return .nowPlayingAndAudio
       case "desk-deck": return .macDeskDeck
       case "connection": return .pairingAndConnection
-      default:
-        switch settingsCategory {
-        case .permissions: return .permissions
-        case .shortcuts: return .companionAndShortcuts
-        default: return nil
-        }
+      default: return nil
       }
     }
   }
