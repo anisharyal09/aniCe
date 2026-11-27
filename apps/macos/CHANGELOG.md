@@ -9,8 +9,9 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Add default-on combined keyboard/pointer control in armed native pads, with a saved exclusive-mode fallback, release on mode changes and Caps Lock transition tracking from each activation.
 - Protect pinned clips from ordinary deletion, add local history Undo/Redo that respects current capacity and preserves newer captures, and add a separate persistent history pause with custom duration.
 - Add independent sidebar feature pins, wrapping Overview/companion shortcuts and a quiet companion support link.
-- Add configurable clipboard-tray and Floating Key global shortcuts with focused recording, Reset, collision reporting and preservation of the last working registration.
+- Add configurable shortcuts for Clipboard tray, Floating Key visibility and Floating Key active typing (⌃⌘K by default), with focused recording, Reset and collision feedback that preserves the last working binding.
 - Show a brief recipient-bound Edge Drop preparation acknowledgment before progress continues in aniCe; retain verified completion feedback.
+- Add light haptics at Mac file-drop targets and on verified Edge Drop completion on supported hardware.
 - Add default-on Native Glass with Standard/Vibrant styles across navigation and floating surfaces, native-material compatibility and a solid Reduce Transparency override.
 - Add Settings categories with Appearance under General, preserving access to existing preferences.
 

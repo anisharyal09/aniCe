@@ -389,8 +389,6 @@ class TransferController(
     /** Application.onCreate runs after Android attaches the base Context. */
     fun restoreOnLaunch() { restoreOnLaunchFlow() }
 
-    fun acceptIncomingOffer(tree: Uri, modes: Int) { acceptIncomingOfferFlow(tree, modes) }
-
     fun acceptIncomingOffer() { acceptSavedIncomingOfferFlow() }
 
     fun saveReceiveDestination(tree: Uri, modes: Int) { saveReceiveDestinationFlow(tree, modes) }

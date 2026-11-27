@@ -146,6 +146,59 @@ struct SmsView: View {
   }
 
   var body: some View {
+    rosterLifecycle
+      .onChange(of: model.notificationNavigationRevision) { _, _ in
+        selectPhone(model.selectedPhoneKey)
+        address = peer.map { model.selectedConversation($0) } ?? ""
+        draft = peer.map { model.draft($0, address: address) } ?? ""
+        query = ""
+        submittedDraft = nil
+        simRecoveryContext = nil
+        if let peer, !address.isEmpty, model.messages(peer, address: address).isEmpty {
+          model.requestMessages(peer, address: address)
+        }
+      }
+      .onChange(of: peer.map { model.draft($0, address: address) } ?? "") { _, value in
+        draft = value
+      }
+  }
+
+  // Lifecycle modifiers stay grouped in small view expressions so older SwiftUI compilers can type-check them.
+  private var rosterLifecycle: some View {
+    messageContentLifecycle
+      .onChange(of: scenePhase) { _, phase in
+        if phase == .active { Task { await model.refreshNotificationSettings() } }
+      }
+      .onChange(of: peer.map { model.sending($0) } ?? false) { wasSending, isSending in
+        if wasSending && !isSending, let peer, model.status(peer) == "Sent",
+           draft == submittedDraft {
+          model.saveDraft("", peer: peer, address: address)
+          draft = ""
+        }
+        if !isSending { submittedDraft = nil }
+      }
+      .onChange(of: peers.map { $0.peer.deviceId + ":" + $0.peer.fingerprint }) { _, _ in
+        model.retainDrafts(for: peers.map(\.peer)); select()
+      }
+      .onChange(of: peers.map { model.connected($0.peer) }) { _, _ in select() }
+  }
+
+  private var messageContentLifecycle: some View {
+    messagesContent
+      .onAppear { model.retainDrafts(for: peers.map(\.peer)); select() }
+      .task { await model.refreshNotificationSettings() }
+      // Opening a conversation is an invitation to type; the draft is one Return away.
+      .onChange(of: address) { _, next in
+        simRecoveryContext = nil
+        olderAnchorId = nil
+        composerFocused = !next.isEmpty
+        if let peer { model.selectConversation(peer, address: next) }
+        if let peer, !next.isEmpty { draft = model.draft(peer, address: next) }
+        else { draft = "" }
+      }
+  }
+
+  private var messagesContent: some View {
     GeometryReader { geometry in
       VStack(alignment: .leading, spacing: 10) {
         phonePicker
@@ -160,46 +213,6 @@ struct SmsView: View {
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-    .onAppear { model.retainDrafts(for: peers.map(\.peer)); select() }
-    .task { await model.refreshNotificationSettings() }
-    .onChange(of: scenePhase) { _, phase in
-      if phase == .active { Task { await model.refreshNotificationSettings() } }
-    }
-    .onChange(of: peer.map { model.sending($0) } ?? false) { wasSending, isSending in
-      if wasSending && !isSending, let peer, model.status(peer) == "Sent",
-         draft == submittedDraft {
-        model.saveDraft("", peer: peer, address: address)
-        draft = ""
-      }
-      if !isSending { submittedDraft = nil }
-    }
-    .onChange(of: peers.map { $0.peer.deviceId + ":" + $0.peer.fingerprint }) { _, _ in
-      model.retainDrafts(for: peers.map(\.peer)); select()
-    }
-    .onChange(of: peers.map { model.connected($0.peer) }) { _, _ in select() }
-    .onChange(of: model.notificationNavigationRevision) { _, _ in
-      selectPhone(model.selectedPhoneKey)
-      address = peer.map { model.selectedConversation($0) } ?? ""
-      draft = peer.map { model.draft($0, address: address) } ?? ""
-      query = ""
-      submittedDraft = nil
-      simRecoveryContext = nil
-      if let peer, !address.isEmpty, model.messages(peer, address: address).isEmpty {
-        model.requestMessages(peer, address: address)
-      }
-    }
-    .onChange(of: peer.map { model.draft($0, address: address) } ?? "") { _, value in
-      draft = value
-    }
-    // Opening a conversation is an invitation to type; the draft is one Return away.
-    .onChange(of: address) { _, next in
-      simRecoveryContext = nil
-      olderAnchorId = nil
-      composerFocused = !next.isEmpty
-      if let peer { model.selectConversation(peer, address: next) }
-      if let peer, !next.isEmpty { draft = model.draft(peer, address: next) }
-      else { draft = "" }
     }
   }
 

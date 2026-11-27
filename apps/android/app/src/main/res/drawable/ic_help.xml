@@ -4,4 +4,3 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
     <path android:fillColor="@android:color/transparent" android:strokeColor="#FF000000" android:strokeWidth="1.6" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M22,12 A10,10 0,1 1,2 12 A10,10 0,1 1,22 12 M9.35,9.3 A2.75,2.75 0,1 1,13.9,11.35 C12.95,12.1 12,12.55 12,13.9 M12,16.8 L12.01,16.8" />
 </vector>
-

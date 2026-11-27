@@ -12,6 +12,7 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 - Refine **Mac Desk Deck** onto calm `surfaceContainer` sheets with soft catchlight highlights, tabular meters and volume readout, inline **Ping Mac**, and grouped **Output device** + **Output volume** controls.
 - Bound release-note Markdown blocks, lines and inline spans in linear time, add horizontal rules and duplicate version-heading suppression, and dismiss update review on activity termination without cancelling active downloads.
 - Expand native transfer progress with current-file context and private visibility, update state/job actions immediately and open only the original active transfer from a notice.
+- Show a **Files received** notification when a receive finishes in the background.
 - Place Find Mac below Desk Deck status with independent capability/readiness and peer-scoped feedback; move incoming Find Phone notification recovery to Permissions and keep its native ringing service/receiver unchanged.
 - Redirect saved Find Device routes, order and favourites into one Desk Deck entry; preserve explicitly empty favourites, wrap Mac choices and keep compact last-reading timestamps visible.
 - Add direct SIM-selection permission recovery and refresh choices on conversation resume; serialize local/remote SIM-list reads off the UI thread and fence obsolete request results.
@@ -23,6 +24,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Verify the bytes Android storage saved before publishing a receive. Publish known file types, including JPEGs, with the correct type in Downloads.
+- Resume pending Downloads files even when Android normalizes their temporary names.
 - Retain the Guide category, scroll position and expanded topics when the activity is recreated. Expand all and Collapse all use the same state as individual topics.
 - Withdraw the incoming-offer notice while the app is open without disturbing ongoing transfer progress. Ignore obsolete or untagged update taps without clearing the current notice.
 - Remove redundant switch semantics, guard disabled accessibility activation and align presentation checks with Compose's role; initialize emulator accessibility before permission fixtures.

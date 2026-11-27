@@ -118,7 +118,7 @@ private struct GuideTopicEntry: Identifiable {
         title: "Menu bar, Favourites & Settings",
         summary: "Sidebar/menu-bar pins, Favourites reordering, global shortcuts, Glass, and updates.",
         symbol: "star",
-        body: "Star tools to add them to Favourites. To reorder, right-click on Mac or long-press on the phone. Mac feature menus also pin tools separately to the sidebar or menu bar. Closing the Mac window leaves its menu-bar companion running.\n\nMac Settings → Shortcuts shows Paste tray (\(tray)), Floating Key (\(floatingKey)) and Floating Key typing (\(floatingKeyInput)). Use Settings → Appearance for theme and text size. In Settings → Updates, you can check manually, choose automatic checks or opt into betas. Review release notes before installing."
+        body: "Star tools to add them to Favourites. To reorder, right-click on Mac or long-press on the phone. Mac feature menus also pin tools separately to the sidebar or menu bar. Closing the Mac window leaves its menu-bar companion running.\n\nMac Settings → Shortcuts shows Clipboard tray (\(tray)), Floating Key (\(floatingKey)) and \(GlobalShortcutAction.floatingKeyInput.title) (\(floatingKeyInput)). Use Settings → Appearance for theme and text size. In Settings → Updates, you can check manually, choose automatic checks or opt into betas. Review release notes before installing."
       ),
     ]
   }

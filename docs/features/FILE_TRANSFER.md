@@ -16,6 +16,8 @@ The Shelf edge selector stays at the trailing edge of its settings row. Its labe
 
 An accepted drop briefly names its target and follows its own preparation, approval, sending and verification state. Only receiver-verified completion shows **Sent**. Detailed progress remains in aniCe's existing transfer activity. Leaving the shelf does not cancel the transfer.
 
+On Mac hardware that supports haptic feedback, the Edge Drop shelf and in-window target can give a light pulse when a drag enters or a drop is accepted. Edge Drop also gives feedback after verified completion. A pulse at drop time only means the target accepted the drop; check the transfer status for the result.
+
 On Android, **Share → Send to Mac** sends one or more selected files to the connected compatible Mac. The send is pinned to that Mac. Busy or disconnected states offer recovery instead of queuing or redirecting the batch. Text and link sharing keep their existing clipboard flow.
 
 Mac sends prefer a ready LAN channel and request bounded setup when needed. If setup fails, the files remain pending with **Retry**, **Send over Bluetooth**, and **Cancel**; Bluetooth never starts silently. Android may use an already-capable BLE channel while LAN setup runs. A batch stays bound to its trusted peer.
@@ -32,7 +34,9 @@ On Android Home, a pending manual offer appears below the connected device summa
 
 Android can automatically approve an incoming offer in the background when existing companion or approved transfer-service ownership permits it. Otherwise the offer stays pending until aniCe opens. An already-approved transfer can continue under its connected-device service without automatic Bluetooth setup; new automatic connection attempts still follow the Bluetooth/LAN preferences and native ownership rules.
 
-Files are written to job-owned partials, verified against their SHA-256 offer, then published without overwriting existing files. Android keeps default MediaStore entries pending until publication succeeds. Custom document providers are checked before use, but they do not guarantee atomic rename.
+Files are written to job-owned partials and published without overwriting existing files. Before publication, Android reads the saved partial back from MediaStore or the chosen folder provider and checks its size and SHA-256 against the sender's offer. A mismatch fails the transfer and removes the incomplete copy. Custom document providers are checked before use, but they do not guarantee atomic rename.
+
+At the default Android destination, photos such as JPEGs keep their original bytes and are published with their image type so Android can index them for gallery apps. If a gallery app filters Downloads, open the photo from `Downloads/aniCe` in Files. To replace an older damaged copy, send the original again; aniCe saves a separate copy.
 
 ## Progress and recovery
 
