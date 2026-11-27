@@ -2,6 +2,7 @@
 // Verifies conditional release checks, saved notices and the Atom fallback.
 import Foundation
 import AppKit
+import UserNotifications
 import XCTest
 @testable import aniCe
 
@@ -549,5 +550,68 @@ final class ReleaseDiscoveryTests: XCTestCase {
     await model.check(force: true)
     XCTAssertEqual(model.release?.version.tag, "v\(major).1.0")
     XCTAssertTrue(model.reviewing)
+  }
+
+  @MainActor func testReviewNotificationTagWindowCloseAndTerminationLifecycle() async throws {
+    let installed = try XCTUnwrap(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
+    let major = try XCTUnwrap(installed.split(separator: ".").first.flatMap { Int($0) }) + 1
+    let tag = "v\(major).0.0"
+    let transport = FakeReleaseTransport([releaseResponse(tag)])
+    let name = "aniCe.UpdateTests.\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    var visibleNotice: String?
+    let model = MacUpdateModel(discovery: MacReleaseDiscovery(defaults: defaults, transport: transport),
+      automaticLifecycleEnabled: true, clearNotification: { visibleNotice = nil })
+    defer { model.stopAutomaticChecks() }
+    await model.check(force: true)
+    XCTAssertEqual(model.release?.version.tag, tag)
+    visibleNotice = tag
+
+    let delegate = AppDelegate()
+    var reopened = 0
+    delegate.reopenMainWindow = { reopened += 1 }
+    delegate.configureNotifications(findDevice: MacFindDeviceNotifier(),
+      transfer: MacTransferNotifier(model: MacTransferModel(), openMainWindow: {}),
+      updates: model)
+
+    // A stale notification for an older version must not open the review or bring forward the window.
+    delegate.handleNotificationAction(category: MacUpdateModel.notificationCategory,
+      action: UNNotificationDefaultActionIdentifier, identifier: "anice.update", updateTag: "v0.8.0")
+    delegate.handleNotificationAction(category: MacUpdateModel.notificationCategory,
+      action: UNNotificationDefaultActionIdentifier, identifier: "anice.update")
+    XCTAssertFalse(model.reviewing)
+    XCTAssertEqual(reopened, 0)
+    XCTAssertEqual(visibleNotice, tag)
+
+    delegate.handleNotificationAction(category: MacUpdateModel.notificationCategory,
+      action: UNNotificationDefaultActionIdentifier, identifier: "anice.update", updateTag: tag)
+    XCTAssertTrue(model.reviewing)
+    XCTAssertEqual(reopened, 1)
+    XCTAssertNil(visibleNotice)
+
+    // Closing the main window dismisses review without resurrecting it or issuing an extra network check.
+    defaults.set(0, forKey: "updates.lastSuccess")
+    defaults.set(0, forKey: "updates.lastAttempt")
+    model.windowClosed()
+    XCTAssertFalse(model.reviewing)
+    await Task.yield()
+    let callsAfterClose = await transport.recorded()
+    XCTAssertEqual(callsAfterClose.count, 1)
+
+    // App termination dismisses any open review and cancels an in-flight metadata check.
+    let suspended = SuspendedReleaseTransport()
+    let termModel = MacUpdateModel(discovery: MacReleaseDiscovery(defaults: defaults, transport: suspended),
+      automaticLifecycleEnabled: true)
+    XCTAssertTrue(termModel.review(expectedTag: tag))
+    XCTAssertTrue(termModel.reviewing)
+    let inFlight = Task { await termModel.check(force: true) }
+    let started = await suspended.waitForRequest()
+    XCTAssertTrue(started)
+    termModel.prepareForTermination()
+    XCTAssertFalse(termModel.reviewing)
+    XCTAssertFalse(termModel.automaticMonitoringActive)
+    await suspended.finish(response(200, "[]"))
+    await inFlight.value
+    XCTAssertFalse(termModel.review(expectedTag: tag), "Terminating owner must reject late review opens")
   }
 }

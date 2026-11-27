@@ -220,7 +220,8 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
     private val sourceIcons = object : LinkedHashMap<String, ByteArray>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ByteArray>?) = size > MAX_ICON_CACHE_ENTRIES
     }
-    private var listener: NotificationMirrorService? = null
+    private var listener: NotificationMirrorService? by mutableStateOf(null)
+    internal val listenerReady: Boolean get() = listener != null
     private var accessEnabled = false
     private val callStates = mutableMapOf<Int, Int>()
     private val callTelephonyManagers = mutableMapOf<Int, TelephonyManager>()
@@ -413,10 +414,6 @@ class NotificationMirrorController(context: Context) : FeatureHandler {
     }
 
     private fun hasCallPermission(permission: String) = ContextCompat.checkSelfPermission(app, permission) == PackageManager.PERMISSION_GRANTED
-
-    private fun hasPhoneCallControlPermissions() =
-        hasCallPermission(Manifest.permission.READ_PHONE_STATE) &&
-            hasCallPermission(Manifest.permission.ANSWER_PHONE_CALLS)
 
     private fun isSystemPhoneCallNotification(sbn: StatusBarNotification): Boolean {
         val notification = sbn.notification
@@ -995,6 +992,9 @@ class CallIdentityReceiver : BroadcastReceiver() {
             owner.clearCallerIdentity()
             return
         }
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) return
+        val telephony = context.getSystemService(TelephonyManager::class.java) ?: return
+        if (runCatching { telephony.callState }.getOrDefault(TelephonyManager.CALL_STATE_IDLE) != TelephonyManager.CALL_STATE_RINGING) return
         val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)?.takeIf(String::isNotBlank) ?: return
         owner.incomingCallerNumber(number)
     }

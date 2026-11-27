@@ -12,7 +12,6 @@ import io.github.anisharyal09.anice.infrastructure.connections.ChannelDescriptor
 import io.github.anisharyal09.anice.infrastructure.connections.DataHandling
 import io.github.anisharyal09.anice.infrastructure.connections.FeatureHandler
 import io.github.anisharyal09.anice.infrastructure.connections.SecuredChannel
-import io.github.anisharyal09.anice.infrastructure.session.Cbor
 import io.github.anisharyal09.anice.infrastructure.session.SessionBackpressure
 import io.github.anisharyal09.anice.infrastructure.session.SessionException
 import io.github.anisharyal09.anice.infrastructure.session.SessionFailure
@@ -21,7 +20,6 @@ import kotlinx.coroutines.*
 import kotlin.coroutines.coroutineContext
 import java.io.File
 import java.io.FileInputStream
-import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.channels.Channel
 
@@ -132,6 +130,18 @@ class TransferController(
     internal var pickerRelease: Job? = null
     var selectingFiles = false; internal set
     internal val operationID get() = currentBatch?.id?.let(UUID::fromString) ?: epoch
+    private var notificationReviewOperation by mutableStateOf<String?>(null)
+    val openWorkspaceRequest: Boolean get() = notificationReviewOperation?.let {
+        isBusy && it == operationID.toString()
+    } == true
+    fun openFromNotification(operationId: String) {
+        if (isBusy && operationId == operationID.toString()) notificationReviewOperation = operationId
+    }
+    fun workspaceOpened(): Boolean {
+        val current = openWorkspaceRequest
+        notificationReviewOperation = null
+        return current
+    }
     fun beginPicker() {
         pickerRelease?.cancel(); pickerRelease = null
         selectingFiles = true
@@ -379,8 +389,6 @@ class TransferController(
     /** Application.onCreate runs after Android attaches the base Context. */
     fun restoreOnLaunch() { restoreOnLaunchFlow() }
 
-    fun acceptIncomingOffer(tree: Uri, modes: Int) { acceptIncomingOfferFlow(tree, modes) }
-
     fun acceptIncomingOffer() { acceptSavedIncomingOfferFlow() }
 
     fun saveReceiveDestination(tree: Uri, modes: Int) { saveReceiveDestinationFlow(tree, modes) }
@@ -392,6 +400,10 @@ class TransferController(
     fun rejectIncomingOffer(reason: Long = 0L) { rejectIncomingOfferFlow(reason) }
 
     fun cancelTransfer(local: Boolean = true) { cancelTransferFlow(local) }
+
+    internal fun cancelFromNotification(operationId: String) {
+        if (isBusy && operationId == operationID.toString()) cancelTransfer()
+    }
 
     fun dismiss() { dismissFlow() }
 

@@ -139,7 +139,8 @@ class SmsControllerTests {
     private class FakeSubscriptions : SmsSubscriptionSource {
         var listing = SmsSubscriptionListing(0, emptyList())
         var modems = 1
-        override fun list() = listing
+        var read: (() -> SmsSubscriptionListing)? = null
+        override fun list() = read?.invoke() ?: listing
         override fun modemCount() = modems
     }
     private class FakeSender : SmsSender {
@@ -541,6 +542,95 @@ class SmsControllerTests {
         h.owner.handle(lan.descriptor, SmsWireMessage.of(15, text(request())).encode())
         until { lan.sent.count { it.kind == 16L } == 3 }
         assertEquals(5L, lan.sent.filter { it.kind == 16L }.last().number(1))
+        h.subscriptions.listing = SmsSubscriptionListing(0, emptyList())
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(15, text(request())).encode())
+        until { lan.sent.count { it.kind == 16L } == 4 }
+        val empty = lan.sent.last { it.kind == 16L }
+        assertEquals(0L, empty.number(1))
+        assertTrue((empty.fields[2] as Cbor.Array).value.isEmpty())
+        h.subscriptions.read = { throw SecurityException("Phone access revoked") }
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(15, text(request())).encode())
+        until { lan.sent.count { it.kind == 16L } == 5 }
+        assertEquals(1L, lan.sent.last { it.kind == 16L }.number(1))
+        h.subscriptions.read = { throw IllegalStateException("Subscription service unavailable") }
+        h.owner.handle(lan.descriptor, SmsWireMessage.of(15, text(request())).encode())
+        until { lan.sent.count { it.kind == 16L } == 6 }
+        assertEquals(5L, lan.sent.last { it.kind == 16L }.number(1))
+        h.owner.invalidate()
+    }
+
+    @Test fun simReadRunsOffTheFeatureOwnerAndLateResultsCannotCrossChannelRetirement() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        val ownerThread = Thread.currentThread()
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val resume = java.util.concurrent.CountDownLatch(1)
+        val reads = java.util.concurrent.atomic.AtomicInteger()
+        var providerThread: Thread? = null
+        h.subscriptions.read = {
+            reads.incrementAndGet()
+            providerThread = Thread.currentThread()
+            entered.countDown()
+            check(resume.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            SmsSubscriptionListing(0, listOf(SmsSubscription(7, 0, "Personal", true)))
+        }
+        try {
+            val id = request()
+            h.owner.handle(lan.descriptor, SmsWireMessage.of(15, text(id)).encode())
+            until { entered.count == 0L }
+            val nativeRead = requireNotNull(h.owner.servingSims.values.single().job)
+            assertNotSame(ownerThread, providerThread)
+            h.owner.handle(lan.descriptor, SmsWireMessage.of(15, text(id)).encode())
+            assertEquals("Duplicate pending requests share the one native read", 1, reads.get())
+            h.owner.retired(lan.descriptor)
+            resume.countDown()
+            withTimeout(5000) { nativeRead.join() }
+            assertTrue(h.owner.servingSims.isEmpty())
+            assertTrue(lan.sent.none { it.kind == 16L })
+            assertFalse(h.owner.connected(lan.descriptor.peer))
+        } finally {
+            resume.countDown()
+            h.owner.invalidate()
+        }
+    }
+
+    @Test fun newerSimRequestCancelsTheOlderReadWithoutChangingDraftOrSendChoice() = runBlocking {
+        val h = Harness(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
+        val lan = Channel()
+        ready(h, lan)
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val resume = java.util.concurrent.CountDownLatch(1)
+        val calls = java.util.concurrent.atomic.AtomicInteger()
+        h.subscriptions.read = {
+            if (calls.incrementAndGet() == 1) {
+                entered.countDown()
+                check(resume.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            }
+            SmsSubscriptionListing(1, emptyList())
+        }
+        try {
+            h.owner.saveDraft("local|42", "Keep this draft")
+            h.owner.chooseDraftSubscription("local|42", 7)
+            val first = request()
+            h.owner.handle(lan.descriptor, SmsWireMessage.of(15, text(first)).encode())
+            until { entered.count == 0L }
+            val firstRead = requireNotNull(h.owner.servingSims.values.single().job)
+            val second = request()
+            h.owner.handle(lan.descriptor, SmsWireMessage.of(15, text(second)).encode())
+            assertEquals("Replacement waits for the old native read instead of overlapping it", 1, calls.get())
+            resume.countDown()
+            until { lan.sent.any { it.kind == 16L && it.text(0) == second } }
+            withTimeout(5000) { firstRead.join() }
+            until { h.owner.servingSims.isEmpty() }
+            assertEquals(listOf(second), lan.sent.filter { it.kind == 16L }.map { it.text(0) })
+            assertEquals("Keep this draft", h.owner.draft("local|42"))
+            assertEquals(7, h.owner.draftSubscription("local|42"))
+            assertTrue(h.sender.bodies.isEmpty())
+        } finally {
+            resume.countDown()
+            h.owner.invalidate()
+        }
     }
 
     @Test fun searchStreamsHitsUnderTheRequestIdAndCancelsStalePages() = runBlocking {

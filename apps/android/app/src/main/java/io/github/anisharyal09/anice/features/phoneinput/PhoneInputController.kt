@@ -60,6 +60,8 @@ class PhoneInputController(
         private set
     var status by mutableStateOf("Connect to your Mac over Bluetooth to get started.")
         private set
+    var macInputSetupNeeded by mutableStateOf(false)
+        private set
 
     val active: Boolean get() = state == PhoneInputState.ACTIVE
 
@@ -148,6 +150,7 @@ class PhoneInputController(
             when (action) {
                 is PhoneInputTextAction.Commit -> 1
                 is PhoneInputTextAction.Backspace -> action.count * 2
+                is PhoneInputTextAction.MoveCursor -> kotlin.math.abs(action.delta) * 2
             }
         }
         if (session.sequence + messageCount + TERMINAL_MESSAGES > MAX_SEQUENCE) {
@@ -171,24 +174,32 @@ class PhoneInputController(
                         4, Cbor.Text(session.id), sequence(session), Cbor.Text(action.value),
                     ),
                 )
-                is PhoneInputTextAction.Backspace -> repeat(action.count) {
-                    enqueueSession(
-                        current, session, PhoneInputMessage.of(
-                            5, Cbor.Text(session.id), sequence(session), Cbor.Integer(BACKSPACE_USAGE.toLong()),
-                            Cbor.Integer(0), Cbor.Bool(true),
-                        ),
-                    )
-                    enqueueSession(
-                        current, session, PhoneInputMessage.of(
-                            5, Cbor.Text(session.id), sequence(session), Cbor.Integer(BACKSPACE_USAGE.toLong()),
-                            Cbor.Integer(0), Cbor.Bool(false),
-                        ),
-                    )
+                is PhoneInputTextAction.Backspace -> enqueueKeyTaps(current, session, BACKSPACE_USAGE, action.count)
+                is PhoneInputTextAction.MoveCursor -> if (action.delta != 0) {
+                    val usage = if (action.delta < 0) LEFT_ARROW_USAGE else RIGHT_ARROW_USAGE
+                    enqueueKeyTaps(current, session, usage, kotlin.math.abs(action.delta))
                 }
             }
         }
         pump(current)
         return true
+    }
+
+    private fun enqueueKeyTaps(current: Link, session: ActiveSession, usage: Int, count: Int) {
+        repeat(count) {
+            enqueueSession(
+                current, session, PhoneInputMessage.of(
+                    5, Cbor.Text(session.id), sequence(session), Cbor.Integer(usage.toLong()),
+                    Cbor.Integer(0), Cbor.Bool(true),
+                ),
+            )
+            enqueueSession(
+                current, session, PhoneInputMessage.of(
+                    5, Cbor.Text(session.id), sequence(session), Cbor.Integer(usage.toLong()),
+                    Cbor.Integer(0), Cbor.Bool(false),
+                ),
+            )
+        }
     }
 
     fun sendKey(usage: Int, modifiers: Int, pressed: Boolean): Boolean {
@@ -412,12 +423,14 @@ class PhoneInputController(
                 sendTerminal(session, current)
             } else {
                 activeSession = ActiveSession(request.id)
+                macInputSetupNeeded = false
                 state = PhoneInputState.ACTIVE
                 status = "Typing to ${request.peer.deviceName}."
             }
             1L -> { state = PhoneInputState.IDLE; status = "Your Mac is not ready to receive input yet." }
             2L -> {
                 state = PhoneInputState.IDLE
+                macInputSetupNeeded = true
                 status = "Allow aniCe in Device Control and Data Access on your Mac, then try again."
             }
             else -> { state = PhoneInputState.IDLE; status = "Update aniCe on your Mac to enable phone typing." }
@@ -458,7 +471,10 @@ class PhoneInputController(
 
     private fun endedStatus(reason: Long) = when (reason) {
         0L -> "The Mac stopped phone input."
-        1L -> "macOS input access changed. Typing stopped."
+        1L -> {
+            macInputSetupNeeded = true
+            "macOS input access changed. Typing stopped."
+        }
         2L -> "The Mac rejected an input event. Typing stopped."
         else -> "The Mac input surface closed. Typing stopped."
     }
@@ -554,6 +570,8 @@ class PhoneInputController(
 
     companion object {
         private const val BACKSPACE_USAGE = 0x2A
+        private const val RIGHT_ARROW_USAGE = 0x4F
+        private const val LEFT_ARROW_USAGE = 0x50
         private const val START_ACCEPTED = 0L
         private const val START_TIMEOUT_MILLIS = 15_000L
         private const val MAX_QUEUED_EVENTS = 768

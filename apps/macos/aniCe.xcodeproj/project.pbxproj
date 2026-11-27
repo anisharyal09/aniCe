@@ -121,6 +121,7 @@
 		877A16FC897B3FDF1BE11F56 /* aniCe/App/FeaturesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DCA2E4BCAC982F9693EBC96; };
 		A420E9395D8F99F11FF1B3B5 /* aniCeTests/IdentityFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65EFE3CD37ACE93ADAFC6439; };
 		251558678B0CAD9ADEE2BCAD /* aniCeTests/ConnectionLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4778C61A4CAEABE1F0BF7DC6; };
+		B7E49210A3C5481290D14E01 /* aniCe/App/GuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7E49210A3C5481290D14E02; };
 		AF534A4C839E1C4955C76C84 /* aniCe/App/WindowDestinations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47CC8A5063B9EEC3D1AF88CB; };
 		0C2BBFAFB43C718F7D80D7D2 /* aniCe/Features/NowPlaying/PlayerVolumeWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066503AC0B0272998F8382D3; };
 		1CAD97B955DF438A4E72570A /* aniCe/Features/NowPlaying/PlayerVolumeEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = D31882EFF5623B3766EF77BE; };
@@ -320,6 +321,7 @@
 		9DCA2E4BCAC982F9693EBC96 /* aniCe/App/FeaturesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/App/FeaturesView.swift"; sourceTree = SOURCE_ROOT; };
 		65EFE3CD37ACE93ADAFC6439 /* aniCeTests/IdentityFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/IdentityFixture.swift"; sourceTree = SOURCE_ROOT; };
 		4778C61A4CAEABE1F0BF7DC6 /* aniCeTests/ConnectionLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCeTests/ConnectionLifecycleTests.swift"; sourceTree = SOURCE_ROOT; };
+		B7E49210A3C5481290D14E02 /* aniCe/App/GuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/App/GuideView.swift"; sourceTree = SOURCE_ROOT; };
 		47CC8A5063B9EEC3D1AF88CB /* aniCe/App/WindowDestinations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/App/WindowDestinations.swift"; sourceTree = SOURCE_ROOT; };
 		066503AC0B0272998F8382D3 /* aniCe/Features/NowPlaying/PlayerVolumeWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/PlayerVolumeWire.swift"; sourceTree = SOURCE_ROOT; };
 		D31882EFF5623B3766EF77BE /* aniCe/Features/NowPlaying/PlayerVolumeEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "aniCe/Features/NowPlaying/PlayerVolumeEvent.swift"; sourceTree = SOURCE_ROOT; };
@@ -449,6 +451,7 @@
 				ED339B5EB815B646CB5385C6,
 				D31882EFF5623B3766EF77BE,
 				066503AC0B0272998F8382D3,
+				B7E49210A3C5481290D14E02,
 				47CC8A5063B9EEC3D1AF88CB,
 				4778C61A4CAEABE1F0BF7DC6,
 				65EFE3CD37ACE93ADAFC6439,
@@ -895,6 +898,7 @@
 				2F4C3E959C2B63EEAE37D4AB,
 				1CAD97B955DF438A4E72570A,
 				0C2BBFAFB43C718F7D80D7D2,
+				B7E49210A3C5481290D14E01,
 				AF534A4C839E1C4955C76C84,
 				877A16FC897B3FDF1BE11F56,
 				4206965564F9361F5C4C2AA4,

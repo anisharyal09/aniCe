@@ -10,14 +10,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import io.github.anisharyal09.anice.R
-import io.github.anisharyal09.anice.features.finddevice.FindDeviceController
 import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
@@ -30,7 +33,6 @@ fun FeaturesScreen(
     favouritesOnly: Boolean = false,
     trustedPeersLoaded: Boolean = false,
 ) {
-    val findDevice = session.findDevice
     val panel = navigation.featurePanel
     if (!favouritesOnly && panel == AppFeature.Sms) {
         Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -41,8 +43,8 @@ fun FeaturesScreen(
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(panel.label, style = MaterialTheme.typography.titleMedium)
             if (panel == AppFeature.Playback) io.github.anisharyal09.anice.features.nowplaying.MediaView(session.media)
-            else if (panel == AppFeature.Clipboard) io.github.anisharyal09.anice.features.clipboard.ClipboardView(session.clipboard, peers)
-            else if (panel == AppFeature.Sms) io.github.anisharyal09.anice.features.sms.SmsView(session.sms, peers)
+            else if (panel == AppFeature.Clipboard) io.github.anisharyal09.anice.features.clipboard.ClipboardView(
+                session.clipboard, peers, openSettings = { navigation.openSettings("Clipboard") })
             else io.github.anisharyal09.anice.features.transfer.TransferView(session.transfer, peers = peers)
         }
     } else if (!favouritesOnly && panel == AppFeature.PhoneInput) {
@@ -67,17 +69,13 @@ fun FeaturesScreen(
             io.github.anisharyal09.anice.features.deskdeck.DeskDeckView(
                 session.deskDeck,
                 session.devicePower,
+                session.findDevice,
                 peers.filter { it.peer.platform == "macos" },
                 trustedPeersLoaded,
                 onConnect = session::connect,
                 onPairMac = { navigation.select(AppDestination.Devices, unpaired = peers.none { it.peer.platform == "macos" }) },
                 modifier = Modifier.weight(1f),
             )
-        }
-    } else if (!favouritesOnly && navigation.findDetails) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text(AppFeature.FindDevice.label, style = MaterialTheme.typography.titleMedium)
-            io.github.anisharyal09.anice.features.finddevice.FindDeviceView(findDevice, peers)
         }
     } else {
         val features = if (favouritesOnly) AppFeature.favourites(navigation.favouriteFeatures)
@@ -112,6 +110,51 @@ fun FeaturesScreen(
                     canMoveUp = index > 0,
                     canMoveDown = index < features.lastIndex)
             }
+            if (!favouritesOnly) {
+                item(key = "more-built-in") {
+                    Column(Modifier.fillMaxWidth().padding(top = 18.dp)) {
+                        HorizontalDivider(
+                            thickness = 0.5.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                        )
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .clickable(role = Role.Button, onClickLabel = "Open Guide") {
+                                    navigation.openGuide(null)
+                                }
+                                .padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Text(
+                                text = buildAnnotatedString {
+                                    append("More built into ani")
+                                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) {
+                                        append("Ce")
+                                    }
+                                    append(" — ")
+                                    withStyle(SpanStyle(fontWeight = FontWeight.Medium)) {
+                                        append("see guide")
+                                    }
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Icon(
+                                painter = painterResource(R.drawable.ic_chevron_forward),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -123,7 +166,7 @@ internal fun FeatureEntry(
     canMoveUp: Boolean, canMoveDown: Boolean,
 ) {
     var actionsExpanded by remember(feature) { mutableStateOf(false) }
-    val icon = when (feature) { AppFeature.Playback -> R.drawable.ic_media_play; AppFeature.Files -> R.drawable.ic_file_send; AppFeature.FindDevice -> R.drawable.ic_find_device; AppFeature.Clipboard -> R.drawable.ic_clipboard; AppFeature.DeskDeck -> R.drawable.ic_laptop; AppFeature.PhoneInput -> R.drawable.ic_keyboard; AppFeature.Sms -> R.drawable.ic_sms }
+    val icon = when (feature) { AppFeature.Playback -> R.drawable.ic_media_play; AppFeature.Files -> R.drawable.ic_file_send; AppFeature.Clipboard -> R.drawable.ic_clipboard; AppFeature.DeskDeck -> R.drawable.ic_laptop; AppFeature.PhoneInput -> R.drawable.ic_keyboard; AppFeature.Sms -> R.drawable.ic_sms }
     Box(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth()) {
             Row(
@@ -185,9 +228,9 @@ private fun featureStatus(feature: AppFeature, session: io.github.anisharyal09.a
         is io.github.anisharyal09.anice.features.transfer.TransferState.Connecting -> "Connecting"
         is io.github.anisharyal09.anice.features.transfer.TransferState.WaitingForPeerApproval -> "Waiting for approval"
         is io.github.anisharyal09.anice.features.transfer.TransferState.IncomingOffer -> "${state.batch.files.size} incoming files"
-        is io.github.anisharyal09.anice.features.transfer.TransferState.Transferring -> "Sending · ${state.fileName}"
+        is io.github.anisharyal09.anice.features.transfer.TransferState.Transferring -> "${if (session.transfer.receiving) "Receiving" else "Sending"} · ${state.fileName}"
         is io.github.anisharyal09.anice.features.transfer.TransferState.Paused -> "Transfer paused"
-        is io.github.anisharyal09.anice.features.transfer.TransferState.Completed -> "${state.fileCount} files sent"
+        is io.github.anisharyal09.anice.features.transfer.TransferState.Completed -> "${state.fileCount} files ${if (session.transfer.receiving) "received" else "sent"}"
         is io.github.anisharyal09.anice.features.transfer.TransferState.Rejected -> "Transfer declined"
         is io.github.anisharyal09.anice.features.transfer.TransferState.Failed -> "Transfer failed"
         io.github.anisharyal09.anice.features.transfer.TransferState.Cancelled -> "Transfer cancelled"
@@ -208,12 +251,6 @@ private fun featureStatus(feature: AppFeature, session: io.github.anisharyal09.a
         connectedMac != null -> "Update Mac app"
         peers.any { it.peer.platform == "macos" } -> "Connect a Mac"
         else -> "Pair a Mac"
-    }
-    AppFeature.FindDevice -> when {
-        session.findDevice.busy -> "Request in progress"
-        peers.any { session.findDevice.canFind(it.peer) } -> "Ready to alert your device"
-        peers.any { session.findDevice.connected(it.peer) } -> "Not available on this device"
-        else -> "Device offline"
     }
     }
 }

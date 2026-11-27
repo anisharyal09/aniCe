@@ -66,7 +66,11 @@ internal fun UpdateNotice(manager: AndroidUpdateManager) {
                         else -> manager.downloadAndInstall(update.version)
                     }
                 },
-                onGitHub = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.pageUrl))) })
+                onGitHub = {
+                    try {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.pageUrl)))
+                    } catch (_: Exception) {}
+                })
         }
     }
 }
@@ -86,13 +90,21 @@ internal fun UpdateReviewSheet(
     val height = with(density) { LocalWindowInfo.current.containerSize.height.toDp() * 0.9f }
     val notesScroll = rememberScrollState()
     var moreActions by remember { mutableStateOf(false) }
-    LaunchedEffect(release.version.tag) { notesScroll.scrollTo(0) }
+    val dismissSheet = {
+        moreActions = false
+        onDismiss()
+    }
+    DisposableEffect(Unit) { onDispose { moreActions = false } }
+    LaunchedEffect(release.version.tag) {
+        notesScroll.scrollTo(0)
+        moreActions = false
+    }
     LaunchedEffect(status) {
         if (status is UpdateStatus.Failed || status == UpdateStatus.PermissionRequired || status is UpdateStatus.AwaitingConfirmation) {
             notesScroll.scrollTo(0)
         }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss,
+    ModalBottomSheet(onDismissRequest = dismissSheet,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         // Native dialog and popup roots reset density; retain the app's text-size preference.
         CompositionLocalProvider(LocalDensity provides density) {
@@ -106,7 +118,7 @@ internal fun UpdateReviewSheet(
                                 style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
                         }
                     }
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
+                    IconButton(onClick = dismissSheet, modifier = Modifier.size(48.dp)) {
                         Icon(painterResource(R.drawable.ic_close), contentDescription = "Close update review", Modifier.size(20.dp))
                     }
                 }
@@ -122,7 +134,7 @@ internal fun UpdateReviewSheet(
                             color = MaterialTheme.colorScheme.error)
                         else -> Unit
                     }
-                    ReleaseNotesBody(release.notes)
+                    ReleaseNotesBody(release.notes, version = release.version.tag)
                 }
                 HorizontalDivider()
                 Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(top = 12.dp, bottom = 8.dp),

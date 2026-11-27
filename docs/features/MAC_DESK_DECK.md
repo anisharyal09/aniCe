@@ -5,7 +5,7 @@ Mac Desk Deck is an Android feature panel for a trusted Mac. It opens its shell 
 
 ## Status and recovery
 
-The top card names the Mac, summarizes connection state and the local time of the last received sample, and gives each device a labeled power summary. **Details** shows transport, the full last-received date and time, thermal pressure and the keep-awake preference. A previous sample remains visible with its timestamp after reconnect or refresh, but controls remain disabled until a fresh sample arrives.
+The top card names the Mac, summarizes connection state and the local time of the last received sample, and gives each device a labeled power summary. **Details** stays aligned alongside the status text whenever width and text scale permit, wrapping cleanly below only on narrow or larger-text layouts, and opens transport details, the full last-received date and time, thermal pressure and the keep-awake preference. A previous sample remains visible with its timestamp after reconnect or refresh, but telemetry controls remain disabled until a fresh sample arrives. Find Mac has separate readiness.
 
 The panel shows opening progress immediately. After five seconds it explains that it is reconnecting once; after ten seconds it stops retrying and offers **Refresh**. Refresh starts a fresh read-only subscription and does not repeat any action. Readings become stale after three seconds without telemetry. The latest sample is cached locally so it can appear immediately after an app restart; cached readings are always stale and cannot enable actions until the Mac sends a fresh sample. The Mac stops sampling after fifteen seconds without a five-second renewal from the visible panel. Closing or backgrounding the panel sends Stop and cancels renewal.
 
@@ -31,15 +31,23 @@ Meters refresh about once per second while subscribed. History clears when the s
 - App approvals are tied to both the selected bundle and its executable file identity. Moving, replacing, or revoking the app invalidates the shortcut; reapprove a replacement in Settings → Desk Deck. Removing a phone's trust removes that phone's saved approvals.
 - Brightness remains unsupported because macOS has no documented general display-brightness setter for this app; aniCe does not use private APIs or helper tools.
 
-Every control has independent feedback. Actions require a fresh sample and are scoped to the current subscription. A request without a response is shown as unconfirmed and is never replayed automatically.
+Every control has independent feedback. Telemetry controls require a fresh sample and are scoped to the current subscription. A request without a response is shown as unconfirmed and is never replayed automatically.
+
+## Find Mac
+
+**Find Mac** (also labeled **Ping Mac**) sits below the selected Mac's status card. It requests one native Mac notification through the existing Find Device owner, preferring a compatible secured LAN channel and using BLE otherwise. It is independent of Desk Deck's telemetry capability, subscription and sample freshness; stale or unavailable readings do not block an otherwise supported Find request. It does not create a connection, background lease, location tracking or a wake guarantee.
+
+The tile shows pending and peer-scoped results. A successful response confirms notification submission, not visible or audible delivery. If Mac notification access is blocked, the tile points to **Mac aniCe → Settings → Permissions → Notifications**. Permission is granted on the Mac; phone notification access does not gate Find Mac. No reply within ten seconds leaves delivery unconfirmed. Refreshing readings, changing Mac, reconnecting or reopening the panel never repeats the Find request.
+
+The former Android **Find Device** launcher now opens Desk Deck. Saved Find Device routes and favourites migrate to Desk Deck, keeping one shortcut at its first saved position. Existing Desk Deck app pins and explicit empty favourites remain unchanged. Incoming Find Phone ringing remains application-owned; its local access recovery is in **Settings → Permissions → Find Phone notifications**. See [Find Device](FIND_DEVICE.md) for native alert and background limits.
 
 ## Layout and screen behavior
 
-Landscape presents meters and quick actions in an adaptive grid. Portrait stacks the same content naturally. Output selection sits with the volume control; the slider does not share a horizontal swipe-navigation surface. Text follows Android font scaling and controls retain touch targets of at least 48 dp.
+Landscape presents meters and quick actions in an adaptive grid. Portrait stacks the same content naturally; very narrow layouts with larger text use one column to keep meter values readable. Mac choices wrap into labeled native chips. Output device selection and the volume slider share a grouped card with a full-width selector row, active-route checkmark menu, dedicated Refresh control and percentage readout badge; the slider does not share a horizontal swipe-navigation surface. Text follows Android font scaling and controls retain touch targets of at least 48 dp.
 
 Desk Deck stays within the regular Android app shell. The app bar Back button and bottom destinations remain available while the panel is open.
 
-**Keep screen awake while charging** is off by default and uses the standard labeled checkbox control. When enabled, it prevents the screen timeout only while Desk Deck is visible and Android reports external power; backgrounding, unplugging, or leaving the panel restores the normal timeout.
+**Keep awake while charging** is off by default and uses the shared compact labeled switch. When enabled, it prevents the screen timeout only while Desk Deck is visible and Android reports external power; backgrounding, unplugging, or leaving the panel restores the normal timeout.
 
 ## Implementation and protocol
 

@@ -49,6 +49,12 @@ Grant feature permissions when you use the feature. Notification mirroring needs
 
 Automatic receiving is enabled for new pairings. Review each sender's file-transfer preference and save location if you want approval before receiving files.
 
+## Find help in aniCe
+
+Open the offline **aniCe Guide** with **?** in the toolbar, **More built into aniCe** in Features, or **Settings → General → Guide**. On Mac, **Help → aniCe Guide** also opens it. The toolbar button opens a relevant topic when one is available.
+
+If a call alert reaches Mac but **Answer** has no effect, use the phone while it is still ringing. **Request sent to phone** confirms dispatch only. See [notification troubleshooting](features/NOTIFICATION_MIRRORING.md#if-an-alert-or-action-doesnt-work) for app selection, SIM permissions, and listener recovery.
+
 ## Updates
 
 aniCe checks GitHub Releases on launch when due and refreshes daily at **7:30 PM Nepal time (NPT, UTC+05:45)**. If internet is unavailable, the refresh stays due and runs afterward when connectivity returns, subject to retry backoff and OS background scheduling. The Mac app or menu-bar companion must remain running; missed checks catch up on the next launch. **Settings → Updates → Check for updates** remains available for manual checks.

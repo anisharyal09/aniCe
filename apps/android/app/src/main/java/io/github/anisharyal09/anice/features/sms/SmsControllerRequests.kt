@@ -78,11 +78,26 @@ internal fun SmsController.serveHistory(link: SmsController.Link, requestId: Str
 
 /** One platform read answered with exactly one simDone; nothing is persisted and nothing is retried. */
 internal fun SmsController.serveSim(link: SmsController.Link, requestId: String) {
-    val listing = try { subscriptions?.list() ?: SmsSubscriptionListing(5, emptyList()) } catch (_: Exception) { SmsSubscriptionListing(5, emptyList()) }
-    val entries = Cbor.Array(listing.entries.map { entry ->
-        Cbor.Array(listOf(number(entry.subscriptionId.toLong()), number(entry.slotIndex.toLong()), text(entry.label), flag(entry.isDefault)))
-    })
-    enqueue(link, SmsWireMessage.of(16, text(requestId), number(listing.result), entries))
+    val k = key(link.channel.descriptor.peer)
+    val current = servingSims[k]
+    if (current?.requestId == requestId && current.job?.isActive == true) return
+    current?.job?.cancel()
+    val job = scope.launch(start = CoroutineStart.LAZY) {
+        val self = coroutineContext[Job]
+        try {
+            val deadline = deadline(link)
+            val listing = listSubscriptions()
+            val entries = Cbor.Array(listing.entries.map { entry ->
+                Cbor.Array(listOf(number(entry.subscriptionId.toLong()), number(entry.slotIndex.toLong()), text(entry.label), flag(entry.isDefault)))
+            })
+            send(link, SmsWireMessage.of(16, text(requestId), number(listing.result), entries), deadline)
+        } finally {
+            cancelQueued(link, requestId)
+            if (servingSims[k]?.job == self) servingSims.remove(k)
+        }
+    }
+    servingSims[k] = SmsController.Serving(requestId, link.channel.descriptor, job)
+    job.start()
 }
 
 /** A search page streams hits as regular message records under the search requestId; a newer request cancels this one. */

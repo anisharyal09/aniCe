@@ -5,16 +5,19 @@ package io.github.anisharyal09.anice.features.transfer
 
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.webkit.MimeTypeMap
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.nio.file.AccessDeniedException
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
+import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -211,18 +214,27 @@ internal class TransferReceiveStorage(
     suspend fun matchesPrefix(length: Long, expected: ByteArray): Boolean =
         prefixDigest(length).contentEquals(expected)
 
-    suspend fun finish(name: String, expected: ByteArray): ByteArray = onStorage("finish") {
+    suspend fun finish(file: TransferFile): ByteArray = onStorage("finish") {
         val actual = digest.digest()
-        if (!actual.contentEquals(expected)) throw IOException("Hash mismatch")
-        // Valid complete partials survive a failed flush or publication for recovery.
+        if (!actual.contentEquals(file.sha256)) throw IOException("Hash mismatch")
+        // Preserve a potentially intact partial on I/O failure so recovery can verify it again.
         preservePartial = true
         val output = stream ?: throw IOException("Received file is closed")
         output.fd.sync()
         output.close()
         stream = null
-        document?.let { destination!!.finish(it, name); document = null }
+        document?.let { uri ->
+            val target = requireNotNull(destination)
+            // A successful write and the in-memory hash don't prove what a provider saved.
+            if (!target.read(uri).use { it.matchesFile(file) }) {
+                preservePartial = false
+                throw IOException("The saved data does not match the transfer. Send the original file again.")
+            }
+            target.finish(uri, file.name)
+            document = null
+        }
         partial?.let { owned ->
-            publish(folder, name, owned)
+            publish(folder, file.name, owned)
             partial = null
         }
         actual
@@ -279,10 +291,10 @@ internal interface TransferReceiveDestination {
     fun preflight(bytes: Long)
     fun create(name: String): Uri
     fun descriptor(uri: Uri): ParcelFileDescriptor
-    fun read(uri: Uri): java.io.InputStream
+    fun read(uri: Uri): InputStream
     fun ownsPartial(uri: Uri, prefix: String): Boolean
-    fun isPublished(uri: Uri, file: TransferFile): Boolean = false
-    fun finish(uri: Uri, name: String): Uri
+    fun isPublished(uri: Uri, file: TransferFile): Boolean
+    fun finish(uri: Uri, name: String)
     fun delete(uri: Uri)
     fun close()
 }
@@ -330,7 +342,7 @@ internal class TransferDestinationPreferences(private val context: Context) {
     )
 
     fun create(selection: TransferReceiveDestinationSelection): TransferReceiveDestination =
-        selection.tree?.let { TransferDestination(context, it, selection.modes, restoredOwnedModes = 0) }
+        selection.tree?.let { TransferDestination(context, it, selection.modes) }
             ?: MediaStoreTransferDestination(context)
 
     fun save(tree: Uri, modes: Int) {
@@ -389,15 +401,15 @@ class TransferAutoReceivePreferences(private val storage: SharedPreferences? = n
     }
 }
 
-internal class TransferDestination(private val context: Context, override val tree: Uri, modes: Int, restoredOwnedModes: Int? = null) : TransferReceiveDestination {
+internal class TransferDestination(
+    context: Context,
+    override val tree: Uri,
+    modes: Int,
+    override val ownedModes: Int = 0,
+) : TransferReceiveDestination {
     private val resolver = context.contentResolver
     private val flags = modes and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-    private val previousModes = resolver.persistedUriPermissions.firstOrNull { it.uri == tree }?.let {
-        (if (it.isReadPermission) Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
-            (if (it.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
-    } ?: 0
     override val backend = "documentTree"
-    override val ownedModes = restoredOwnedModes ?: (flags and previousModes.inv())
     private val root = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
     private var closed = false
 
@@ -409,7 +421,6 @@ internal class TransferDestination(private val context: Context, override val tr
         require(tree.authority in setOf("com.android.externalstorage.documents", "com.android.providers.downloads.documents")) {
             "Choose a folder from local device storage; this provider is not supported."
         }
-        if (restoredOwnedModes == null) resolver.takePersistableUriPermission(tree, flags)
     }
 
     override fun preflight(bytes: Long) {
@@ -440,7 +451,7 @@ internal class TransferDestination(private val context: Context, override val tr
     override fun descriptor(uri: Uri): ParcelFileDescriptor = resolver.openFileDescriptor(uri, "rw")
         ?: throw IOException("Cannot open the received document.")
 
-    override fun read(uri: Uri): java.io.InputStream = resolver.openInputStream(uri)
+    override fun read(uri: Uri): InputStream = resolver.openInputStream(uri)
         ?: throw IOException("Cannot read the received document.")
 
     override fun ownsPartial(uri: Uri, prefix: String): Boolean {
@@ -477,10 +488,10 @@ internal class TransferDestination(private val context: Context, override val tr
         val publishedName = name ?: return false
         if (!TransferNaming.matches(publishedName, file.name) ||
             (size >= 0 && size != file.size)) return false
-        return hashMatches(uri, file)
+        return read(uri).use { it.matchesFile(file) }
     }
 
-    override fun finish(uri: Uri, name: String): Uri {
+    override fun finish(uri: Uri, name: String) {
         val taken = existingNames()
         var suffix = 0
         while (suffix < TransferNaming.MAXIMUM_SUFFIX) {
@@ -490,8 +501,9 @@ internal class TransferDestination(private val context: Context, override val tr
                 // collision check, and a rename that fails for any other reason is reported as a
                 // provider failure rather than retried as if it were a collision. A taken name
                 // advances the suffix instead, so nothing here overwrites an existing document.
-                return DocumentsContract.renameDocument(resolver, uri, candidate)
+                DocumentsContract.renameDocument(resolver, uri, candidate)
                     ?: throw IOException("Cannot finalize the received file. The provider refused renaming.")
+                return
             }
             suffix++
         }
@@ -513,23 +525,6 @@ internal class TransferDestination(private val context: Context, override val tr
         return names
     }
 
-    private fun hashMatches(uri: Uri, file: TransferFile): Boolean {
-        val digest = MessageDigest.getInstance("SHA-256")
-        read(uri).use { input ->
-            val buffer = ByteArray(131072)
-            var total = 0L
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                if (count == 0) throw IOException("Published file made no progress")
-                total += count
-                if (total > file.size) return false
-                digest.update(buffer, 0, count)
-            }
-            return total == file.size && digest.digest().contentEquals(file.sha256)
-        }
-    }
-
     override fun delete(uri: Uri) { if (!DocumentsContract.deleteDocument(resolver, uri)) throw IOException("Cannot remove partial document.") }
 
     override fun close() {
@@ -540,7 +535,7 @@ internal class TransferDestination(private val context: Context, override val tr
 }
 
 /** Writes into app-owned pending Downloads rows and publishes them only after verification. */
-internal class MediaStoreTransferDestination(private val context: Context) : TransferReceiveDestination {
+internal class MediaStoreTransferDestination(context: Context) : TransferReceiveDestination {
     private val resolver = context.contentResolver
     override val backend = "mediaStore"
     private val relativePath = "${Environment.DIRECTORY_DOWNLOADS}/aniCe/"
@@ -578,43 +573,39 @@ internal class MediaStoreTransferDestination(private val context: Context) : Tra
     override fun descriptor(uri: Uri): ParcelFileDescriptor = resolver.openFileDescriptor(uri, "rw")
         ?: throw IOException("Cannot open the received file.")
 
-    override fun read(uri: Uri): java.io.InputStream = resolver.openInputStream(uri)
+    override fun read(uri: Uri): InputStream = resolver.openInputStream(uri)
         ?: throw IOException("Cannot read the received file.")
 
     override fun ownsPartial(uri: Uri, prefix: String): Boolean = row(uri)?.let { row ->
-        row.pending && row.path == relativePath && row.name.startsWith(prefix) && row.name.endsWith(".part")
+        // MediaStore can prefix a leading dot with an underscore when it creates the row.
+        row.pending && row.path == relativePath && row.name.endsWith(".part") &&
+            (row.name.startsWith(prefix) || row.name.startsWith("_$prefix"))
     } == true
 
     override fun isPublished(uri: Uri, file: TransferFile): Boolean {
         val row = row(uri) ?: return false
         if (row.pending || row.path != relativePath || !TransferNaming.matches(row.name, file.name) || row.size != file.size) return false
-        val digest = MessageDigest.getInstance("SHA-256")
-        read(uri).use { input ->
-            val buffer = ByteArray(131072)
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                if (count == 0) throw IOException("Published file made no progress")
-                digest.update(buffer, 0, count)
-            }
-        }
-        return digest.digest().contentEquals(file.sha256)
+        return read(uri).use { it.matchesFile(file) }
     }
 
-    override fun finish(uri: Uri, name: String): Uri {
+    override fun finish(uri: Uri, name: String) {
         val partial = row(uri) ?: throw IOException("The pending Downloads file is unavailable.")
         if (!partial.pending || partial.path != relativePath || !partial.name.endsWith(".part")) {
             throw IOException("The pending Downloads file changed before it could be published.")
         }
         val existing = existingNames()
+        val extension = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
         for (suffix in 0 until TransferNaming.MAXIMUM_SUFFIX) {
             val candidate = TransferNaming.suffixed(name, suffix)
             if (candidate in existing) continue
             val changed = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, candidate)
+                // The pending .part is generic; publish recognized types with the final name.
+                mimeType?.let { put(MediaStore.MediaColumns.MIME_TYPE, it) }
                 put(MediaStore.MediaColumns.IS_PENDING, 0)
             }
-            if (resolver.update(uri, changed, null, null) == 1) return uri
+            if (resolver.update(uri, changed, null, null) == 1) return
             throw IOException("Cannot publish the verified file in Downloads/aniCe.")
         }
         throw IOException("Cannot find an unused name for \"$name\".")
@@ -642,6 +633,20 @@ internal class MediaStoreTransferDestination(private val context: Context) : Tra
             ?: throw IOException("Cannot check Downloads filenames.")
         return names
     }
+}
+
+private fun InputStream.matchesFile(file: TransferFile): Boolean {
+    val digest = MessageDigest.getInstance("SHA-256")
+    val buffer = ByteArray(131072)
+    var remaining = file.size
+    while (remaining > 0) {
+        val count = read(buffer, 0, minOf(remaining, buffer.size.toLong()).toInt())
+        if (count < 0) return false
+        if (count == 0) throw IOException("Received file read made no progress")
+        digest.update(buffer, 0, count)
+        remaining -= count
+    }
+    return read() == -1 && digest.digest().contentEquals(file.sha256)
 }
 
 // MARK: - Collision-safe naming

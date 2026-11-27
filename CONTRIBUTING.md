@@ -73,7 +73,7 @@ Physical BLE, minimum-OS behavior, real-player controls, permission persistence 
 ## Code Style & Conventions
 
 - **Rust (`core/rust/`):** Format with `cargo fmt` and check with `cargo clippy`.
-- **Swift (`apps/macos/`):** Follow Swift 6 modern concurrency patterns and target Apple Silicon (`arm64`).
+- **Swift (`apps/macos/`):** Follow Swift 6 modern concurrency patterns and target Apple Silicon (`arm64`). Platform-owned models use a `Mac*` prefix (e.g., `MacTransferModel`), protocol codecs use `*Wire`, and notification bridges use `*Notifier`.
 - **Kotlin (`apps/android/`):** Follow modern Android architecture and Jetpack Compose conventions (minSdk 29).
 - **Python (`scripts/`):** Target Python 3.11+ using standard library wherever possible.
 - **Markdown:** Keep each prose paragraph or list item on one source line and let the viewer wrap it. Preserve intentional newlines in code blocks, tables and separate list items.

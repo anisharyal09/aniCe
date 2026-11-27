@@ -106,6 +106,7 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
   let preferences: ClipboardPreferences
   let history: ClipboardHistory
   private var historyToken: String?
+  private var historyWasPaused = false
   private let now: () -> TimeInterval
   private let wait: @MainActor (TimeInterval) async throws -> Void
   private var links: [String: Link] = [:]
@@ -188,7 +189,12 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
   init(native: any NativeClipboard, history: ClipboardHistory = ClipboardHistory(), preferences: ClipboardPreferences = ClipboardPreferences(), now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }, wait: @escaping @MainActor (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }, openURL: @escaping @MainActor (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
     self.history = history
     self.native = native; self.preferences = preferences; self.now = now; self.wait = wait; self.openURL = openURL
-    history.onChanged = { [weak self] in self?.updateObservation() }
+    history.onChanged = { [weak self] in
+      guard let self else { return }
+      if self.historyWasPaused && !self.history.collectionPaused { self.historyToken = self.native.token() }
+      self.historyWasPaused = self.history.collectionPaused
+      self.updateObservation()
+    }
   }
   func installLifecycle() {
     guard notifications.isEmpty else { return }
@@ -197,7 +203,7 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
       MainActor.assumeIsolated { self?.sleeping = true; self?.cancel(); self?.updateObservation() }
     })
     notifications.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-      MainActor.assumeIsolated { self?.sleeping = false; self?.updateObservation() }
+      MainActor.assumeIsolated { self?.sleeping = false; self?.history.reconcilePause(); self?.updateObservation() }
     })
   }
   func connected(_ peer: DeviceIdentity) -> Bool { links.values.contains { key($0.channel.descriptor.peer) == key(peer) } }
@@ -226,7 +232,7 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
   }
   func refreshAccess() { updateObservation() }
   private func updateObservation() {
-    native.observe(!sleeping && !isPaused && (history.enabled || automatic && selected.map(supports) == true) && native.automaticAccessAllowed) { [weak self] in
+    native.observe(!sleeping && !isPaused && (history.collecting || automatic && selected.map(supports) == true) && native.automaticAccessAllowed) { [weak self] in
       guard let self, !self.applying, !self.isPaused else { return }; self.sampleAutomatic()
     }
     if !isPaused && (automatic || history.enabled) && !native.automaticAccessAllowed { status = "Allow pasteboard access in System Settings, or paste text below" }
@@ -242,7 +248,7 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
     submit(sample, auto: true)
   }
   private func captureLocal(_ sample: ClipboardSample) {
-    guard history.enabled else { return }
+    guard history.collecting else { return }
     guard sample.token.isEmpty || sample.token != historyToken else { return }; historyToken = sample.token
     history.record(sample, origin: "mac")
   }
@@ -262,14 +268,6 @@ enum ClipboardPauseDuration: String, CaseIterable, Identifiable, Sendable {
   func sendHistory(_ entry: ClipboardHistoryEntry) { submit(ClipboardSample(text: entry.text), auto: false) }
   // Toggles pinned state to retain or release snippet during FIFO capacity eviction.
   func togglePin(_ entry: ClipboardHistoryEntry) { history.togglePin(entry.id) }
-  /// Removes a single entry from local history.
-  func deleteHistory(_ entry: ClipboardHistoryEntry) { history.delete(entry.id) }
-  /// Removes multiple entries atomically from local history.
-  func deleteHistory(ids: Set<String>) { history.delete(ids) }
-  // Purges history entries, preserving pinned snippets unless includePinned is explicitly true.
-  func clearHistory(includePinned: Bool = false) { history.clear(includePinned: includePinned) }
-  // Updates history capacity (20, 50, 100) and triggers immediate trim if downsized.
-  func setHistoryCapacity(_ capacity: Int) { history.setCapacity(capacity) }
   func sendConfirmed(_ sample: ClipboardSample) { submit(sample, auto: false) }
   func clearPreview() { preview = nil }
   func inspect() { preview = native.read(); if let preview { captureLocal(preview) }; if preview == nil { status = "Copy plain text, or paste text below" }; updateObservation() }

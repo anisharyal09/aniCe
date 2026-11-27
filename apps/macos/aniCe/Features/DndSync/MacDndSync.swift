@@ -222,10 +222,8 @@ struct DndSyncSettingsView: View {
       Text("Phone → Mac").font(.system(size: 13 * fontScale, weight: .medium))
       Text("Apply the phone’s DND changes on this Mac while it is connected.")
         .font(.system(size: 12 * fontScale)).foregroundStyle(.secondary)
-      HStack(alignment: .top, spacing: 12) {
-        receiveShortcutPicker(enabled: true).frame(maxWidth: .infinity, alignment: .leading)
-        receiveShortcutPicker(enabled: false).frame(maxWidth: .infinity, alignment: .leading)
-      }
+      receiveShortcutPicker(enabled: true)
+      receiveShortcutPicker(enabled: false)
       Button(model.loading ? "Checking…" : "Refresh Shortcuts") { Task { await model.refreshShortcuts() } }
         .disabled(model.loading)
       Text(model.receiveStatus).font(.system(size: 12 * fontScale)).foregroundStyle(.secondary)
@@ -234,7 +232,7 @@ struct DndSyncSettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
           Text("Create two Shortcuts with Set Focus: one turns Do Not Disturb on until turned off; the other turns it off. Copy each prompt, open Shortcuts, click +, then paste into Describe a Shortcut (Apple Intelligence) if available. Otherwise add Set Focus manually and test each Shortcut.")
             .font(.system(size: 12 * fontScale)).foregroundStyle(.secondary).textSelection(.enabled)
-          HStack {
+          ShortcutFlowLayout {
             copyPromptButton("On", prompt: Self.onShortcutPrompt)
             copyPromptButton("Off", prompt: Self.offShortcutPrompt)
             Button("Open Shortcuts", action: openShortcuts)
@@ -252,7 +250,7 @@ struct DndSyncSettingsView: View {
             .font(.system(size: 12 * fontScale)).foregroundStyle(.secondary)
           Text("Create a Shortcut with Get Current Focus → If → Set Focus, or copy this prompt and paste it into Describe a Shortcut.")
             .font(.system(size: 12 * fontScale)).foregroundStyle(.secondary).textSelection(.enabled)
-          HStack {
+          ShortcutFlowLayout {
             Button(copiedPrompt == "toggle" ? "Copied prompt" : "Copy prompt") {
               NSPasteboard.general.clearContents()
               NSPasteboard.general.setString(Self.togglePrompt, forType: .string)
@@ -260,12 +258,24 @@ struct DndSyncSettingsView: View {
             }
             Button("Open Shortcuts", action: openShortcuts)
           }
-          HStack {
-            Menu(deskDeck.approvedFocusShortcutName.map { "Selected · \($0)" } ?? "Choose toggle Shortcut") {
+          AniCePreferenceRow("Toggle Shortcut", fontScale: fontScale) {
+            Menu {
               ForEach(deskDeck.availableFocusShortcuts) { shortcut in
                 Button(shortcut.name) { deskDeck.approveFocusShortcut(shortcut) }
               }
-            }.disabled(deskDeck.isLoadingFocusShortcuts || deskDeck.availableFocusShortcuts.isEmpty)
+            } label: {
+              Text(deskDeck.approvedFocusShortcutName ?? "Choose Shortcut")
+                .lineLimit(1).truncationMode(.middle)
+            }
+            .menuStyle(.borderedButton)
+            .frame(maxWidth: 240)
+            .accessibilityLabel("Desk Deck toggle Shortcut")
+            .help(deskDeck.approvedFocusShortcutName ?? "Choose the Mac-local toggle Shortcut")
+            .aniCeControlFeedback()
+            .disabled(deskDeck.isLoadingFocusShortcuts || deskDeck.availableFocusShortcuts.isEmpty)
+          }
+          HStack {
+            Spacer(minLength: 8)
             Button(deskDeck.isLoadingFocusShortcuts ? "Checking…" : "Refresh") {
               Task { await deskDeck.refreshFocusShortcuts() }
             }.disabled(deskDeck.isLoadingFocusShortcuts)
@@ -279,6 +289,7 @@ struct DndSyncSettingsView: View {
         }.padding(.top, 6)
       }
     }
+    .buttonStyle(AniCeButtonStyle(quiet: true, compact: true))
     .task {
       async let receive: Void = model.refreshShortcuts()
       async let quickDeck: Void = deskDeck.refreshFocusShortcuts()
@@ -300,13 +311,21 @@ struct DndSyncSettingsView: View {
   }
 
   @ViewBuilder private func receiveShortcutPicker(enabled: Bool) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Text(enabled ? "When phone DND turns on" : "When phone DND turns off").font(.system(size: 12 * fontScale))
-      Menu((enabled ? model.onName : model.offName) ?? "Choose Shortcut") {
+    let title = enabled ? "When phone DND turns on" : "When phone DND turns off"
+    let name = enabled ? model.onName : model.offName
+    AniCePreferenceRow(title, fontScale: fontScale) {
+      Menu {
         ForEach(model.shortcuts) { shortcut in
           Button(shortcut.name) { model.choose(shortcut, enabled: enabled) }
         }
-      }.disabled(model.loading || model.shortcuts.isEmpty)
+      } label: {
+        Text(name ?? "Choose Shortcut").lineLimit(1).truncationMode(.middle)
+      }
+      .menuStyle(.borderedButton).frame(maxWidth: 240)
+      .accessibilityLabel(title)
+      .help(name ?? "Choose the Shortcut to run for this phone change")
+      .aniCeControlFeedback()
+      .disabled(model.loading || model.shortcuts.isEmpty)
     }
   }
 }

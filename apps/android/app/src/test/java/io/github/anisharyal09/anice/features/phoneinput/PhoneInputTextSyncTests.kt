@@ -52,6 +52,32 @@ class PhoneInputTextSyncTests {
         assertTrue(chunks.all { it.toByteArray(Charsets.UTF_8).size <= PhoneInputTextSync.MAX_COMMIT_BYTES })
     }
 
+    @Test fun midTextEditsMoveCursorInsteadOfRetypingTheEntireSuffix() {
+        val sender = sync
+        sender.plan("hello world")
+        val replace = sender.plan("hallo world") as PhoneInputTextResult.Ready
+        assertEquals(
+            listOf(
+                PhoneInputTextAction.MoveCursor(-9),
+                PhoneInputTextAction.Backspace(1),
+                PhoneInputTextAction.Commit("a"),
+            ),
+            replace.plan.actions,
+        )
+
+        val liveInsert = sender.plan("ha!llo world") as PhoneInputTextResult.Ready
+        assertEquals(listOf(PhoneInputTextAction.Commit("!")), liveInsert.plan.actions)
+
+        val backToEnd = sender.plan("ha!llo world.") as PhoneInputTextResult.Ready
+        assertEquals(
+            listOf(
+                PhoneInputTextAction.MoveCursor(9),
+                PhoneInputTextAction.Commit("."),
+            ),
+            backToEnd.plan.actions,
+        )
+    }
+
     @Test fun chunksWithinTheMacAdvertisedLimitWithoutSplittingGraphemes() {
         val sender = sync
         val plan = sender.plan("abcdefg", maxCommitBytes = 3) as PhoneInputTextResult.Ready

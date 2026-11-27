@@ -2,11 +2,15 @@
 // Checks update ownership, review, beta consent and About layout on isolated emulators.
 package io.github.anisharyal09.anice.app
 
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationManager
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.ComponentName
 import android.app.job.JobInfo
 import android.app.job.JobScheduler
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Rect
 import android.os.Build
@@ -14,6 +18,8 @@ import android.os.ParcelFileDescriptor
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -25,9 +31,15 @@ import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.anisharyal09.anice.MainActivity
+import io.github.anisharyal09.anice.features.nowplaying.MediaController
+import io.github.anisharyal09.anice.features.nowplaying.MediaView
+import io.github.anisharyal09.anice.features.transfer.TransferController
+import io.github.anisharyal09.anice.features.transfer.TransferView
 import io.github.anisharyal09.anice.ui.theme.AniCeTheme
 import io.github.anisharyal09.anice.update.AndroidUpdateManager
 import io.github.anisharyal09.anice.update.AvailableRelease
@@ -41,9 +53,11 @@ import io.github.anisharyal09.anice.update.UpdateSettingsContent
 import io.github.anisharyal09.anice.update.UpdateStatus
 import io.github.anisharyal09.anice.update.UpdateVersion
 import io.github.anisharyal09.anice.update.UpdateCheckService
+import io.github.anisharyal09.anice.update.UpdateNotification
 import io.github.anisharyal09.anice.update.UPDATE_JOB_ID
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -64,6 +78,163 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class SettingsRefinementTests {
     @get:Rule val presentation: org.junit.rules.TestRule = EmulatorPresentationRule()
+
+    @Suppress("DEPRECATION") // Checked-state access remains available on the minimum API.
+    @Test fun compactCapsuleKeepsOneSwitchActionAndAccessibleRowAtEveryTextSize() {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        runner.uiAutomation
+        for (dark in listOf(false, true)) {
+            for (scale in listOf(0.8f, 1.2f)) {
+                for (direction in listOf(LayoutDirection.Ltr, LayoutDirection.Rtl)) {
+                    val activity = runner.startActivitySync(
+                        Intent(runner.targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    ) as MainActivity
+                    val checked = mutableStateOf(false)
+                    val enabled = mutableStateOf(true)
+                    val changes = AtomicInteger()
+                    try {
+                        val drawn = CountDownLatch(1)
+                        runner.runOnMainSync {
+                            activity.setContent {
+                                Fixture(dark, scale) {
+                                    CompositionLocalProvider(LocalLayoutDirection provides direction) {
+                                        Column(Modifier.widthIn(max = 300.dp).fillMaxWidth().padding(12.dp)) {
+                                            io.github.anisharyal09.anice.ui.AutomaticConnectionToggle(
+                                                checked = checked.value, enabled = enabled.value,
+                                                onCheckedChange = { checked.value = it; changes.incrementAndGet() },
+                                                label = "Capsule preference fixture",
+                                                description = "Helper belongs to the same switch.", compact = true,
+                                            )
+                                        }
+                                    }
+                                }
+                                SideEffect { activity.window.decorView.postOnAnimation { drawn.countDown() } }
+                            }
+                        }
+                        assertTrue(drawn.await(10, TimeUnit.SECONDS))
+                        idle()
+                        awaitLabel("Capsule preference fixture")
+                        val toggle = clickable(find(root(), "Capsule preference fixture"))
+                        assertNotNull(toggle)
+                        // Compose exposes a switch role description, not android.widget.Switch.
+                        assertTrue("The row retains the native switch role", hasSwitchRole(toggle))
+                        assertTrue(toggle!!.isCheckable)
+                        assertFalse(toggle.isChecked)
+                        if (Build.VERSION.SDK_INT >= 30) assertEquals("Off", toggle.stateDescription?.toString())
+                        assertTrue(bounds(toggle).height() >= (48 * activity.resources.displayMetrics.density).toInt())
+                        assertEquals(0, changes.get())
+                        click("Capsule preference fixture")
+                        assertTrue(checked.value)
+                        assertEquals(1, changes.get())
+                        if (Build.VERSION.SDK_INT >= 30) {
+                            assertEquals("On", clickable(find(root(), "Capsule preference fixture"))!!.stateDescription?.toString())
+                        }
+                        click("Helper belongs to the same switch.")
+                        assertFalse(checked.value)
+                        assertEquals(2, changes.get())
+                        runner.runOnMainSync { enabled.value = false }
+                        idle()
+                        awaitDisabled("Capsule preference fixture")
+                        val disabled = checkable(find(root(), "Capsule preference fixture"))
+                        assertNotNull("The disabled preference keeps its checkable row", disabled)
+                        assertFalse(disabled!!.isEnabled)
+                        val area = bounds(disabled)
+                        ParcelFileDescriptor.AutoCloseInputStream(runner.uiAutomation.executeShellCommand(
+                            "input tap ${area.centerX()} ${area.centerY()}"
+                        )).use { it.readBytes() }
+                        idle()
+                        assertFalse(checked.value)
+                        assertEquals(2, changes.get())
+                        disabled.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        idle()
+                        assertFalse(checked.value)
+                        assertEquals("Disabled accessibility activation must not reach the owner", 2, changes.get())
+                        capture("soft-switch-${if (dark) "dark" else "light"}-${(scale * 100).toInt()}-$direction")
+                    } finally {
+                        runner.runOnMainSync { activity.finish() }
+                        runner.waitForIdleSync()
+                    }
+                }
+            }
+        }
+    }
+
+    @Test fun permissionRowsKeepGrantedDetailsOutOfAllAndReflowAtLargeText() {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        runner.uiAutomation
+        var captures = 0
+        for (dark in listOf(false, true)) {
+            for (scale in listOf(0.8f, 1.2f, 2f)) {
+                val activity = runner.startActivitySync(
+                    Intent(runner.targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                ) as MainActivity
+                val showGranted = mutableStateOf(false)
+                val allowed = mutableStateOf(true)
+                val requests = AtomicInteger()
+                try {
+                    val drawn = CountDownLatch(1)
+                    runner.runOnMainSync {
+                        activity.setContent {
+                            Fixture(dark, scale) {
+                                Column(Modifier.widthIn(max = 300.dp).fillMaxWidth().padding(12.dp)) {
+                                    Text(if (showGranted.value) "Permissions fixture" else "All fixture")
+                                    io.github.anisharyal09.anice.ui.PermissionStatusRow(
+                                        "Notification Access", allowed.value, "Mirror selected phone alerts.",
+                                        showGranted.value,
+                                    ) {
+                                        TextButton(onClick = { requests.incrementAndGet() },
+                                            modifier = Modifier.defaultMinSize(minHeight = 32.dp),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+                                            Text("Allow access fixture")
+                                        }
+                                    }
+                                    Text("Following settings fixture")
+                                }
+                            }
+                            SideEffect { activity.window.decorView.postOnAnimation { drawn.countDown() } }
+                        }
+                    }
+                    assertTrue(drawn.await(10, TimeUnit.SECONDS))
+                    idle()
+                    awaitLabel("All fixture")
+                    assertNull(find(root(), "Notification Access"))
+                    assertNull(find(root(), "Mirror selected phone alerts."))
+                    runner.runOnMainSync { allowed.value = false }
+                    awaitLabel("Notification Access")
+                    awaitLabel("Not allowed")
+                    awaitLabel("Allow access fixture")
+                    assertNull(find(root(), "Mirror selected phone alerts."))
+                    click("Allow access fixture")
+                    assertEquals(1, requests.get())
+                    runner.runOnMainSync { allowed.value = true }
+                    awaitNoLabel("Notification Access")
+                    assertNull(find(root(), "Allow access fixture"))
+                    runner.runOnMainSync { showGranted.value = true }
+                    awaitLabel("Notification Access")
+                    awaitLabel("Allowed")
+                    awaitLabel("Mirror selected phone alerts.")
+                    val title = bounds(find(root(), "Notification Access"))
+                    val status = bounds(find(root(), "Allowed"))
+                    val purpose = bounds(find(root(), "Mirror selected phone alerts."))
+                    assertTrue("Title and status must not overlap", title.right <= status.left)
+                    assertTrue("Purpose belongs below the name/status row",
+                        purpose.top >= maxOf(title.bottom, status.bottom))
+                    assertTrue("Permission row remains inside its narrow viewport",
+                        purpose.right <= bounds(root()).right && status.right <= bounds(root()).right)
+                    assertNull(find(root(), "Allow access fixture"))
+                    capture("permissions-${if (dark) "dark" else "light"}-${(scale * 100).toInt()}")
+                    captures++
+                } finally {
+                    runner.runOnMainSync { activity.finish() }
+                    runner.waitForIdleSync()
+                }
+            }
+        }
+        assertEquals(6, captures)
+    }
+
     @Test fun automaticUpdateOptionIsCollapsedAndManualChecksStayAvailableWhenOff() {
         assumeEmulator()
         val runner = InstrumentationRegistry.getInstrumentation()
@@ -322,7 +493,7 @@ class SettingsRefinementTests {
         }
     }
 
-    @Test fun settingsCheckboxStopsNativeSchedulingAndManualCheckUsesTheSameOwner() = runBlocking {
+    @Test fun settingsSwitchStopsNativeSchedulingAndManualCheckUsesTheSameOwner() = runBlocking {
         assumeEmulator()
         val runner = InstrumentationRegistry.getInstrumentation()
         val preferences = runner.targetContext.getSharedPreferences("update-test-${UUID.randomUUID()}", 0)
@@ -580,7 +751,7 @@ class SettingsRefinementTests {
         assumeEmulator()
         val runner = InstrumentationRegistry.getInstrumentation()
         val release = AvailableRelease(requireNotNull(UpdateVersion.parse("v0.9.0-beta.2")),
-            "<!-- anice-source:fixture -->\n## What’s changed\n" +
+            "<!-- anice-source:fixture -->\n# aniCe v0.9.0-beta.2\n## What’s changed\n---\n" +
                 (1..40).joinToString("\n") { "- **Change $it:** A readable release note with enough text to wrap." },
             "https://github.com/anisharyal09/aniCe/releases/download/v0.9.0-beta.2/aniCe-android.apk", 3_000_000)
         var captures = 0
@@ -617,6 +788,7 @@ class SettingsRefinementTests {
                     idle()
                     awaitLabel("Cancel download")
                     awaitLabel("What’s changed")
+                    assertNull(find(root(), "aniCe v0.9.0-beta.2"))
                     assertNull(find(root(), "anice-source"))
                     val textHeight = bounds(find(root(), "Cancel download")).height()
                     assertTrue("Sheet text must grow with the requested $scale scale", textHeight > previousTextHeight)
@@ -851,6 +1023,64 @@ class SettingsRefinementTests {
         }
     }
 
+    @Test fun updateReviewTerminationAndStaleNotificationTagPreventResurrection() = runBlocking {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        val preferences = runner.targetContext.getSharedPreferences("update-test-${UUID.randomUUID()}", 0)
+        val installed = runner.targetContext.packageManager.getPackageInfo(runner.targetContext.packageName, 0).versionName.orEmpty()
+        val tag = "v${installed.substringBefore(".").toInt() + 1}.0.0"
+        val body = """[{"tag_name":"$tag","draft":false,"prerelease":false,"body":"Notes","assets":[{"name":"aniCe-android.apk","state":"uploaded","size":50,"browser_download_url":"https://github.com/anisharyal09/aniCe/releases/download/$tag/aniCe-android.apk"}]}]"""
+        val calls = AtomicInteger()
+        lateinit var manager: AndroidUpdateManager
+        var check: Job? = null
+        val context = runner.targetContext
+        if (Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            ParcelFileDescriptor.AutoCloseInputStream(runner.uiAutomation.executeShellCommand(
+                "pm grant ${context.packageName} android.permission.POST_NOTIFICATIONS"
+            )).use { it.readBytes() }
+        }
+        val notices = UpdateNotification(context)
+        val system = context.getSystemService(NotificationManager::class.java)
+        fun hasNotice(version: String) = system.activeNotifications.any {
+            it.notification.extras.getString(Notification.EXTRA_TITLE) == "aniCe $version is available"
+        }
+        try {
+            runner.runOnMainSync {
+                manager = AndroidUpdateManager(runner.targetContext, ReleaseDiscovery(preferences, ReleaseTransport { _, _, _ ->
+                    calls.incrementAndGet()
+                    ReleaseResponse(200, body, "fixture")
+                }))
+                check = manager.check(force = true)
+            }
+            withTimeout(5000) { check!!.join() }
+            assertTrue(notices.post(requireNotNull(manager.available.value)))
+            withTimeout(5000) { while (!hasNotice(tag)) delay(50) }
+            runner.runOnMainSync {
+                manager.review(expectedTag = "v0.8.0")
+                assertFalse("A stale notification tag must not open a different release", manager.reviewing.value)
+                val restarted = AndroidUpdateManager(context, ReleaseDiscovery(preferences))
+                check = restarted.review(expectedTag = "v0.8.0")
+            }
+            withTimeout(5000) { check!!.join() }
+            assertTrue("A stale response must leave the newer notice up", hasNotice(tag))
+            runner.runOnMainSync {
+                manager.review(expectedTag = tag)
+                assertTrue(manager.reviewing.value)
+                manager.hostDestroyed(changingConfigurations = true)
+                assertTrue("Rotation preserves an active review", manager.reviewing.value)
+                manager.hostDestroyed(changingConfigurations = false)
+                assertFalse("Activity termination dismisses review so later launches do not resurrect it", manager.reviewing.value)
+                manager.dismissReview()
+            }
+            withTimeout(5000) { while (hasNotice(tag)) delay(50) }
+            assertEquals(1, calls.get())
+        } finally {
+            notices.clear()
+            assertTrue(preferences.edit().clear().commit())
+        }
+    }
+
     @Test fun aboutContactReflowsAndReportLinkContainsOnlyVersionInformation() {
         assumeEmulator()
         val runner = InstrumentationRegistry.getInstrumentation()
@@ -967,6 +1197,171 @@ class SettingsRefinementTests {
         }
     }
 
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Test fun contextualGuideOpensFromAppBarShowsCategorizedTopicsAndPreservesAccessibleTargets() {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        for (dark in listOf(false, true)) {
+            val activity = runner.startActivitySync(
+                Intent(runner.targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ) as MainActivity
+            val transfer = TransferController(runner.targetContext.applicationContext)
+            val media = MediaController()
+            val navigation = AppNavigation(AppDestination.Features).apply {
+                openFeature(AppFeature.Files)
+            }
+            try {
+                runner.runOnMainSync {
+                    activity.setContent {
+                        Fixture(dark, 1.2f) {
+                            Scaffold(
+                                topBar = {
+                                    TopAppBar(
+                                        title = { Text("aniCe") },
+                                        navigationIcon = {
+                                            if (showsAppBarBack(navigation.destination, navigation.route,
+                                                    navigation.settingsRoute, navigation.featurePanel)) {
+                                                IconButton(onClick = { navigation.back() }) {
+                                                    Icon(
+                                                        androidx.compose.ui.res.painterResource(io.github.anisharyal09.anice.R.drawable.ic_back),
+                                                        contentDescription = "Back",
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        actions = {
+                                            if (navigation.destination != AppDestination.Guide) {
+                                                IconButton(onClick = { navigation.openGuide(GuideTopic.FilesAndEdgeDrop) }) {
+                                                    Icon(
+                                                        androidx.compose.ui.res.painterResource(io.github.anisharyal09.anice.R.drawable.ic_help),
+                                                        contentDescription = "Open Guide",
+                                                        modifier = Modifier.size(18.dp),
+                                                    )
+                                                }
+                                            }
+                                            if (navigation.destination != AppDestination.About) {
+                                                IconButton(onClick = { navigation.select(AppDestination.About, unpaired = false) }) {
+                                                    Icon(
+                                                        androidx.compose.ui.res.painterResource(io.github.anisharyal09.anice.R.drawable.ic_about),
+                                                        contentDescription = "About aniCe",
+                                                        modifier = Modifier.size(18.dp),
+                                                    )
+                                                }
+                                            }
+                                        },
+                                    )
+                                },
+                            ) { padding ->
+                                Box(Modifier.fillMaxSize().padding(padding)) {
+                                    if (navigation.destination == AppDestination.Guide) {
+                                        GuideScreen(navigation.guideTopic)
+                                    } else {
+                                        Column(
+                                            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            TransferView(transfer)
+                                            MediaView(media, compact = false, overview = false)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                idle()
+                awaitLabel("Open Guide")
+                assertNotNull(find(root(), "About aniCe"))
+                assertNull("Inline help must be removed from Transfer", find(root(), "How transfers work"))
+                assertNull("Inline help must be removed from Now Playing", find(root(), "How Now Playing works"))
+                assertNull("Inline help must be removed from Connections", find(root(), "How connections work"))
+
+                val helpButton = clickable(find(root(), "Open Guide"))
+                assertNotNull(helpButton)
+                val density = activity.resources.displayMetrics.density
+                assertTrue(bounds(helpButton).height() >= (48 * density).toInt() - 1)
+
+                val contextualTopic = navigation.featurePanel
+                assertEquals(AppFeature.Files, contextualTopic)
+                click("Open Guide")
+                assertEquals(AppDestination.Guide, navigation.destination)
+                assertEquals(GuideTopic.FilesAndEdgeDrop, navigation.guideTopic)
+                awaitLabel("resume checkpoints")
+
+                click("Back")
+                awaitLabel("Open Guide")
+                assertEquals(AppDestination.Features, navigation.destination)
+                assertEquals(AppFeature.Files, navigation.featurePanel)
+
+                runner.runOnMainSync { navigation.openGuide(null) }
+                awaitLabel("aniCe Guide")
+                awaitLabel("Open Link in Mac")
+                assertNull("Collapsed Guide keeps topic bodies hidden", find(root(), "without overwriting your Mac clipboard"))
+
+                val linkTrigger = clickable(find(root(), "Open Link in Mac"))
+                assertNotNull(linkTrigger)
+                assertTrue(bounds(linkTrigger).height() >= (48 * density).toInt() - 1)
+                assertTrue(linkTrigger!!.stateDescription?.toString()?.contains("Collapsed") == true)
+
+                click("Open Link in Mac")
+                awaitLabel("without overwriting your Mac clipboard")
+                val bodyBounds = bounds(find(root(), "without overwriting your Mac clipboard"))
+                assertTrue(bodyBounds.left >= bounds(root()).left && bodyBounds.right <= bounds(root()).right)
+                capture("guide-${if (dark) "dark" else "light"}-120")
+
+                click("Share & Files")
+                idle()
+                awaitNoLabel("Pairing & Connections")
+                assertNotNull(find(root(), "Open Link in Mac"))
+                click("Control")
+                awaitLabel("Control Mac (from phone)")
+                click("Sync & Alerts")
+                awaitLabel("Mirrored notifications & call controls")
+                click("Mirrored notifications & call controls")
+                awaitLabel("outside that list")
+                click("All")
+                awaitLabel("Pairing & Connections")
+
+                click("Expand all")
+                awaitLabel("Collapse all")
+                click("Collapse all")
+                awaitLabel("Expand all")
+
+                click("Back")
+                awaitLabel("Open Guide")
+                assertEquals(AppDestination.Features, navigation.destination)
+                assertEquals(AppFeature.Files, navigation.featurePanel)
+            } finally {
+                runner.runOnMainSync { transfer.dismiss(); activity.finish() }
+                runner.waitForIdleSync()
+            }
+        }
+    }
+
+    @Test fun guideRestoresItsFilterAndBulkActionsOverrideManualChanges() {
+        assumeEmulator()
+        val runner = InstrumentationRegistry.getInstrumentation()
+        ActivityScenario.launch<MainActivity>(Intent(runner.targetContext, MainActivity::class.java)).use { scenario ->
+            idle()
+            awaitLabel("Open Guide")
+            click("Open Guide")
+            click("Connect")
+            awaitNoLabel("Open Link in Mac")
+            click("Expand all")
+            awaitLabel("compare all six digits")
+
+            scenario.recreate()
+            idle()
+            awaitLabel("Collapse all")
+            awaitLabel("compare all six digits")
+            click("Collapse all")
+            awaitNoLabel("compare all six digits")
+            assertNull("A restored Connect filter must still hide the next category", find(root(), "Open Link in Mac"))
+            click("All")
+            awaitLabel("Open Link in Mac")
+        }
+    }
+
     @Composable private fun Fixture(dark: Boolean, scale: Float, content: @Composable () -> Unit) {
         val configuration = Configuration(LocalConfiguration.current).apply {
             uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
@@ -1012,6 +1407,28 @@ class SettingsRefinementTests {
             current = current.parent
         }
         return null
+    }
+    private fun hasSwitchRole(node: AccessibilityNodeInfo?): Boolean {
+        if (node == null) return false
+        if (AccessibilityNodeInfoCompat.wrap(node).roleDescription?.toString()?.equals("Switch", ignoreCase = true) == true) return true
+        for (index in 0 until node.childCount) { if (hasSwitchRole(node.getChild(index))) return true }
+        return false
+    }
+    private fun checkable(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        var current = node
+        while (current != null) {
+            if (current.isCheckable) return current
+            current = current.parent
+        }
+        return null
+    }
+    private fun awaitDisabled(label: String) {
+        val deadline = System.nanoTime() + 5_000_000_000
+        while (System.nanoTime() < deadline) {
+            if (checkable(find(root(), label))?.isEnabled == false) return
+            Thread.sleep(50)
+        }
+        fail("Timed out waiting for the checkable row to be disabled: $label")
     }
     private fun scrollable(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
         if (node == null) return null

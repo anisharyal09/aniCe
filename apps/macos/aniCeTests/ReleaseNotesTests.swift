@@ -62,6 +62,80 @@ final class ReleaseNotesTests: XCTestCase {
     XCTAssertEqual(ReleaseNotes.blocks("~~~\n# unfinished").first?.literal, true)
   }
 
+  func testMarkdownBlockLineAndInlineSpanCapsBoundPathologicalInputs() {
+    let manyItems = (1...300).map { "- Item \($0)" }.joined(separator: "\n")
+    let cappedByBlocks = ReleaseNotes.blocks(manyItems)
+    XCTAssertEqual(cappedByBlocks.count, ReleaseNotes.maxBlocks)
+    XCTAssertEqual(cappedByBlocks.last?.text, "Release notes truncated. Open on GitHub for full notes.")
+
+    let manyLines = (1...350).map { "Line \($0)" }.joined(separator: "\n")
+    let cappedByLines = ReleaseNotes.blocks(manyLines)
+    XCTAssertLessThanOrEqual(cappedByLines.count, ReleaseNotes.maxBlocks)
+    XCTAssertEqual(cappedByLines.last?.text, "Release notes truncated. Open on GitHub for full notes.")
+
+    let sourceFlood = "<!--" + String(repeating: " ", count: 20_000) + "still visible"
+    XCTAssertEqual(ReleaseNotes.blocks(sourceFlood).first?.text, sourceFlood)
+
+    let manySpans = (1...120).map { "**Bold\($0)**" }.joined(separator: " ")
+    var budget = 500
+    let styled = ReleaseNotes.attributed(manySpans, remainingSpans: &budget)
+    let styledCount = styled.runs.filter { $0.inlinePresentationIntent != nil || $0.link != nil }.count
+    XCTAssertLessThanOrEqual(styledCount, ReleaseNotes.maxInlineSpansPerBlock)
+    XCTAssertEqual(budget, 500 - styledCount)
+
+    let delimiterSpam = String(repeating: "[", count: 10_000)
+    let plain = ReleaseNotes.attributed(delimiterSpam)
+    XCTAssertEqual(String(plain.characters).count, 10_000)
+    XCTAssertTrue(plain.runs.allSatisfy { $0.link == nil && $0.inlinePresentationIntent == nil })
+  }
+
+  @MainActor func testUpdateReviewSheetRendersAcrossThemesAndScalesWithoutClipping() throws {
+    let name = "aniCe.ReleaseNotesSheetTests.\(UUID())", preferences = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { preferences.removePersistentDomain(forName: name) }
+    let version = try XCTUnwrap(UpdateVersion.parse("v99.0.0"))
+    let release = AvailableMacRelease(
+      version: version,
+      notes: """
+      # aniCe v99.0.0
+      ## What’s changed
+      - **Bounded Markdown:** Caps blocks, lines and inline styling.
+      ---
+      - **Update review:** Stays tidy on window close and termination.
+      """,
+      assetURL: MacReleaseCatalog.assetURL(version),
+      assetBytes: 50
+    )
+    let model = MacUpdateModel(discovery: MacReleaseDiscovery(defaults: preferences))
+    var renders = 0
+    for dark in [false, true] {
+      for scale in [0.8, 1.2] {
+        preferences.set(scale, forKey: "ui.fontScale")
+        let scheme: ColorScheme = dark ? .dark : .light
+        let sheet = MacUpdateReviewSheetContent(model: model, release: release)
+          .frame(width: 440)
+          .background(AniCePalette.surface(scheme))
+          .environment(\.colorScheme, scheme).defaultAppStorage(preferences)
+        let host = NSHostingView(rootView: sheet)
+        let size = host.fittingSize
+        XCTAssertGreaterThan(size.height, 360)
+        XCTAssertLessThan(size.height, 560)
+        host.frame = NSRect(origin: .zero, size: size)
+        host.layoutSubtreeIfNeeded()
+        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        XCTAssertGreaterThan(data.count, 1000)
+        if let path = ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"] {
+          let directory = URL(fileURLWithPath: path, isDirectory: true)
+          try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+          try data.write(to: directory.appendingPathComponent("update-sheet-\(dark ? "dark" : "light")-\(Int(scale * 100)).png"))
+        }
+        renders += 1
+      }
+    }
+    XCTAssertEqual(renders, 4)
+  }
+
   @MainActor func testReleaseNotesRenderAtNarrowWidthsInBothThemesAndTextScales() throws {
     let name = "aniCe.ReleaseNotesTests.\(UUID())", preferences = try XCTUnwrap(UserDefaults(suiteName: name))
     defer { preferences.removePersistentDomain(forName: name) }

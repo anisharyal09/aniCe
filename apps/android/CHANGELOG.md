@@ -4,8 +4,34 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+### Changed
+
+- Add a categorized offline Guide with contextual help, wrapping sticky filters and entry points in Features and Settings. Explain connection, permission and device limits for clipboard sharing, input, notifications and Find Device.
+- Clarify call mirroring and show a recovery action when Notification Access is allowed but the listener isn’t connected.
+- Optimize **Control Mac** live typing with cursor-aware middle-edit reconciliation (`MoveCursor` via Left/Right arrow transitions instead of deleting and retyping trailing text) and add a **Clear** button in **Type on Mac** and fullscreen trackpad to reset only the phone's local buffer.
+- Refine **Mac Desk Deck** onto calm `surfaceContainer` sheets with soft catchlight highlights, tabular meters and volume readout, inline **Ping Mac**, and grouped **Output device** + **Output volume** controls.
+- Bound release-note Markdown blocks, lines and inline spans in linear time, add horizontal rules and duplicate version-heading suppression, and dismiss update review on activity termination without cancelling active downloads.
+- Expand native transfer progress with current-file context and private visibility, update state/job actions immediately and open only the original active transfer from a notice.
+- Show a **Files received** notification when a receive finishes in the background.
+- Place Find Mac below Desk Deck status with independent capability/readiness and peer-scoped feedback; move incoming Find Phone notification recovery to Permissions and keep its native ringing service/receiver unchanged.
+- Redirect saved Find Device routes, order and favourites into one Desk Deck entry; preserve explicitly empty favourites, wrap Mac choices and keep compact last-reading timestamps visible.
+- Add direct SIM-selection permission recovery and refresh choices on conversation resume; serialize local/remote SIM-list reads off the UI thread and fence obsolete request results.
+- Use compact, softly filled capsule switches with fuller inset thumbs for persistent preferences, preserving one accessible touch row and unchanged confirmation flows.
+- Use themed Clipboard segments with accent selection, muted inactive faces, native hover/focus/ripple feedback and 48 dp interaction targets.
+- Keep granted-access details in Permissions only, space permission rows consistently and remove the phone keyboard-shortcut category; tile setup remains in Clipboard.
+- Wrap Home quick-access shortcuts into additional rows with native touch targets instead of horizontal scrolling.
+- Group Settings under All, General, Permissions and Features with wrapped category controls and a direct Messages setup link.
+
 ### Fixed
 
+- Verify the bytes Android storage saved before publishing a receive. Publish known file types, including JPEGs, with the correct type in Downloads.
+- Resume pending Downloads files even when Android normalizes their temporary names.
+- Retain the Guide category, scroll position and expanded topics when the activity is recreated. Expand all and Collapse all use the same state as individual topics.
+- Withdraw the incoming-offer notice while the app is open without disturbing ongoing transfer progress. Ignore obsolete or untagged update taps without clearing the current notice.
+- Remove redundant switch semantics, guard disabled accessibility activation and align presentation checks with Compose's role; initialize emulator accessibility before permission fixtures.
+- Restore the 20/50/100-item history capacity menu in grouped Clipboard settings and History without enabling collection; correct segmented selection colors and no-match history copy.
+- Restore compact Home/Settings action faces and show granted/missing SMS, notification, call, caller-ID and DND access with their purposes.
+- Show native app-bar Back on About and apply safe drawing/keyboard insets to full-screen Mac control.
 - Exercise synthetic LAN address restoration without host Wi-Fi, and report native Wi-Fi or Bluetooth regressions as skipped when their required capabilities are unavailable.
 - Wait for the right-to-left settings fixture to draw before checking update-action alignment.
 
@@ -14,6 +40,8 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 Application release v0.9.0-beta.4, build 90024.
 
 ### Added
+
+- Show phone-side Mac input setup only after an access rejection or revocation; hide it after successful Start.
 
 - Add a separate 48 dp About Email action beside the GitHub issue form, with narrow/large-text reflow and a visible fallback when no email app is available.
 - Add a collapsed update-check preference that cancels automatic checks and persisted jobs when off, preserves manual checking and saves the choice across restarts; cover real scheduler re-arming, cancelled redirects/body reads and cached-check ownership.

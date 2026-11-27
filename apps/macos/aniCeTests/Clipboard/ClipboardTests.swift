@@ -95,6 +95,319 @@ private struct FailedHistoryStorage: ClipboardHistoryStorage {
   func delete() throws { throw CocoaError(.fileWriteNoPermission) }
 }
 final class ClipboardTests: XCTestCase {
+  @MainActor func testCompactSettingsRetainCapacityPickerWithCollectionOff() async throws {
+    let name = "aniCe.ClipboardCapacityLayout.\(UUID())"
+    let preferences = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { preferences.removePersistentDomain(forName: name) }
+    let history = ClipboardHistory()
+    let native = ClipboardNativeFake()
+    let model = MacClipboardModel(native: native, history: history)
+    defer { model.invalidate() }
+    for capacity in [20, 50, 100] {
+      history.setCapacity(capacity)
+      try await until { history.capacity == capacity }
+      for scheme in [ColorScheme.light, .dark] {
+        for scale in [0.8, 1.2] {
+          preferences.set(scale, forKey: "ui.fontScale")
+          let picker = NSHostingView(rootView: ClipboardHistoryCapacityPicker(history: history, fontScale: scale)
+            .frame(width: 270).environment(\.colorScheme, scheme))
+          picker.frame.size = picker.fittingSize
+          picker.layoutSubtreeIfNeeded()
+          XCTAssertEqual(picker.bounds.width, 270, accuracy: 1)
+          XCTAssertGreaterThanOrEqual(picker.bounds.height, 32)
+          let bitmap = try XCTUnwrap(picker.bitmapImageRepForCachingDisplay(in: picker.bounds))
+          picker.cacheDisplay(in: picker.bounds, to: bitmap)
+          XCTAssertGreaterThan(try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).count, 300)
+
+          let settings = NSHostingView(rootView: ClipboardSettingsView(model: model, peers: [], compactSettings: true)
+            .padding(14).frame(width: 300).environment(\.colorScheme, scheme).defaultAppStorage(preferences))
+          settings.frame.size = settings.fittingSize
+          settings.layoutSubtreeIfNeeded()
+          XCTAssertGreaterThan(settings.bounds.height, 140, "Compact settings must retain the capacity row even before opt-in")
+          XCTAssertFalse(history.enabled, "Changing or displaying capacity is not consent to collect text")
+          XCTAssertEqual(history.capacity, capacity)
+        }
+      }
+    }
+    XCTAssertEqual(native.writes, 0)
+    XCTAssertNil(native.observer)
+  }
+
+  @MainActor func testCompactClipboardPauseRowRendersAtLargeTextInBothThemes() async throws {
+    let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("anice-clipboard-refinement-renders", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let suite = "aniCe.ClipboardPauseLayout.\(UUID())"
+    let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { preferences.removePersistentDomain(forName: suite) }
+    let history = ClipboardHistory(preferences: preferences)
+    history.setEnabled(true)
+    try await until { history.enabled }
+    let native = ClipboardNativeFake()
+    let model = MacClipboardModel(native: native, history: history)
+    defer { model.invalidate(); history.resumeCollection() }
+    var renders = 0
+    for paused in [false, true] {
+      if paused { history.pauseCollection(seconds: nil) } else { history.resumeCollection() }
+      for scheme in [ColorScheme.light, .dark] {
+        for width in [300.0, 600.0] {
+          preferences.set(1.2, forKey: "ui.fontScale")
+          let view = ClipboardSettingsView(model: model, peers: [], compactSettings: true)
+            .padding(14).frame(width: width)
+            .background(AniCePalette.surface(scheme))
+            .environment(\.colorScheme, scheme).defaultAppStorage(preferences)
+          let host = NSHostingView(rootView: view)
+          host.frame.size = host.fittingSize
+          host.layoutSubtreeIfNeeded()
+          XCTAssertEqual(host.bounds.width, width, accuracy: 1)
+          XCTAssertLessThan(host.bounds.height, 320)
+          let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+          host.cacheDisplay(in: host.bounds, to: bitmap)
+          try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            .write(to: directory.appendingPathComponent("clipboard-\(paused)-\(scheme)-\(Int(width)).png"))
+          renders += 1
+        }
+      }
+    }
+    XCTAssertEqual(renders, 8)
+    XCTAssertEqual(native.writes, 0)
+    print("Clipboard pause layout renders: \(directory.path)")
+  }
+
+  @MainActor func testHistoryPauseSurvivesRestartAndExpiryWithoutChangingConsent() async throws {
+    let name = "aniCe.HistoryPause.\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let history = ClipboardHistory(preferences: defaults)
+    history.pauseCollection(seconds: nil)
+    let restored = ClipboardHistory(preferences: defaults)
+    XCTAssertTrue(restored.collectionPaused)
+    restored.resumeCollection()
+    defaults.set(true, forKey: "clipboard.historyPaused")
+    defaults.set(Date(timeIntervalSinceNow: -10), forKey: "clipboard.historyPauseDeadline")
+    let expired = ClipboardHistory(preferences: defaults)
+    for _ in 0..<30 { await Task.yield() }
+    expired.reconcilePause()
+    XCTAssertFalse(expired.collectionPaused)
+    XCTAssertFalse(expired.enabled)
+    history.resumeCollection()
+  }
+
+  @MainActor func testUndoAndRedoRespectHistoryLimitsAfterNewCaptures() async throws {
+    for capacity in [20, 100] {
+      let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+      defer { try? FileManager.default.removeItem(at: directory) }
+      let file = ClipboardHistoryFile(url: directory.appendingPathComponent("history.json"))
+      let history = ClipboardHistory(storage: file, capacity: capacity)
+      history.setEnabled(true); try await until { history.enabled }
+      for index in 0..<capacity {
+        history.record(ClipboardSample(text: "old-\(index)"), origin: "mac")
+      }
+      try await until { history.entries.count == capacity }
+      history.clear(); try await until { history.entries.isEmpty }
+      history.record(ClipboardSample(text: "new"), origin: "mac")
+      try await until { history.entries.count == 1 }
+      history.undo(); try await until { history.canRedo || history.error != nil }
+      XCTAssertNil(history.error)
+      XCTAssertEqual(history.entries.count, capacity)
+      XCTAssertEqual(history.entries.first?.text, "new")
+      XCTAssertFalse(history.entries.contains { $0.text == "old-0" })
+      XCTAssertNotNil(history.editStatus)
+      XCTAssertEqual(try file.load()?.entries, history.entries)
+      history.redo(); try await until { !history.canRedo }
+      XCTAssertEqual(history.entries.map(\.text), ["new"])
+      history.undo(); try await until { history.canRedo }
+      XCTAssertEqual(history.entries.count, capacity)
+      XCTAssertEqual(try file.load()?.entries, history.entries)
+    }
+  }
+
+  @MainActor func testUndoPinChangesAndCapacityReductionKeepPinsAndCurrentLimit() async throws {
+    let history = ClipboardHistory(capacity: 50)
+    history.setEnabled(true); try await until { history.enabled }
+    for index in 0..<50 { history.record(ClipboardSample(text: "old-\(index)"), origin: "mac") }
+    try await until { history.entries.count == 50 }
+    let pinned = try XCTUnwrap(history.entries.last)
+    history.togglePin(pinned.id); try await until { history.entries.last?.pinned == true }
+    history.clear(); try await until { history.entries.count == 1 }
+    history.setCapacity(20); try await until { history.capacity == 20 }
+    history.undo(); try await until { history.canRedo }
+    XCTAssertEqual(history.entries.count, 21)
+    XCTAssertEqual(history.entries.filter(\.pinned).map(\.id), [pinned.id])
+    XCTAssertEqual(history.entries.filter { !$0.pinned }.count, 20)
+    history.undo(); try await until { !history.entries.contains(where: \.pinned) }
+    XCTAssertEqual(history.entries.count, 20, "Unpinning through Undo also obeys the current capacity")
+    history.redo(); try await until { history.entries.contains(where: \.pinned) }
+    XCTAssertEqual(history.entries.count, 21)
+    XCTAssertEqual(history.entries.filter(\.pinned).map(\.id), [pinned.id])
+  }
+
+  @MainActor func testUndoRestoresOnlyPinsThatFitBesideNewCaptures() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = ClipboardHistoryFile(url: directory.appendingPathComponent("history.json"))
+    let pins = (0..<100).map { index in
+      ClipboardHistoryEntry(id: UUID().uuidString.lowercased(), text: "pin-\(index)", origin: "mac",
+        timestamp: Date(timeIntervalSince1970: Double(100 - index)), credential: nil, pinned: true)
+    }
+    try file.save(pins, capacity: 100)
+    let history = ClipboardHistory(storage: file)
+    try await until { history.entries.count == 100 }
+    history.delete(Set(pins.map(\.id)), fromPinned: true)
+    try await until { history.entries.isEmpty }
+    history.record(ClipboardSample(text: "new capture"), origin: "mac")
+    try await until { history.entries.count == 1 }
+    history.undo(); try await until { history.canRedo }
+    XCTAssertEqual(history.entries.count, 100)
+    XCTAssertEqual(history.entries.first?.text, "new capture")
+    XCTAssertEqual(history.entries.filter(\.pinned).count, 99)
+    XCTAssertFalse(history.entries.contains { $0.id == pins.last?.id })
+    XCTAssertNotNil(history.editStatus)
+    XCTAssertEqual(try file.load()?.entries, history.entries)
+    history.redo(); try await until { !history.canRedo }
+    XCTAssertEqual(history.entries.map(\.text), ["new capture"])
+  }
+
+  @MainActor func testFailedUndoPreservesStorageAndCanBeRetried() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let backup = directory.appendingPathExtension("backup")
+    defer {
+      try? FileManager.default.removeItem(at: directory)
+      try? FileManager.default.removeItem(at: backup)
+    }
+    let file = ClipboardHistoryFile(url: directory.appendingPathComponent("history.json"))
+    let history = ClipboardHistory(storage: file)
+    history.setEnabled(true); try await until { history.enabled }
+    history.record(ClipboardSample(text: "restore me"), origin: "mac")
+    try await until { history.entries.count == 1 }
+    history.clear(); try await until { history.entries.isEmpty }
+    let durable = try Data(contentsOf: file.url)
+    try FileManager.default.moveItem(at: directory, to: backup)
+    try Data("blocked directory".utf8).write(to: directory)
+    history.undo(); try await until { history.error != nil }
+    XCTAssertTrue(history.entries.isEmpty)
+    XCTAssertTrue(history.canUndo)
+    XCTAssertFalse(history.canRedo)
+    XCTAssertEqual(try Data(contentsOf: backup.appendingPathComponent("history.json")), durable)
+    try FileManager.default.removeItem(at: directory)
+    try FileManager.default.moveItem(at: backup, to: directory)
+    history.undo(); try await until { history.canRedo }
+    XCTAssertNil(history.error)
+    XCTAssertEqual(history.entries.map(\.text), ["restore me"])
+    XCTAssertEqual(try file.load()?.entries, history.entries)
+  }
+
+  @MainActor func testUndoPreservesNewlyCollectedClips() async throws {
+    let history = ClipboardHistory()
+    history.setEnabled(true); try await until { history.enabled }
+    history.record(ClipboardSample(text: "first"), origin: "mac")
+    try await until { history.entries.count == 1 }
+    let first = history.entries[0]
+    history.delete(first.id); try await until { history.entries.isEmpty }
+    history.record(ClipboardSample(text: "later"), origin: "mac")
+    try await until { history.entries.count == 1 }
+    history.undo(); try await until { history.entries.count == 2 }
+    XCTAssertEqual(Set(history.entries.map(\.text)), ["first", "later"])
+    history.redo(); try await until { history.entries.count == 1 }
+    XCTAssertEqual(history.entries[0].text, "later")
+  }
+
+  @MainActor func testProtectedPinsUndoAndHistoryOnlyPause() async throws {
+    let history = ClipboardHistory()
+    history.setEnabled(true)
+    try await until { history.enabled }
+    history.record(ClipboardSample(text: "pinned"), origin: "mac")
+    try await until { history.entries.count == 1 }
+    let id = history.entries[0].id
+    history.togglePin(id)
+    try await until { history.entries[0].pinned }
+    history.delete(id)
+    for _ in 0..<15 { await Task.yield() }
+    XCTAssertEqual(history.entries.count, 1)
+    history.pauseCollection(seconds: nil)
+    history.record(ClipboardSample(text: "during pause"), origin: "mac")
+    XCTAssertFalse(history.collecting)
+    XCTAssertTrue(history.enabled)
+    history.resumeCollection()
+    history.delete(id, fromPinned: true)
+    try await until { history.entries.isEmpty }
+    history.undo()
+    try await until { history.entries.count == 1 }
+    XCTAssertTrue(history.entries[0].pinned)
+    history.redo()
+    try await until { history.entries.isEmpty }
+  }
+
+  @MainActor func testTrayHistoryRequiresCurrentExplicitConsent() async throws {
+    let history = ClipboardHistory()
+    let consent = PasteTrayHistoryConsent()
+    consent.confirm(history: history)
+    consent.request()
+    XCTAssertTrue(consent.isPresented)
+    XCTAssertFalse(history.enabled)
+    consent.cancel()
+    consent.confirm(history: history)
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertFalse(history.enabled)
+    consent.request()
+    consent.confirm(history: history)
+    XCTAssertFalse(consent.isPresented)
+    try await until { history.enabled }
+    history.setEnabled(false)
+    try await until { !history.enabled }
+    consent.confirm(history: history)
+    for _ in 0..<10 { await Task.yield() }
+    XCTAssertFalse(history.enabled, "A dismissed confirmation cannot grant collection again")
+  }
+
+  @MainActor func testTrayHistoryConsentFailureKeepsSavedRowsAndAllowsRetry() async throws {
+    let storage = FailedHistoryStorage()
+    let history = ClipboardHistory(storage: storage)
+    try await until { !history.entries.isEmpty }
+    history.setEnabled(false)
+    let consent = PasteTrayHistoryConsent()
+    consent.request()
+    consent.confirm(history: history)
+    try await until { history.error != nil }
+    XCTAssertFalse(history.enabled)
+    XCTAssertEqual(history.entries, [storage.entry])
+    XCTAssertFalse(consent.isPresented)
+    consent.request()
+    XCTAssertTrue(consent.isPresented)
+    consent.cancel()
+    XCTAssertFalse(history.enabled)
+  }
+
+  @MainActor func testTrayHistoryConsentFitsBothThemesAndNarrowWidths() throws {
+    let folder = URL(fileURLWithPath: ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"]
+      ?? NSTemporaryDirectory(), isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let history = ClipboardHistory()
+    let consent = PasteTrayHistoryConsent()
+    consent.request()
+    var renders = 0
+    for scheme in [ColorScheme.light, .dark] {
+      for width: CGFloat in [280, 360, 760] {
+        let host = NSHostingView(rootView:
+          PasteTrayHistoryConsentView(consent: consent, history: history)
+            .padding(16).frame(width: width)
+            .background(AniCePalette.surface(scheme))
+            .environment(\.colorScheme, scheme))
+        host.frame.size = host.fittingSize
+        host.layoutSubtreeIfNeeded()
+        XCTAssertEqual(host.bounds.width, width)
+        XCTAssertLessThanOrEqual(host.bounds.height, width <= 650 ? 318 : 292)
+        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+          .write(to: folder.appendingPathComponent("tray-consent-\(Int(width))-\(scheme).png"))
+        renders += 1
+      }
+    }
+    XCTAssertEqual(renders, 6)
+    XCTAssertFalse(history.enabled, "Rendering consent must not enable storage")
+  }
+
   func testIndependentCanonicalBytesAndInvalidInventory() throws {
     let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "clipboard-vectors", withExtension: "json"))
     let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
@@ -403,7 +716,7 @@ final class ClipboardTests: XCTestCase {
     try await until { !paused.entries.isEmpty }
     XCTAssertFalse(paused.enabled); XCTAssertEqual(paused.entries, saved)
     paused.delete(saved[0].id); try await until { paused.entries.count == saved.count - 1 }
-    paused.clear(includePinned: true); try await until { paused.entries.isEmpty }
+    paused.clear(); try await until { paused.entries.isEmpty }
     XCTAssertFalse(try XCTUnwrap(file.load()).enabled)
   }
   @MainActor func testHistoryCorruptStorageAndWriteFailureRemainVisible() async throws {
@@ -587,12 +900,12 @@ final class ClipboardTests: XCTestCase {
     history.setCapacity(50)
     try await until { history.capacity == 50 }
 
-    history.clear(includePinned: false)
+    history.clear()
     try await until { history.entries.count == 1 }
     XCTAssertEqual(history.entries.first?.text, "item-2")
     XCTAssertTrue(history.entries.first?.pinned == true)
 
-    history.clear(includePinned: true)
+    history.delete(Set(history.entries.map(\.id)), fromPinned: true)
     try await until { history.entries.isEmpty }
   }
 
@@ -906,9 +1219,8 @@ final class ClipboardTests: XCTestCase {
     XCTAssertEqual(native.sample?.text, "Combined text\nItem 2")
     XCTAssertEqual(model.status, "Copied")
 
-    // Test atomic multi-item deletion via model
     let toDelete = Set([history.entries[1].id, history.entries[3].id])
-    model.deleteHistory(ids: toDelete)
+    history.delete(toDelete)
     try await until { history.entries.count == 3 }
     let remainingTexts = history.entries.map(\.text)
     XCTAssertFalse(remainingTexts.contains("Item 2"))

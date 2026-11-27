@@ -193,9 +193,8 @@ val ColorScheme.warning: Color
     @Composable
     get() = if (surface == DarkColors.surface) Color(0xFFDCB27C) else Color(0xFF825523)
 
-val ColorScheme.subtleAccent: Color
-    get() = primaryContainer
-
+val ColorScheme.controlTrack: Color
+    get() = if (surface == DarkColors.surface) Color(0xFF3B413E) else Color(0xFFE0E3DC)
 
 /** Selection retains the shared accent while ordinary controls use neutral ink. */
 val ColorScheme.selectionAccent: Color

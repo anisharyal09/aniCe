@@ -33,8 +33,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
-import io.github.anisharyal09.anice.ui.theme.selectionAccent
 import io.github.anisharyal09.anice.ui.theme.warning
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.launch
 
 @Composable
 fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifier = Modifier) {
@@ -200,12 +201,19 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
             val simListing = remember(draftKey) { mutableStateOf<SmsSubscriptionListing?>(null) }
             var simMenu by remember(draftKey) { mutableStateOf(false) }
             var simAnswered by remember(draftKey) { mutableStateOf(false) }
-            LaunchedEffect(draftKey) { if (multiSim || simChoice != 0) simListing.value = owner.listSubscriptions() }
             val simEntries = simListing.value?.entries.orEmpty()
             val simChoiceLabel = simEntries.firstOrNull { it.subscriptionId == simChoice }?.let { simLabel(it, simEntries) }
+            val simScope = rememberCoroutineScope()
             val phoneState = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
                 simAnswered = true
-                simListing.value = if (granted) owner.listSubscriptions() else SmsSubscriptionListing(1, emptyList())
+                if (granted) simScope.launch { simListing.value = owner.listSubscriptions() }
+                else simListing.value = SmsSubscriptionListing(1, emptyList())
+            }
+            LaunchedEffect(draftKey, lifecycle) {
+                lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                    if (multiSim || simChoice != 0) simListing.value = owner.listSubscriptions()
+                    kotlinx.coroutines.awaitCancellation()
+                }
             }
             val conversationList = rememberLazyListState()
             val conversationRows = owner.conversation.asReversed()
@@ -291,6 +299,57 @@ fun SmsView(owner: SmsController, peers: List<PeerTrustRecord>, modifier: Modifi
             }
         }
     }
+}
+
+@Composable
+internal fun SmsSimPermissionRow(
+    allowed: Boolean,
+    showGranted: Boolean,
+    request: () -> Unit,
+    openSettings: () -> Unit,
+    refused: Boolean = false,
+) {
+    io.github.anisharyal09.anice.ui.PermissionStatusRow(
+        "SIM selection", allowed, "Phone state access: choose an active SIM for SMS replies.", showGranted,
+    ) {
+        OutlinedButton(
+            onClick = if (refused) openSettings else request,
+            shape = MaterialTheme.shapes.small,
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+            modifier = Modifier.heightIn(min = 48.dp),
+        ) { Text(if (refused) "Open app settings" else "Allow SIM selection") }
+    }
+}
+
+@Composable
+fun SmsSimPermissionSettings(
+    allowed: Boolean,
+    showGranted: Boolean,
+    onPermissionsChanged: () -> Unit = {},
+) {
+    val context = LocalContext.current
+    val changed by rememberUpdatedState(onPermissionsChanged)
+    fun currentlyAllowed(): Boolean = androidx.core.content.ContextCompat.checkSelfPermission(
+        context, Manifest.permission.READ_PHONE_STATE,
+    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    var refused by rememberSaveable { mutableStateOf(false) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { value ->
+        refused = !value && context.findActivity()?.shouldShowRequestPermissionRationale(
+            Manifest.permission.READ_PHONE_STATE,
+        ) != true
+        changed()
+    }
+    SmsSimPermissionRow(
+        allowed = allowed, showGranted = showGranted, refused = refused,
+        request = {
+            if (currentlyAllowed()) changed()
+            else launcher.launch(Manifest.permission.READ_PHONE_STATE)
+        },
+        openSettings = {
+            context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", context.packageName, null)))
+        },
+    )
 }
 
 @Composable

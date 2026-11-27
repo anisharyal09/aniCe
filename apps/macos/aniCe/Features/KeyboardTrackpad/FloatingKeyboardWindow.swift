@@ -22,6 +22,7 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
   private let inputID = UUID()
   let expandedPresentationID = UUID()
   private var panel: FloatingKeyboardPanel?
+  private weak var inputView: KeyboardInputNSView?
   private var screenObserver: NSObjectProtocol?
   private var interruptionObservers: [NSObjectProtocol] = []
   private weak var previousKeyWindow: NSWindow?
@@ -78,7 +79,8 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
     guard let phone = model.targetPeer?.displayName else {
       return "Open full controls to choose a trusted phone and use its keyboard or trackpad."
     }
-    return "Click to type directly on \(phone). Right-click for full controls, including a trackpad to move and scroll the phone."
+    let typingShortcut = GlobalShortcutPreferences.shared.binding(.floatingKeyInput).label
+    return "Click or press \(typingShortcut) to type directly on \(phone). Right-click for full controls, including a trackpad to move and scroll the phone."
   }
 
   var statusDescription: String {
@@ -114,6 +116,26 @@ final class FloatingKeyboardController: NSObject, NSWindowDelegate {
 
   func toggleVisibility() {
     if isVisible { hide() } else { show() }
+  }
+
+  func registerInputView(_ view: KeyboardInputNSView) {
+    inputView = view
+  }
+
+  func toggleCaptureFromShortcut() {
+    guard !isShuttingDown else { return }
+    if !isVisible {
+      rememberPreviousKeyWindow()
+      show()
+      Task { @MainActor [weak self] in
+        await Task.yield()
+        guard let self, self.isVisible, let inputView = self.inputView else { return }
+        self.toggleCapture(from: inputView)
+      }
+      return
+    }
+    guard let inputView else { return }
+    toggleCapture(from: inputView)
   }
 
   func openInApp() {
@@ -403,13 +425,14 @@ private struct FloatingKeyboardPanelView: View {
       height: controller.isExpanded ? controller.expandedSize.height : 48)
     .onChange(of: model.pairedDevicesChecked) { _, _ in controller.pairingCheckChanged() }
     .onChange(of: model.phase) { _, _ in controller.connectionPhaseChanged() }
+    .aniCeAppearance()
   }
 
   private var compactControl: some View {
     let isActive = model.isControlling(owner: controller.captureOwner)
     return ZStack {
       RoundedRectangle(cornerRadius: 15)
-        .fill(isActive ? AniCePalette.accent(scheme) : AniCePalette.surface(scheme))
+        .fill(isActive ? AniCePalette.accent(scheme) : Color.clear)
       FloatingKeyboardInputSurface(controller: controller, model: model)
         .padding(3)
       Image(systemName: controller.symbolName)
@@ -425,6 +448,7 @@ private struct FloatingKeyboardPanelView: View {
           .allowsHitTesting(false)
       }
     }
+    .aniCeSurface(cornerRadius: 15)
     .overlay {
       RoundedRectangle(cornerRadius: 15)
         .stroke(isActive ? AniCePalette.onAccent(scheme).opacity(0.55) : AniCePalette.separator(scheme),
@@ -469,7 +493,6 @@ private struct FloatingKeyboardPanelView: View {
       .padding(.vertical, 10)
       .background {
         ZStack {
-          AniCePalette.surface(scheme)
           FloatingWindowDragHandle()
         }
       }
@@ -486,7 +509,7 @@ private struct FloatingKeyboardPanelView: View {
       .background(AniCePalette.background(scheme))
     }
     .foregroundStyle(AniCePalette.primaryText(scheme))
-    .background(AniCePalette.background(scheme))
+    .aniCeSurface(cornerRadius: 12)
     .overlay(RoundedRectangle(cornerRadius: 12).stroke(AniCePalette.separator(scheme), lineWidth: 0.75))
     .clipShape(RoundedRectangle(cornerRadius: 12))
     .shadow(color: .black.opacity(0.18), radius: 12, y: 5)
@@ -529,6 +552,7 @@ private struct FloatingKeyboardInputSurface: NSViewRepresentable {
   func updateNSView(_ view: KeyboardInputNSView, context: Context) { configure(view) }
 
   private func configure(_ view: KeyboardInputNSView) {
+    controller.registerInputView(view)
     view.model = model
     view.presentationID = controller.captureOwner.presentationID
     view.inputID = controller.captureOwner.inputID

@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
 
 @Composable
 internal fun DeviceNameDialog(
@@ -38,10 +39,9 @@ internal fun DeviceNameDialog(
                 OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true,
                     enabled = !busy, label = { Text(if (onSaveNickname == null) "Device name" else "Nickname") },
                     modifier = Modifier.fillMaxWidth(), supportingText = { Text(helper) })
-                if (onSaveNickname != null) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Checkbox(checked = useNickname, enabled = !busy, onCheckedChange = { useNickname = it })
-                    Text("Use nickname")
-                }
+                if (onSaveNickname != null) AutomaticConnectionToggle(
+                    checked = useNickname, enabled = !busy, onCheckedChange = { useNickname = it },
+                    label = "Use nickname", compact = true)
                 if (submitted && failure) Text("Couldn't save. Try again.", color = MaterialTheme.colorScheme.error)
             }
         },

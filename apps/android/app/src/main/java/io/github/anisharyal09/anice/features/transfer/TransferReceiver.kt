@@ -255,39 +255,6 @@ internal fun TransferController.clearOfferAssembly() {
         offerAssembly = null
     }
 
-internal fun TransferController.acceptIncomingOfferFlow(tree: Uri, modes: Int) {
-        val ctx = context ?: return
-        val current = state as? TransferState.IncomingOffer ?: return
-        if (destinationPreparation?.isActive == true) return
-        pendingAutomaticReceive = null
-        automaticReceiveNeedsApp = false
-        val operation = epoch
-        onLeaseChanged?.invoke(true)
-        destinationPreparation = scope.launch {
-            val owned = java.util.concurrent.atomic.AtomicReference<TransferDestination?>()
-            var destination: TransferDestination? = null
-            try {
-                receiveCleanup?.join()
-                if (operation != epoch) return@launch
-                destination = withContext(receiveDispatcher) {
-                    TransferDestination(ctx, tree, modes).also { target ->
-                        owned.set(target)
-                        try { target.preflight(current.batch.totalBytes) }
-                        catch (error: Exception) { target.close(); throw error }
-                    }
-                }
-                if (operation != epoch || activeChannel == null) { withContext(NonCancellable + receiveDispatcher) { destination.close() }; return@launch }
-                documentDestination = destination
-                owned.set(null)
-                acceptIncomingOffer(File(ctx.filesDir, "unused-document-destination"))
-            } catch (error: CancellationException) { withContext(NonCancellable + receiveDispatcher) { owned.getAndSet(null)?.close() }; throw error }
-            catch (error: Exception) {
-                withContext(NonCancellable + receiveDispatcher) { owned.getAndSet(null)?.close() }
-                if (operation == epoch) failTransfer("Cannot use this folder: ${error.message}. Choose another local folder.")
-            }
-        }
-    }
-
 internal suspend fun TransferController.acceptIncomingOfferFlow(destinationDir: File) {
         val current = state
         val channel = activeChannel ?: return
@@ -512,7 +479,7 @@ internal suspend fun TransferController.finalizeReceiverFileOwned(batch: Transfe
         val digest = try {
             checkpoint(force = true, publishingIdentity = storage.fileIdentity())?.await()
             if (operation != epoch || receiverStorage !== storage) return
-            storage.finish(file.name, file.sha256)
+            storage.finish(file)
         } catch (error: Exception) {
             val retained = storage.hasVerifiedPartial()
             if (operation == epoch) {
@@ -739,7 +706,7 @@ internal fun TransferController.saveReceiveDestinationFlow(tree: Uri, modes: Int
         try {
             resolver.takePersistableUriPermission(tree, flags)
             withContext(receiveDispatcher) {
-                val target = TransferDestination(ctx, tree, flags, restoredOwnedModes = 0)
+                val target = TransferDestination(ctx, tree, flags)
                 try { target.preflight(0) } finally { target.close() }
             }
             preferences.save(tree, flags)

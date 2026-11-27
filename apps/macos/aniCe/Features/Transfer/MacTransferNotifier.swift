@@ -138,6 +138,8 @@ struct TransferReceiveDestinationSelection: Sendable {
 
 // Separates offer delivery and legacy-notice cleanup from the native notification center.
 protocol TransferNotificationCenter: AnyObject {
+  func pendingIdentifiers(completionHandler: @escaping @Sendable ([String]) -> Void)
+  func deliveredIdentifiers(completionHandler: @escaping @Sendable ([String]) -> Void)
   func requestAuthorization(options: UNAuthorizationOptions, completionHandler: @escaping @Sendable (Bool, Error?) -> Void)
   func add(_ request: UNNotificationRequest, withCompletionHandler completionHandler: (@Sendable (Error?) -> Void)?)
   func removeDeliveredNotifications(withIdentifiers identifiers: [String])
@@ -147,12 +149,11 @@ protocol TransferNotificationCenter: AnyObject {
 extension UNUserNotificationCenter: TransferNotificationCenter {}
 
 // Builds transfer notification payloads without exposing incoming file names.
-struct TransferNotificationContent: Equatable {
+struct TransferNotificationContent {
   let identifier: String
   let categoryIdentifier: String
   let title: String
   let body: String
-  let userInfo: [String: String]
 
   // Offer text displays authenticated peerName, file count, and aggregate size only.
   // Peer-supplied file names are unvalidated CBOR strings that must not be presented in system banners.
@@ -164,33 +165,27 @@ struct TransferNotificationContent: Equatable {
       identifier: "transfer-offer-\(batch.idString)",
       categoryIdentifier: MacTransferNotifier.Category.offer,
       title: "Incoming files from \(batch.peerName)",
-      body: "\(countStr) · \(sizeStr)",
-      userInfo: ["batchId": batch.idString]
+      body: "\(countStr) · \(sizeStr)"
     )
   }
 
   // Reports the verified destination folder where files were published on disk.
-  static func completed(fileCount: Int, totalBytes: Int64, folder: URL?, batchId: UUID = UUID()) -> TransferNotificationContent {
+  static func completed(fileCount: Int, totalBytes: Int64, folder: URL, batchId: UUID) -> TransferNotificationContent {
     let countStr = "\(fileCount) file\(fileCount == 1 ? "" : "s")"
     let sizeStr = ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)
-    let folderName = folder?.lastPathComponent ?? "Downloads"
     return TransferNotificationContent(
       identifier: "transfer-received-\(batchId.uuidString.lowercased())",
       categoryIdentifier: MacTransferNotifier.Category.result,
       title: "Files received",
-      body: "\(countStr) (\(sizeStr)) saved to \(folderName).",
-      userInfo: folder.map { ["receivedFolder": $0.absoluteString] } ?? [:]
+      body: "\(countStr) (\(sizeStr)) saved to \(folder.lastPathComponent)."
     )
   }
-
 }
 
 @MainActor final class MacTransferNotifier: NSObject {
   enum Category {
     static let offer = "FILE_TRANSFER_OFFER"
     static let result = "TRANSFER_RESULT"
-    static let paused = "FILE_TRANSFER_PAUSED"
-    static let pausedSender = "FILE_TRANSFER_PAUSED_SENDER"
   }
 
   enum Action {
@@ -198,8 +193,6 @@ struct TransferNotificationContent: Equatable {
     static let choose = "CHOOSE_ACTION"
     static let decline = "DECLINE_ACTION"
     static let showInFinder = "SHOW_IN_FINDER"
-    static let continueOverBluetooth = "CONTINUE_OVER_BLUETOOTH"
-    static let cancelTransfer = "CANCEL_TRANSFER"
   }
 
   private weak var model: MacTransferModel?
@@ -208,40 +201,58 @@ struct TransferNotificationContent: Equatable {
   private let preferences: TransferNotificationPreferences
   private let applicationIsActive: () -> Bool
   private let revealReceivedFolder: (URL) -> Void
+  private let scheduleAction: (@escaping @MainActor () async -> Void) -> Void
+  private let startupCleanup: Task<Void, Never>
   private var deliveryGeneration = 0
   private var activeOfferIdentifier: String?
   private var announcedCompletion: UUID?
+  private struct Delivery {
+    let content: TransferNotificationContent
+    let operation: UUID
+    let batchId: UUID
+    let token: UUID
+    let folder: URL?
+  }
+  private var pending: [String: Delivery] = [:]
+  private var targets: [String: Delivery] = [:]
+  private var completionOrder: [String] = []
 
   init(model: MacTransferModel, openMainWindow: @escaping () -> Void,
     center: any TransferNotificationCenter = UNUserNotificationCenter.current(),
     applicationIsActive: @escaping () -> Bool = { NSApp.isActive },
-    revealReceivedFolder: @escaping (URL) -> Void = { NSWorkspace.shared.activateFileViewerSelecting([$0]) }) {
+    revealReceivedFolder: @escaping (URL) -> Void = { NSWorkspace.shared.activateFileViewerSelecting([$0]) },
+    scheduleAction: @escaping (@escaping @MainActor () async -> Void) -> Void = { action in
+      Task { @MainActor in await action() }
+    }) {
     self.model = model
     self.openMainWindow = openMainWindow
     self.center = center
     self.applicationIsActive = applicationIsActive
     self.revealReceivedFolder = revealReceivedFolder
+    self.scheduleAction = scheduleAction
+    startupCleanup = Task { @MainActor [center] in
+      let pending = await withCheckedContinuation { continuation in
+        center.pendingIdentifiers { continuation.resume(returning: $0) }
+      }
+      let delivered = await withCheckedContinuation { continuation in
+        center.deliveredIdentifiers { continuation.resume(returning: $0) }
+      }
+      let ids = Array(Set(pending + delivered).filter(Self.ownsIdentifier))
+      center.removeDeliveredNotifications(withIdentifiers: ids)
+      center.removePendingNotificationRequests(withIdentifiers: ids)
+    }
     preferences = model.notificationPreferences
     super.init()
-    if let native = center as? UNUserNotificationCenter {
-      // Remove banners from earlier builds without touching Messages or Find Device notifications.
-      Task { @MainActor in
-        let notices = await native.deliveredNotifications()
-        let categories = [Category.offer, Category.result, Category.paused, Category.pausedSender]
-        let ids = notices.filter { categories.contains($0.request.content.categoryIdentifier) }.map { $0.request.identifier }
-        native.removeDeliveredNotifications(withIdentifiers: ids)
-        native.removePendingNotificationRequests(withIdentifiers: ids)
-      }
-    }
+    model.onStateChanged = { [weak self] in self?.reconcilePending() }
     preferences.changed = { [weak self] in
       guard let self, !self.preferences.enabled else { return }
       self.deliveryGeneration += 1
       self.announcedCompletion = nil
       self.clearActiveOffer()
+      for identifier in Array(self.pending.keys) { self.clear(identifier) }
     }
   }
 
-  // Pause categories remain registered for cleanup and actions from earlier builds.
   static func notificationCategories() -> Set<UNNotificationCategory> {
     let acceptAction = UNNotificationAction(
       identifier: Action.accept,
@@ -250,7 +261,7 @@ struct TransferNotificationContent: Equatable {
     )
     let chooseAction = UNNotificationAction(
       identifier: Action.choose,
-      title: "Choose folder…",
+      title: "Review files",
       options: [.foreground]
     )
     let declineAction = UNNotificationAction(
@@ -262,7 +273,7 @@ struct TransferNotificationContent: Equatable {
       identifier: Category.offer,
       actions: [acceptAction, chooseAction, declineAction],
       intentIdentifiers: [],
-      options: []
+      options: [.customDismissAction]
     )
 
     let showAction = UNNotificationAction(
@@ -274,33 +285,10 @@ struct TransferNotificationContent: Equatable {
       identifier: Category.result,
       actions: [showAction],
       intentIdentifiers: [],
-      options: []
+      options: [.customDismissAction]
     )
 
-    let continueAction = UNNotificationAction(
-      identifier: Action.continueOverBluetooth,
-      title: "Continue over Bluetooth",
-      options: []
-    )
-    let cancelTransferAction = UNNotificationAction(
-      identifier: Action.cancelTransfer,
-      title: "Cancel transfer",
-      options: [.destructive]
-    )
-    let pausedCategory = UNNotificationCategory(
-      identifier: Category.paused,
-      actions: [cancelTransferAction],
-      intentIdentifiers: [],
-      options: []
-    )
-    let pausedSenderCategory = UNNotificationCategory(
-      identifier: Category.pausedSender,
-      actions: [continueAction, cancelTransferAction],
-      intentIdentifiers: [],
-      options: []
-    )
-
-    return [offerCategory, resultCategory, pausedCategory, pausedSenderCategory]
+    return [offerCategory, resultCategory]
   }
 
   func handle(_ event: TransferEvent) {
@@ -309,8 +297,9 @@ struct TransferNotificationContent: Equatable {
       guard preferences.enabled, !applicationIsActive() else { return }
       let content = TransferNotificationContent.offer(batch: batch)
       guard activeOfferIdentifier != content.identifier else { return }
+      clearActiveOffer()
       activeOfferIdentifier = content.identifier
-      post(content)
+      post(content, batchId: batch.id)
 
     case .completed(let count, let bytes):
       clearActiveOffer()
@@ -321,7 +310,7 @@ struct TransferNotificationContent: Equatable {
         announcedCompletion != batchId else { return }
       announcedCompletion = batchId
       post(TransferNotificationContent.completed(fileCount: count, totalBytes: bytes,
-        folder: folder, batchId: batchId))
+        folder: folder, batchId: batchId), batchId: batchId, folder: folder)
 
     case .paused, .resumed, .failed, .sentFromDrop:
       // Reconnection and progress transitions belong to the activity panel, not repeated system alerts.
@@ -330,43 +319,69 @@ struct TransferNotificationContent: Equatable {
   }
 
   private func clearActiveOffer() {
-    if let id = activeOfferIdentifier {
-      center.removeDeliveredNotifications(withIdentifiers: [id])
-      center.removePendingNotificationRequests(withIdentifiers: [id])
-      activeOfferIdentifier = nil
-    }
+    if let id = activeOfferIdentifier { clear(id) }
   }
 
-  private func post(_ notification: TransferNotificationContent) {
-    guard preferences.enabled else { return }
+  private func clear(_ identifier: String) {
+    if activeOfferIdentifier == identifier { activeOfferIdentifier = nil }
+    pending[identifier] = nil
+    targets[identifier] = nil
+    completionOrder.removeAll { $0 == identifier }
+    center.removeDeliveredNotifications(withIdentifiers: [identifier])
+    center.removePendingNotificationRequests(withIdentifiers: [identifier])
+  }
+
+  private static func ownsIdentifier(_ identifier: String) -> Bool {
+    ["transfer-offer-", "transfer-received-", "transfer-paused-"].contains { identifier.hasPrefix($0) }
+  }
+
+  private func isCurrent(_ delivery: Delivery) -> Bool {
+    guard let model, model.epoch == delivery.operation else { return false }
+    if delivery.content.categoryIdentifier == Category.offer {
+      return model.pendingOffer?.id == delivery.batchId && !model.autoReceivePreparing
+    }
+    guard case .completed(let batchId, _, _) = model.state else { return false }
+    return model.receiving && batchId == delivery.batchId
+  }
+
+  private func reconcilePending() {
+    guard activeOfferIdentifier != nil || !pending.isEmpty else { return }
+    if let identifier = activeOfferIdentifier,
+      targets[identifier].map({ !isCurrent($0) }) ?? pending[identifier].map({ !isCurrent($0) }) ?? true {
+      clearActiveOffer()
+    }
+    for identifier in pending.filter({ !isCurrent($0.value) }).map(\.key) { clear(identifier) }
+  }
+
+  private func post(_ notification: TransferNotificationContent, batchId: UUID, folder: URL? = nil) {
+    guard preferences.enabled, let model else { return }
+    let delivery = Delivery(content: notification, operation: model.epoch, batchId: batchId, token: UUID(), folder: folder)
+    pending[notification.identifier] = delivery
     let generation = deliveryGeneration
     // Authorization is asynchronous; publishing before approval can lose the first notice.
     center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
       Task { @MainActor in
-        guard let self, granted, self.preferences.enabled, self.deliveryGeneration == generation else { return }
-        if notification.categoryIdentifier == Category.offer {
-          guard let offer = self.model?.pendingOffer,
-            notification.identifier == "transfer-offer-\(offer.idString)",
-            self.activeOfferIdentifier == notification.identifier, !self.applicationIsActive() else { return }
-        } else if notification.identifier.hasPrefix("transfer-received-") {
-          // The completed batch must still own the published result, and background-only delivery
-          // is rechecked because authorization may resolve after the user returns to aniCe.
-          guard let model = self.model, model.receiving,
-            case .completed(let batchId, _, _) = model.state,
-            notification.identifier == "transfer-received-\(batchId.uuidString.lowercased())",
-            !self.applicationIsActive() else { return }
+        guard let self else { return }
+        await self.startupCleanup.value
+        guard self.pending[notification.identifier]?.token == delivery.token else { return }
+        guard granted, self.preferences.enabled, self.deliveryGeneration == generation,
+          self.isCurrent(delivery), !self.applicationIsActive() else {
+          self.clear(notification.identifier)
+          return
         }
-        self.deliver(notification)
+        self.deliver(delivery)
       }
     }
   }
 
-  private func deliver(_ notification: TransferNotificationContent) {
+  private func deliver(_ delivery: Delivery) {
+    let notification = delivery.content
     let content = UNMutableNotificationContent()
     content.title = notification.title
     content.body = notification.body
     content.categoryIdentifier = notification.categoryIdentifier
-    content.userInfo = notification.userInfo
+    content.userInfo = ["anice.transfer.token": delivery.token.uuidString.lowercased()]
+    content.threadIdentifier = "anice-file-transfer"
     content.sound = preferences.sound ? .default : nil
 
     let request = UNNotificationRequest(
@@ -374,85 +389,67 @@ struct TransferNotificationContent: Equatable {
       content: content,
       trigger: nil
     )
-    center.add(request) { error in
-      if let error {
-        NSLog("Transfer notification delivery failed: %@", error.localizedDescription)
+    targets[notification.identifier] = delivery
+    center.add(request) { [weak self] error in
+      Task { @MainActor in
+        guard let self else { return }
+        guard self.targets[notification.identifier]?.token == delivery.token else {
+          if self.targets[notification.identifier] == nil, self.pending[notification.identifier] == nil {
+            self.center.removeDeliveredNotifications(withIdentifiers: [notification.identifier])
+            self.center.removePendingNotificationRequests(withIdentifiers: [notification.identifier])
+          }
+          return
+        }
+        guard error == nil, self.pending[notification.identifier]?.token == delivery.token,
+          self.isCurrent(delivery), self.preferences.enabled else {
+          self.clear(notification.identifier)
+          return
+        }
+        self.pending[notification.identifier] = nil
+        if notification.categoryIdentifier == Category.result {
+          self.completionOrder.append(notification.identifier)
+          while self.completionOrder.count > 32 { self.clear(self.completionOrder[0]) }
+        }
       }
     }
   }
 
-  // Banner identifiers bind destructive actions to their original pending or paused batch.
-  func handleAction(_ actionIdentifier: String, identifier: String? = nil, receivedFolder: String? = nil) {
-    if let identifier {
-      center.removeDeliveredNotifications(withIdentifiers: [identifier])
-      // An old banner must never approve, decline or cancel a successor batch.
-      if [Action.accept, Action.decline].contains(actionIdentifier) {
-        guard let batch = model?.pendingOffer, identifier == "transfer-offer-\(batch.idString)" else { return }
-      }
-      if [Action.continueOverBluetooth, Action.cancelTransfer].contains(actionIdentifier) {
-        guard let model, case .paused(let batch, _, _, _, _, _, _, _) = model.state,
-          identifier == "transfer-paused-\(batch.idString)" else { return }
-      }
+  // Native responses carry only a local token; the original operation/folder stays in memory.
+  func handleAction(_ actionIdentifier: String, identifier: String? = nil,
+    category: String? = nil, sourceToken: String? = nil) {
+    guard let identifier, let target = targets[identifier],
+      target.content.categoryIdentifier == category,
+      target.token.uuidString.lowercased() == sourceToken else { return }
+    if actionIdentifier == UNNotificationDismissActionIdentifier { clear(identifier); return }
+    if target.content.categoryIdentifier == Category.result {
+      guard [Action.showInFinder, UNNotificationDefaultActionIdentifier].contains(actionIdentifier),
+        let folder = target.folder, folder.isFileURL else { return }
+      clear(identifier)
+      revealReceivedFolder(folder)
+      return
     }
+    guard target.content.categoryIdentifier == Category.offer, isCurrent(target) else { return }
     switch actionIdentifier {
-    case Action.accept:
-      clearActiveOffer()
-      guard let model, model.pendingOffer != nil else {
-        return
+    case Action.accept, Action.decline:
+      clear(identifier)
+      let generation = deliveryGeneration
+      scheduleAction { [weak self] in
+        guard let self, self.deliveryGeneration == generation,
+          let model = self.model, self.isCurrent(target) else { return }
+        if actionIdentifier == Action.accept { await model.acceptIncomingOffer() }
+        else { await model.rejectIncomingOffer() }
       }
-      Task { [weak model] in
-        await model?.acceptIncomingOffer()
-      }
-
-    case Action.choose:
-      if identifier == nil || model?.pendingOffer.map({ "transfer-offer-\($0.idString)" }) == identifier {
-        clearActiveOffer()
-      }
+    case Action.choose, UNNotificationDefaultActionIdentifier:
+      clear(identifier)
       openMainWindow()
-
-    case Action.decline:
-      clearActiveOffer()
-      guard let model, model.pendingOffer != nil else {
-        return
-      }
-      Task { [weak model] in
-        await model?.rejectIncomingOffer()
-      }
-
-    case Action.showInFinder:
-      if identifier?.hasPrefix("transfer-received-") == true {
-        revealCompletionFolder(receivedFolder)
-        return
-      }
-      if let urls = model?.publishedURLs, !urls.isEmpty {
-        NSWorkspace.shared.activateFileViewerSelecting(urls)
-      } else if let folder = model?.receiveFolder {
-        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: folder.path)
-      }
-
-    case Action.continueOverBluetooth:
-      // Fenced against a resume or terminal state that raced the banner tap.
-      guard let model, model.isPaused else { return }
-      model.resumeOverBluetooth()
-
-    case Action.cancelTransfer:
-      guard let model, model.isPaused else { return }
-      model.cancelTransfer()
-
-    case UNNotificationDefaultActionIdentifier:
-      if identifier?.hasPrefix("transfer-received-") == true {
-        revealCompletionFolder(receivedFolder)
-      } else {
-        openMainWindow()
-      }
-
     default:
       break
     }
   }
 
-  private func revealCompletionFolder(_ value: String?) {
-    guard let value, let folder = URL(string: value), folder.isFileURL else { return }
-    revealReceivedFolder(folder)
+  func clearAll() {
+    deliveryGeneration += 1
+    activeOfferIdentifier = nil
+    for identifier in Array(Set(pending.keys).union(targets.keys)) { clear(identifier) }
   }
 }

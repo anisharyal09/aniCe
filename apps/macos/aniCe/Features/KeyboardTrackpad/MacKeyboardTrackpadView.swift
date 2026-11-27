@@ -46,9 +46,11 @@ struct MacKeyboardTrackpadView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: floatingPresentation ? 12 : 16) {
       targetHeader
+      Toggle("Use keyboard and trackpad together", isOn: $model.combinedInput)
+        .toggleStyle(AniCePreferenceToggleStyle())
 
       if !floatingPresentation {
-        Text("Shortcut: ⌥⌘K shows or hides Floating Key")
+        Text("Shortcuts: \(GlobalShortcutPreferences.shared.binding(.floatingKey).label) shows or hides Floating Key · \(GlobalShortcutPreferences.shared.binding(.floatingKeyInput).label) toggles typing focus")
           .font(.caption)
           .foregroundStyle(AniCePalette.secondaryText(scheme))
       }
@@ -354,7 +356,11 @@ struct MacKeyboardTrackpadView: View {
 
   private var inputSurfaces: some View {
     VStack(alignment: .leading, spacing: 8) {
-      controls
+      if model.combinedInput {
+        Text("Click the trackpad to control. Type while using the trackpad.")
+          .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+          .fixedSize(horizontal: false, vertical: true)
+      } else { controls }
       TrackpadPad(model: model, presentationID: activePresentationID)
         .frame(maxWidth: .infinity)
         .frame(height: trackpadAreaHeight)
@@ -402,7 +408,7 @@ struct MacKeyboardTrackpadView: View {
       .accessibilityElement()
       .accessibilityLabel("Trackpad height")
       .accessibilityValue("\(Int(trackpadAreaHeight)) points")
-      .accessibilityHint("Drag vertically to resize the trackpad. The keyboard area stays the same height.")
+       .accessibilityHint("Drag vertically to resize the trackpad.")
       .accessibilityAdjustableAction { direction in
         switch direction {
         case .increment: setTrackpadAreaHeight(trackpadAreaHeight + 16)
@@ -672,7 +678,9 @@ private struct TrackpadPad: View {
     ZStack {
       MousePadSurface(model: model, presentationID: presentationID, inputID: inputID, focused: $focused)
         .accessibilityLabel("Phone trackpad")
-        .accessibilityHint("Click to control the phone pointer; the first click is consumed. Two-finger scrolling browses this panel until active, then scrolls the phone.")
+        .accessibilityHint(model.combinedInput
+          ? "Click to activate pointer and keyboard input. The first click is consumed; type while using the trackpad."
+          : "Click to control the phone pointer; the first click is consumed. Two-finger scrolling browses this panel until active, then scrolls the phone.")
       VStack {
         HStack {
           Label("Phone trackpad", systemImage: "cursorarrow")
@@ -687,11 +695,11 @@ private struct TrackpadPad: View {
         }
         Spacer()
         if !model.isControlling(owner: captureOwner) {
-          Text("Click to control · scroll to browse")
+          Text(model.combinedInput ? "Click to control pointer and keyboard" : "Click to control · scroll to browse")
             .font(.caption)
             .foregroundStyle(AniCePalette.secondaryText(scheme))
         } else {
-          Text(model.pointerActivity)
+          Text(model.combinedInput ? "\(model.pointerActivity) · Keyboard active" : model.pointerActivity)
             .font(.caption)
             .foregroundStyle(AniCePalette.secondaryText(scheme))
         }
@@ -778,7 +786,10 @@ private struct FullScreenTrackpadContent: View {
         Button("Done", action: onDone)
       }
       .buttonStyle(AniCeButtonStyle())
-      keyboardInput
+       if model.combinedInput {
+         Text("Click the trackpad to control. Type while using the trackpad.")
+           .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+       } else { keyboardInput }
       TrackpadPad(model: model, presentationID: presentationID)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -1030,7 +1041,7 @@ private struct KeyboardCaptureSurface: NSViewRepresentable {
     if let localMonitor { NSEvent.removeMonitor(localMonitor) }
   }
 
-  private static func hidModifiers(_ flags: NSEvent.ModifierFlags) -> UInt8 {
+  static func hidModifiers(_ flags: NSEvent.ModifierFlags) -> UInt8 {
     AniCeHIDProtocol.physicalModifiers(for: flags)
   }
 }
@@ -1068,6 +1079,7 @@ private struct MousePadSurface: NSViewRepresentable {
   private var mouseTrackingArea: NSTrackingArea?
   private var consumingArmingGesture = false
   private var blockedTouchSequence = false
+  private var combinedCapsLock = false
   private var focusedOwner: KeyboardTrackpadCaptureOwner?
 
   override var acceptsFirstResponder: Bool { true }
@@ -1125,6 +1137,7 @@ private struct MousePadSurface: NSViewRepresentable {
     model?.cancelScrollGesture(owner: captureOwner)
     let wasActivePad = model?.isControlling(owner: captureOwner) == true
     consumingArmingGesture = !wasActivePad
+    if !wasActivePad { combinedCapsLock = event.modifierFlags.contains(.capsLock) }
     window?.makeFirstResponder(self)
     if wasActivePad { model?.pointerButtonDown(owner: captureOwner) }
     else { model?.requestControl(owner: captureOwner) }
@@ -1135,7 +1148,41 @@ private struct MousePadSurface: NSViewRepresentable {
       model?.stopControl(owner: captureOwner)
       return
     }
+    if forwardCombinedKey(event) { return }
     super.keyDown(with: event)
+  }
+
+  override func keyUp(with event: NSEvent) {
+    if !forwardCombinedKey(event) { super.keyUp(with: event) }
+  }
+  override func flagsChanged(with event: NSEvent) {
+    if !forwardCombinedKey(event) { super.flagsChanged(with: event) }
+  }
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    forwardCombinedKey(event) || super.performKeyEquivalent(with: event)
+  }
+  private func forwardCombinedKey(_ event: NSEvent) -> Bool {
+    guard let model, model.combinedInput, model.isControlling(owner: captureOwner),
+      let window, window.isKeyWindow, window.firstResponder === self else { return false }
+    if event.keyCode == 53 && event.modifierFlags.contains([.command, .shift]) {
+      model.stopControl(owner: captureOwner); return true
+    }
+    let modifiers = KeyboardInputNSView.hidModifiers(event.modifierFlags)
+    if event.type == .flagsChanged {
+      if event.keyCode == 0x39 {
+        let enabled = event.modifierFlags.contains(.capsLock)
+        if enabled != combinedCapsLock {
+          combinedCapsLock = enabled
+          model.keyDown(usage: 0x39, modifiers: modifiers, owner: captureOwner)
+          model.keyUp(usage: 0x39, modifiers: modifiers, owner: captureOwner)
+        }
+      } else { model.modifiersChanged(modifiers, owner: captureOwner) }
+    } else {
+      let usage = AniCeHIDProtocol.usage(forMacKeyCode: event.keyCode)
+      if event.type == .keyUp { model.keyUp(usage: usage, modifiers: modifiers, owner: captureOwner) }
+      else if !event.isARepeat { model.keyDown(usage: usage, modifiers: modifiers, owner: captureOwner) }
+    }
+    return true
   }
 
   override func mouseUp(with event: NSEvent) {

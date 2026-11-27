@@ -3,6 +3,7 @@
 import AppKit
 import SwiftUI
 import Observation
+import UserNotifications
 
 struct MainWindowView: View {
   let delegate: AppDelegate
@@ -30,8 +31,7 @@ struct MainWindowView: View {
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.openWindow) private var openWindow
   @State private var systemAppearance = SystemAppearance()
-  @State var activeSettingsSection = "appearance"
-  @State var hoveredSettingsSection: String?
+  @State var settingsCategory = MacSettingsCategory.all
   @State var hoveredAboutLink: String?
   @State var focusedSettingsSection: String?
   @State var settingsFocusToken = UUID()
@@ -40,6 +40,7 @@ struct MainWindowView: View {
   @State var editingLocalName = false
   @State var nicknamePeer: DeviceIdentity?
   @State var updates = MacUpdateModel.shared
+  @State var notificationPermissionStatus: UNAuthorizationStatus?
   var colorScheme: ColorScheme {
     WindowAppearance.stored(appearance).colorScheme(system: systemAppearance.colorScheme)
   }
@@ -51,43 +52,77 @@ struct MainWindowView: View {
 
   @AppStorage("window.appearance") var appearance = WindowAppearance.system.rawValue
   @AppStorage("ui.fontScale") var fontScale: Double = 1.0
+  @AppStorage("ui.nativeGlass") var nativeGlass = true
+  @AppStorage("ui.nativeGlassStyle") private var nativeGlassStyle = NativeGlassStyle.standard.rawValue
+  @AppStorage("ui.sidebarPinnedFeatures") private var sidebarPinnedFeatures = ""
+  @Environment(\.accessibilityReduceTransparency) var reduceTransparency
 
   var body: some View {
-    let sidebarMinimumWidth = MainWindowSizing.sidebarMinimumWidth(fontScale: fontScale)
-    return NavigationSplitView {
-      VStack(alignment: .leading, spacing: 0) {
-        HStack(spacing: 8) {
-          Image("BrandMark")
-            .resizable().scaledToFit()
-            .frame(width: MainWindowSizing.sidebarIconSize, height: MainWindowSizing.sidebarIconSize)
-            .accessibilityHidden(true)
-          AniCeWordmark(size: 21 * fontScale, weight: .semibold)
-        }.foregroundStyle(AniCePalette.primaryText(colorScheme))
-          .padding(.horizontal, MainWindowSizing.sidebarInset).padding(.top, 28).padding(.bottom, 24)
-        Text("Workspace").font(.system(size: 11 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-          .padding(.horizontal, MainWindowSizing.sidebarInset).padding(.bottom, 12)
-        ForEach([AppDestination.home, .devices, .features, .favourites]) { sidebarItem($0) }
-        Spacer(minLength: 24)
-        sidebarItem(.settings)
-        sidebarItem(.about)
-      }.padding(.horizontal, MainWindowSizing.sidebarInset).padding(.bottom, 24)
-        .navigationSplitViewColumnWidth(min: sidebarMinimumWidth,
-          ideal: sidebarMinimumWidth + MainWindowSizing.sidebarBreathingRoom,
-          max: MainWindowSizing.sidebarMaximumWidth)
-        .background(AniCePalette.secondarySurface(colorScheme))
-        .overlay(alignment: .trailing) { AniCePalette.separator(colorScheme).frame(width: 0.5) }
-        .overlay(alignment: .top) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
-        .toolbar {
-          ToolbarItemGroup(placement: .navigation) {
-            Button(action: navigation.goBack) { Image(systemName: "arrow.left") }
-              .disabled(!navigation.canGoBack).help("Back")
-              .accessibilityLabel("Back").keyboardShortcut("[", modifiers: .command)
-            Button(action: navigation.goForward) { Image(systemName: "arrow.right") }
-              .disabled(!navigation.canGoForward).help("Forward")
-              .accessibilityLabel("Forward").keyboardShortcut("]", modifiers: .command)
-          }
+    playbackLifecycle
+  }
+
+  // Lifecycle modifiers stay grouped in small view expressions so older SwiftUI compilers can type-check them.
+  private var playbackLifecycle: some View {
+    connectionLifecycle
+      .onChange(of: navigation.destination) { _, _ in presentPlayback() }
+      .onChange(of: navigation.featurePanel) { _, _ in presentPlayback() }
+      .onChange(of: playback.showOnMac) { _, _ in presentPlayback() }
+      .onDisappear { playback.presented("main", false); updates.windowClosed() }
+      .onAppear {
+        updateKeyboardTrackpadTargets()
+        sms.isMessagesActive = { NSApp.isActive && navigation.destination == .features && navigation.featurePanel == .messages }
+        presentPlayback()
+        let action = openWindow
+        delegate.reopenMainWindow = {
+          action(id: "main")
+          playback.presented("main", mediaSurfaceVisible)
         }
-    } detail: { detailContent }
+      }
+  }
+
+  private var connectionLifecycle: some View {
+    startupLifecycle
+      .onChange(of: session.authenticatedPeer) { _, _ in updateKeyboardTrackpadTargets() }
+      .onChange(of: lan.authenticatedPeer) { _, _ in updateKeyboardTrackpadTargets() }
+      .onChange(of: navigation.focusedPeer) { _, _ in updateKeyboardTrackpadTargets() }
+      // Pairing signs the identity snapshot captured by its invitation; renaming requires a fresh invitation.
+      .onChange(of: identity.local?.identity.deviceName) { old, new in
+        if old != nil, old != new, pairing.active {
+          pairing.cancel(message: "Device name updated. Start a fresh invitation to share it.")
+          pairing.nearbyAvailabilityChanged()
+        }
+      }
+  }
+
+  private var startupLifecycle: some View {
+    windowContent
+      .task {
+        // Confirm before anything else can delay the update helper's startup watchdog.
+        updates.confirmStartup()
+        await Task.yield()
+        onInitialRender()
+        if !IdentityView.isTesting {
+          await identity.load()
+          if identity.local != nil { await pairing.refresh() }
+        }
+      }
+      .onChange(of: identity.local?.identity.fingerprint) { _, _ in Task { await pairing.refresh() } }
+      .onChange(of: pairing.peers.map(\.peer)) { _, _ in updateKeyboardTrackpadTargets() }
+      .onChange(of: pairing.peers.isEmpty) { _, empty in
+        if !empty && !pairing.active && discovery.nearbyAvailable { discovery.stop() }
+      }
+  }
+
+  private func presentPlayback() {
+    if !IdentityView.isTesting { playback.presented("main", mediaSurfaceVisible) }
+  }
+
+  private var windowContent: some View {
+    NavigationSplitView {
+      sidebarContent
+    } detail: {
+      detailContent
+    }
     .sheet(isPresented: $showingLocalIdentity) {
       IdentityView(model: identity).preferredColorScheme(colorScheme)
     }
@@ -104,43 +139,60 @@ struct MainWindowView: View {
     .frame(minWidth: 620, minHeight: 420)
     .tint(AniCePalette.primaryText(colorScheme))
     .font(.system(size: 13 * fontScale))
-    .task {
-      // Confirm a swapped-in build before anything else can delay the helper's startup watchdog.
-      updates.confirmStartup()
-      // Let SwiftUI present the first window before loading saved identity or starting radios.
-      await Task.yield()
-      onInitialRender()
-      if !IdentityView.isTesting {
-        await identity.load()
-        if identity.local != nil { await pairing.refresh() }
+  }
+
+  private var sidebarContent: some View {
+    let sidebarMinimumWidth = MainWindowSizing.sidebarMinimumWidth(fontScale: fontScale)
+    let pinnedFeatures = AppFeature.favourites(in: sidebarPinnedFeatures)
+    return VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: 8) {
+        Image("BrandMark")
+          .resizable().scaledToFit()
+          .frame(width: MainWindowSizing.sidebarIconSize, height: MainWindowSizing.sidebarIconSize)
+          .accessibilityHidden(true)
+        AniCeWordmark(size: 21 * fontScale, weight: .semibold)
       }
-    }
-    .onChange(of: identity.local?.identity.fingerprint) { _, _ in Task { await pairing.refresh() } }
-    .onAppear { updateKeyboardTrackpadTargets() }
-    .onChange(of: pairing.peers.map(\.peer)) { _, _ in updateKeyboardTrackpadTargets() }
-    .onChange(of: pairing.peers.isEmpty) { _, empty in
-      if !empty && !pairing.active && discovery.nearbyAvailable { discovery.stop() }
-    }
-    .onChange(of: session.authenticatedPeer) { _, _ in updateKeyboardTrackpadTargets() }
-    .onChange(of: lan.authenticatedPeer) { _, _ in updateKeyboardTrackpadTargets() }
-    .onChange(of: navigation.focusedPeer) { _, _ in updateKeyboardTrackpadTargets() }
-    // Pairing signs the identity snapshot captured by its invitation; renaming requires a fresh invitation.
-    .onChange(of: identity.local?.identity.deviceName) { old, new in
-      if old != nil, old != new, pairing.active {
-        pairing.cancel(message: "Device name updated. Start a fresh invitation to share it.")
-        pairing.nearbyAvailabilityChanged()
+      .foregroundStyle(AniCePalette.primaryText(colorScheme))
+      .padding(.horizontal, MainWindowSizing.sidebarInset).padding(.top, 28).padding(.bottom, 24)
+      ScrollView {
+        VStack(alignment: .leading, spacing: 0) {
+          Text("Workspace").font(.system(size: 11 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            .padding(.horizontal, MainWindowSizing.sidebarInset).padding(.bottom, 12)
+          ForEach([AppDestination.home, .devices, .features, .favourites]) { sidebarItem($0) }
+          if !pinnedFeatures.isEmpty {
+            Text("Pinned").font(.system(size: 11 * fontScale))
+              .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+              .padding(.horizontal, MainWindowSizing.sidebarInset).padding(.top, 12).padding(.bottom, 12)
+            ForEach(pinnedFeatures) { feature in
+              sidebarButton(title: feature.title, symbol: feature.symbol, selected: false) {
+                navigation.openFeature(feature)
+              }
+              .contextMenu {
+                Button("Unpin from Sidebar") { sidebarPinnedFeatures = feature.toggled(in: sidebarPinnedFeatures) }
+              }
+            }
+          }
+        }
       }
+      Spacer(minLength: 24)
+      sidebarItem(.settings)
+      sidebarItem(.about)
     }
-    .onChange(of:navigation.destination) { _,_ in if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) } }
-    .onChange(of:navigation.featurePanel) { _,_ in if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) } }
-    .onChange(of:playback.showOnMac) { _,_ in if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) } }
-    .onDisappear { playback.presented("main",false) }
-    .onAppear {
-      if !IdentityView.isTesting { playback.presented("main",mediaSurfaceVisible) }
-      let action = openWindow
-      delegate.reopenMainWindow = {
-        action(id: "main")
-        playback.presented("main",mediaSurfaceVisible)
+    .padding(.horizontal, MainWindowSizing.sidebarInset).padding(.bottom, 24)
+    .navigationSplitViewColumnWidth(min: sidebarMinimumWidth,
+      ideal: sidebarMinimumWidth + MainWindowSizing.sidebarBreathingRoom,
+      max: MainWindowSizing.sidebarMaximumWidth)
+    .aniCeSurface(secondary: true)
+    .overlay(alignment: .trailing) { AniCePalette.separator(colorScheme).frame(width: 0.5) }
+    .overlay(alignment: .top) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
+    .toolbar {
+      ToolbarItemGroup(placement: .navigation) {
+        Button { navigation.goBack() } label: { Image(systemName: "arrow.left") }
+          .disabled(!navigation.canGoBack).help("Back")
+          .accessibilityLabel("Back").keyboardShortcut("[", modifiers: .command)
+        Button { navigation.goForward() } label: { Image(systemName: "arrow.right") }
+          .disabled(!navigation.canGoForward).help("Forward")
+          .accessibilityLabel("Forward").keyboardShortcut("]", modifiers: .command)
       }
     }
   }
@@ -180,7 +232,11 @@ struct MainWindowView: View {
       destinationContent
     }
     .navigationTitle(MacAppStorage.applicationName)
-    .toolbarBackground(AniCePalette.background(colorScheme), for: .windowToolbar)
+    .modifier(GuideToolbarModifier(button: guideToolbarButton))
+    .toolbarBackground(nativeGlass && !reduceTransparency
+      ? (NativeGlassStyle.stored(nativeGlassStyle) == .vibrant
+        ? AnyShapeStyle(.thinMaterial) : AnyShapeStyle(.regularMaterial))
+      : AnyShapeStyle(AniCePalette.background(colorScheme)), for: .windowToolbar)
     .toolbarBackground(.visible, for: .windowToolbar)
     .background(AniCePalette.background(colorScheme))
     .overlay(alignment: .top) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
@@ -224,6 +280,79 @@ struct MainWindowView: View {
     case .favourites: featureDestination(favouritesOnly: true)
     case .about: aboutContent
     case .settings: settingsContent
+    case .guide: GuideView(initialTopic: navigation.guideTopic).id(navigation.guideTopic)
+    }
+  }
+
+  private var guideToolbarButton: some View {
+    Button {
+      navigation.openGuide(currentGuideTopic)
+    } label: {
+      Image(systemName: "questionmark.circle")
+        .font(.system(size: 13.5))
+        .foregroundStyle(AniCePalette.secondaryText(colorScheme).opacity(navigation.destination == .guide ? 0.35 : 0.75))
+    }
+    .buttonStyle(AniCeHoverButtonStyle(feedbackPadding: 4))
+    .accessibilityLabel("Open Guide")
+    .help(navigation.destination == .guide ? "Showing Guide" : "Open Guide")
+    .disabled(navigation.destination == .guide)
+  }
+
+  private struct GuideToolbarModifier<Item: View>: ViewModifier {
+    let button: Item
+
+    func body(content: Content) -> some View {
+      if #available(macOS 26.0, *) {
+        content.toolbar {
+          ToolbarItem(placement: .primaryAction) {
+            button
+          }
+          .sharedBackgroundVisibility(.hidden)
+        }
+      } else {
+        content.toolbar {
+          ToolbarItem(placement: .primaryAction) {
+            button
+          }
+        }
+      }
+    }
+  }
+
+  private var currentGuideTopic: GuideTopic? {
+    if (navigation.destination == .features || navigation.destination == .favourites),
+       let feature = navigation.featurePanel {
+      switch feature {
+      case .keyboardTrackpad: return .controlAndroidAndFloatingKey
+      case .messages: return .messagesAndSms
+      case .files: return .filesAndEdgeDrop
+      case .clipboard: return .clipboardAndQuickSend
+      case .findDevice: return .findDeviceAndPing
+      case .playback: return .nowPlayingAndAudio
+      }
+    }
+    switch navigation.destination {
+    case .home, .features, .favourites, .about, .guide: return nil
+    case .devices: return .pairingAndConnection
+    case .settings:
+      if navigation.settingsRoute == .about { return nil }
+      if navigation.settingsRoute == .identity { return .pairingAndConnection }
+      if settingsCategory == .permissions { return .permissions }
+      if settingsCategory == .shortcuts { return .companionAndShortcuts }
+      guard let section = navigation.settingsSection,
+        settingsCategory == .all || MacSettingsCategory.category(for: section) == settingsCategory else { return nil }
+      switch section {
+      case "permissions": return .permissions
+      case "shortcuts": return .companionAndShortcuts
+      case "clipboard": return .clipboardAndQuickSend
+      case "file-transfer": return .filesAndEdgeDrop
+      case "messages": return .messagesAndSms
+      case "dnd-sync": return .dndSync
+      case "now-playing": return .nowPlayingAndAudio
+      case "desk-deck": return .macDeskDeck
+      case "connection": return .pairingAndConnection
+      default: return nil
+      }
     }
   }
 
@@ -242,12 +371,17 @@ struct MainWindowView: View {
 
   private func sidebarItem(_ destination: AppDestination) -> some View {
     let selected = navigation.destination == destination
-    return Button {
+    return sidebarButton(title: destination.rawValue, symbol: destination.symbol, selected: selected) {
       navigation.select(destination)
-    } label: {
+    }
+    .accessibilityAddTraits(selected ? [.isSelected] : [])
+  }
+
+  private func sidebarButton(title: String, symbol: String, selected: Bool, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
       HStack(spacing: 12) {
-        Image(systemName: destination.symbol).frame(width: 18).accessibilityHidden(true)
-        Text(destination.rawValue).font(.system(size: 13 * fontScale, weight: selected ? .medium : .regular))
+        Image(systemName: symbol).frame(width: 18).accessibilityHidden(true)
+        Text(title).font(.system(size: 13 * fontScale, weight: selected ? .medium : .regular))
         Spacer(minLength: 0)
       }
       .foregroundStyle(selected ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
@@ -262,7 +396,6 @@ struct MainWindowView: View {
       .contentShape(RoundedRectangle(cornerRadius: 7))
     }
     .buttonStyle(AniCeHoverButtonStyle())
-    .accessibilityAddTraits(selected ? [.isSelected] : [])
     .padding(.bottom, 4)
   }
 

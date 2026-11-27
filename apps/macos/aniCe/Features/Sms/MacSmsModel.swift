@@ -45,6 +45,10 @@ struct SmsSimEntry: Identifiable, Equatable {
   var id: Int64 { subscriptionId }
 }
 
+enum SmsSimListingStatus: Equatable {
+  case unknown, checking, ready, permissionRequired, failed, unanswered
+}
+
 /** A search hit: enough context to show a result row without touching the conversation store. */
 struct SmsSearchRow: Identifiable, Equatable {
   let messageId: String
@@ -74,6 +78,19 @@ struct SmsReplyRequest: Equatable {
   let address: String
   let threadId: String
   let text: String
+}
+
+/// Memory-only navigation context from the exact native SMS alert.
+struct SmsConversationTarget: Equatable {
+  let peerKey: String
+  let peerName: String
+  let address: String
+  let threadId: String
+}
+
+func smsNotificationIdentifier(peerKey: String, messageId: String) -> String {
+  let credential = SHA256.hash(data: Data(peerKey.utf8)).map { String(format: "%02x", $0) }.joined()
+  return smsNotificationPrefix + credential + "-" + messageId
 }
 
 enum SmsPostOutcome: Sendable { case submitted, duplicate, denied, alertsDisabled, failed, cancelled, muted }
@@ -194,6 +211,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     var assemblies: [String: Assembly] = [:]
     var send: Send?
     var simEntries: [SmsSimEntry] = []
+    var simListingStatus: SmsSimListingStatus = .unknown
     var simChoice: Int64 = 0
     var simRequest = ""
     var simTransport = ""
@@ -285,8 +303,11 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
   // Drafts outlive transport links but remain memory-only and scoped to full peer credentials.
   private var drafts: [String: String] = [:]
   private var selectedConversations: [String: String] = [:]
+  private(set) var notificationPhoneKey = ""
   private(set) var selectedPhoneKey = ""
+  private(set) var notificationNavigationRevision = 0
   private var timer: Task<Void, Never>?
+  var isMessagesActive: () -> Bool = { false }
   var onLanRequired: () -> Void = {}
 
   init(notifier: any SmsNotifying,
@@ -318,12 +339,23 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     if address.isEmpty { selectedConversations.removeValue(forKey: selectedPhoneKey) }
     else { selectedConversations[selectedPhoneKey] = address }
   }
+  /// Opening an alert selects its trusted conversation without reading, sending or reconnecting.
+  @discardableResult
+  func openNotificationConversation(_ target: SmsConversationTarget, trustedPeers: [DeviceIdentity]) -> Bool {
+    guard !smsNormalizedAddress(target.address).isEmpty,
+      let peer = trustedPeers.first(where: { key($0) == target.peerKey }) else { return false }
+    selectConversation(peer, address: target.address)
+    notificationPhoneKey = target.peerKey
+    notificationNavigationRevision += 1
+    return true
+  }
   func retainDrafts(for identities: [DeviceIdentity]) {
     let credentials = Set(identities.map(key))
     let prefixes = credentials.map { $0 + "|" }
     drafts = drafts.filter { draftKey, _ in prefixes.contains { draftKey.hasPrefix($0) } }
     selectedConversations = selectedConversations.filter { credentials.contains($0.key) }
     if !credentials.contains(selectedPhoneKey) { selectedPhoneKey = "" }
+    if !credentials.contains(notificationPhoneKey) { notificationPhoneKey = "" }
   }
   func live(_ descriptor: ChannelDescriptor) -> Bool { links[descriptor.transport]?.channel.descriptor == descriptor }
   private func links(for key: String) -> [Link] {
@@ -455,6 +487,13 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     return entries.count >= 2 ? entries : []
   }
   func simChoice(_ peer: DeviceIdentity) -> Int64 { peers[key(peer)]?.simChoice ?? 0 }
+  func simListingStatus(_ peer: DeviceIdentity) -> SmsSimListingStatus {
+    guard let state = peers[key(peer)] else { return .unknown }
+    return state.simRequest.isEmpty ? state.simListingStatus : .checking
+  }
+  func simSelectionNeedsRecovery(_ peer: DeviceIdentity) -> Bool {
+    peers[key(peer)]?.simListingStatus != .ready
+  }
 
   func searchResults(_ peer: DeviceIdentity) -> [SmsSearchRow] { peers[key(peer)]?.search?.results ?? [] }
   func searchStatus(_ peer: DeviceIdentity) -> String { peers[key(peer)]?.search?.note ?? "" }
@@ -529,12 +568,11 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     schedule()
   }
 
-  /** Asks the phone for its active SMS subscriptions; the listing stays silent unless it offers a second choice. */
+  // Reuses a capable secured channel; permission recovery never reconnects or changes send routing.
   func requestSims(_ peer: DeviceIdentity) {
     let k = key(peer)
     let state = state(k)
     guard state.simRequest.isEmpty, state.capable, let link = capableLink(k) else { return }
-    onLanRequired()
     let requestId = UUID().uuidString.lowercased()
     state.simRequest = requestId
     state.simTransport = link.channel.descriptor.transport
@@ -732,6 +770,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
       }
       if !state.simRequest.isEmpty, state.simTransport == descriptor.transport {
         state.simRequest = ""; state.simTransport = ""; state.simDeadline = 0
+        state.simListingStatus = .unanswered
       }
       if let search = state.search, search.transport == descriptor.transport {
         search.requestId = ""; search.transport = ""; search.deadline = 0
@@ -817,6 +856,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     drafts.removeAll()
     selectedConversations.removeAll()
     selectedPhoneKey = ""
+    notificationPhoneKey = ""
     timer?.cancel(); timer = nil
     for descriptor in links.values.map(\.channel.descriptor) { retired(descriptor) }
     peers.removeAll()
@@ -844,6 +884,7 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
         state.simRequest = ""; state.simTransport = ""; state.simDeadline = 0
         state.simEntries = []
         state.simChoice = 0
+        state.simListingStatus = .unanswered
       }
       if let search = state.search, !search.requestId.isEmpty, search.deadline <= time {
         cancelQueued(search.requestId)
@@ -979,13 +1020,19 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     return true
   }
 
-  /** A listing is only kept when it offers a real second choice; everything else stays silent and on the default. */
+  // Successful single/empty listings remain distinct from missing permission and provider failure.
   private func finishSims(_ state: PeerState, _ m: SmsMessage) -> Bool {
     guard !state.simRequest.isEmpty, m.text(0) == state.simRequest else { return false }
     state.simRequest = ""; state.simTransport = ""; state.simDeadline = 0
     state.simEntries = m.number(1) == 0 ? simEntries(m) : []
-    if state.simEntries.count < 2 { state.simEntries = [] }
-    if !state.simEntries.contains(where: { $0.subscriptionId == state.simChoice }) { state.simChoice = 0 }
+    state.simListingStatus = switch m.number(1) {
+    case 0: .ready
+    case 1: .permissionRequired
+    default: .failed
+    }
+    if state.simEntries.count < 2 || !state.simEntries.contains(where: { $0.subscriptionId == state.simChoice }) {
+      state.simChoice = 0
+    }
     schedule()
     return true
   }
@@ -1086,7 +1133,10 @@ func smsCompareMessageIds(_ a: String, _ b: String) -> Int {
     let text = smsTruncate(smsSanitizeText(snippet), maxBytes: 160)
     if let index = state.threads.firstIndex(where: { $0.key == normalized }) {
       var card = state.threads[index]
-      if dateMillis >= card.dateMillis { card.snippet = text; card.dateMillis = dateMillis }
+      if dateMillis >= card.dateMillis {
+        card.snippet = text
+        card.dateMillis = dateMillis
+      }
       card.address = address.isEmpty ? card.address : address
       card.unreadCount += unread
       card.live = true

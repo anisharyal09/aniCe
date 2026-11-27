@@ -189,7 +189,7 @@ class DndSyncController(context: Context) : FeatureHandler {
 }
 
 @Composable
-fun DndSyncSettings(model: DndSyncController) {
+fun DndSyncSettings(model: DndSyncController, permissionsOnly: Boolean = false, showGranted: Boolean = true) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle, model) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) model.refreshAccess() }
@@ -197,14 +197,25 @@ fun DndSyncSettings(model: DndSyncController) {
         onDispose { lifecycle.removeObserver(observer) }
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        io.github.anisharyal09.anice.ui.AutomaticConnectionToggle(
-            checked = model.sending, enabled = true, onCheckedChange = model::setSendingEnabled,
-            label = "Sync phone DND to Mac", description = "Syncs DND changes while connected.",
-            compact = true, descriptionBottomPadding = if (!model.granted) 0.dp else null)
-        if (!model.granted) {
-            TextButton(onClick = model::requestAccess, modifier = Modifier.heightIn(min = 48.dp),
-                contentPadding = PaddingValues(horizontal = 0.dp)) { Text("Allow Do Not Disturb access") }
+        if (permissionsOnly) {
+            io.github.anisharyal09.anice.ui.PermissionStatusRow(
+                "Do Not Disturb access", model.granted, "Observe phone DND changes for phone-to-Mac sync.",
+                showGranted,
+            ) {
+                TextButton(onClick = model::requestAccess, modifier = Modifier.defaultMinSize(minHeight = 32.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) { Text("Allow Do Not Disturb access") }
+            }
+        } else {
+            io.github.anisharyal09.anice.ui.AutomaticConnectionToggle(
+                checked = model.sending, enabled = true, onCheckedChange = model::setSendingEnabled,
+                label = "Sync phone DND to Mac", description = "Syncs DND changes while connected.",
+                compact = true, descriptionBottomPadding = if (!model.granted) 0.dp else null)
+            if (!model.granted) {
+                TextButton(onClick = model::requestAccess, modifier = Modifier.defaultMinSize(minHeight = 32.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) { Text("Allow Do Not Disturb access") }
+            }
+            if (model.status.isNotBlank()) Text(model.status, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (model.status.isNotBlank()) Text(model.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

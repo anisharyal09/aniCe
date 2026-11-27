@@ -15,6 +15,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PhoneInputControllerTests {
+    @Test fun setupGuidanceNeedsRealRejectionAndClearsAfterSuccessfulStart() = runBlocking {
+        val (owner, channel, descriptor, peer) = connectedController()
+        assertFalse(owner.macInputSetupNeeded)
+        assertTrue(owner.start(peer))
+        val denied = channel.messages().last()
+        owner.handle(descriptor, PhoneInputMessage.of(3, Cbor.Text(denied.text(0)), Cbor.Integer(2)).encode())
+        assertTrue(owner.macInputSetupNeeded)
+        assertTrue(owner.start(peer))
+        val accepted = channel.messages().last()
+        owner.handle(descriptor, PhoneInputMessage.of(3, Cbor.Text(accepted.text(0)), Cbor.Integer(0)).encode())
+        assertTrue(owner.active)
+        assertFalse(owner.macInputSetupNeeded)
+        owner.stop()
+        assertFalse("Idle is not a permission failure", owner.macInputSetupNeeded)
+    }
+
     @Test fun requiresTextAndKeyTransitionsForCorrectionSupport() = runBlocking {
         val setup = connectedController(remoteEvents = 0x01)
         assertEquals(7L, setup.channel.messages().first().number(1))
@@ -110,13 +126,15 @@ class PhoneInputControllerTests {
         assertEquals(PhoneInputState.ACTIVE, owner.state)
         assertTrue(owner.sendText(PhoneInputTextPlan(listOf(
             PhoneInputTextAction.Commit("hi"),
+            PhoneInputTextAction.MoveCursor(-1),
             PhoneInputTextAction.Backspace(1),
         ))))
 
-        val sentInput = channel.messages().takeLast(3)
-        assertEquals(listOf(4L, 5L, 5L), sentInput.map { it.kind })
-        assertEquals(listOf(1L, 2L, 3L), sentInput.map { it.number(1) })
-        assertEquals(listOf(true, false), sentInput.drop(1).map { it.flag(4) })
+        val sentInput = channel.messages().takeLast(5)
+        assertEquals(listOf(4L, 5L, 5L, 5L, 5L), sentInput.map { it.kind })
+        assertEquals(listOf(1L, 2L, 3L, 4L, 5L), sentInput.map { it.number(1) })
+        assertEquals(listOf(0x50L, 0x50L, 0x2AL, 0x2AL), sentInput.drop(1).map { it.number(2) })
+        assertEquals(listOf(true, false, true, false), sentInput.drop(1).map { it.flag(4) })
 
         owner.stop()
         val terminal = channel.messages().takeLast(2)

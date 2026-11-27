@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,6 +58,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
+import io.github.anisharyal09.anice.ui.PermissionStatusRow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -83,101 +83,146 @@ internal fun filterNotificationAppChoices(
     }
 }
 
+internal data class NotificationPermissionSnapshot(
+    val notificationAccess: Boolean,
+    val phoneState: Boolean,
+    val answerCalls: Boolean,
+    val callLog: Boolean,
+    val contacts: Boolean,
+) {
+    val phoneAccess: Boolean get() = phoneState && answerCalls
+    val callerIdAccess: Boolean get() = callLog && contacts
+    val allAllowed: Boolean get() = notificationAccess && phoneAccess && callerIdAccess
+}
+
+internal fun notificationPermissionSnapshot(context: android.content.Context): NotificationPermissionSnapshot {
+    fun granted(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+    return NotificationPermissionSnapshot(
+        notificationAccess = context.packageName in NotificationManagerCompat.getEnabledListenerPackages(context),
+        phoneState = granted(Manifest.permission.READ_PHONE_STATE),
+        answerCalls = granted(Manifest.permission.ANSWER_PHONE_CALLS),
+        callLog = granted(Manifest.permission.READ_CALL_LOG),
+        contacts = granted(Manifest.permission.READ_CONTACTS),
+    )
+}
+
 @Composable
-fun NotificationSettings(owner: NotificationMirrorController) {
+fun NotificationSettings(
+    owner: NotificationMirrorController,
+    permissionsOnly: Boolean = false,
+    showGranted: Boolean = true,
+    onPermissionsChanged: () -> Unit = {},
+) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    var access by remember { mutableStateOf(false) }
+    var permissions by remember(context) { mutableStateOf(notificationPermissionSnapshot(context)) }
     var mirrorIncomingCalls by remember { mutableStateOf(owner.preferences.mirrorIncomingCalls()) }
-    var callPermissions by remember { mutableStateOf(false) }
-    var callerIdPermissions by remember { mutableStateOf(false) }
+    val changed = androidx.compose.runtime.rememberUpdatedState(onPermissionsChanged)
     fun refresh() {
-        access = context.packageName in NotificationManagerCompat.getEnabledListenerPackages(context)
-        owner.accessChanged(access)
+        permissions = notificationPermissionSnapshot(context)
+        owner.accessChanged(permissions.notificationAccess)
         mirrorIncomingCalls = owner.preferences.mirrorIncomingCalls()
-        callPermissions = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED
-        callerIdPermissions = listOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_CONTACTS).all {
-            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-        }
         owner.phoneCallPermissionsChanged()
+        changed.value()
     }
     val callPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { refresh() }
     val permissionButtonModifier = Modifier.defaultMinSize(minHeight = 32.dp)
-    DisposableEffect(lifecycle) {
+    DisposableEffect(lifecycle, owner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) refresh()
         }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
-    LaunchedEffect(Unit) { refresh() }
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (!access) {
-            Text(
-                "Allow access to sync alerts to your Mac.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 6.dp),
-            )
-            OutlinedButton(
-                shape = MaterialTheme.shapes.small,
-                colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                onClick = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
-                modifier = permissionButtonModifier,
-            ) {
-                Text("Enable notification access")
-            }
-        }
-        AutomaticConnectionToggle(
-            checked = mirrorIncomingCalls,
-            enabled = true,
-            label = "Mirror incoming calls",
-            description = "Answer or decline calls from your Mac (audio stays on phone).",
-            compact = true,
-            onCheckedChange = { enabled ->
-                owner.preferences.setMirrorIncomingCalls(enabled)
-                mirrorIncomingCalls = enabled
-                owner.selectionChanged()
+    LaunchedEffect(owner) { refresh() }
+    val notificationAction: @Composable () -> Unit = {
+        OutlinedButton(
+            shape = MaterialTheme.shapes.small,
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+            onClick = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
+            modifier = permissionButtonModifier,
+        ) { Text(if (permissions.notificationAccess) "Open Notification Access" else "Enable notification access") }
+    }
+    val phoneAction: @Composable () -> Unit = {
+        OutlinedButton(
+            shape = MaterialTheme.shapes.small,
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+            onClick = {
+                val missing = arrayOf(Manifest.permission.READ_PHONE_STATE, Manifest.permission.ANSWER_PHONE_CALLS)
+                    .filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+                if (missing.isNotEmpty()) callPermissionLauncher.launch(missing.toTypedArray())
+                else refresh()
             },
-        )
-        if (mirrorIncomingCalls && !callPermissions) {
-            Text(
-                "Allow phone access to answer or decline SIM calls from your Mac.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedButton(
-                shape = MaterialTheme.shapes.small,
-                colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                onClick = {
-                    callPermissionLauncher.launch(arrayOf(
-                        Manifest.permission.READ_PHONE_STATE,
-                        Manifest.permission.ANSWER_PHONE_CALLS,
-                    ))
+            modifier = permissionButtonModifier,
+        ) { Text("Allow phone access") }
+    }
+    val callerIdAction: @Composable () -> Unit = {
+        OutlinedButton(
+            shape = MaterialTheme.shapes.small,
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+            onClick = {
+                val missing = arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_CONTACTS)
+                    .filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+                if (missing.isNotEmpty()) callPermissionLauncher.launch(missing.toTypedArray())
+                else refresh()
+            },
+            modifier = permissionButtonModifier,
+        ) { Text("Allow caller ID") }
+    }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (permissionsOnly) {
+            PermissionStatusRow("Notification Access", permissions.notificationAccess,
+                "Read selected phone alerts for mirroring to Mac.", showGranted, notificationAction)
+            if (showGranted || !permissions.phoneAccess) {
+                Column(Modifier.fillMaxWidth()) {
+                    PermissionStatusRow("Answer phone calls", permissions.answerCalls,
+                        "Answer or decline ringing SIM calls from Mac; audio stays on the phone.", showGranted)
+                    if (!permissions.phoneAccess) phoneAction()
+                }
+            }
+            if (showGranted || !permissions.callerIdAccess) {
+                Column(Modifier.fillMaxWidth()) {
+                    PermissionStatusRow("Call log", permissions.callLog,
+                        "Receive incoming caller numbers without querying call history.", showGranted)
+                    PermissionStatusRow("Contacts", permissions.contacts,
+                        "Resolve incoming caller names locally without saving caller details.", showGranted)
+                    if (!permissions.callerIdAccess) callerIdAction()
+                }
+            }
+        } else {
+            if (!permissions.notificationAccess) {
+                Text("Allow notification access to mirror selected alerts.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                notificationAction()
+            } else if (!owner.listenerReady) {
+                Text("Access is allowed, but aniCe isn’t receiving alerts. If it stays disconnected, turn Notification Access for aniCe off and back on.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                notificationAction()
+            }
+            AutomaticConnectionToggle(
+                checked = mirrorIncomingCalls,
+                enabled = true,
+                label = "Mirror incoming calls",
+                description = "Include supported calls from apps outside Select apps. Answer and Decline depend on the phone and source app.",
+                compact = true,
+                onCheckedChange = { enabled ->
+                    owner.preferences.setMirrorIncomingCalls(enabled)
+                    mirrorIncomingCalls = enabled
+                    owner.selectionChanged()
                 },
-                modifier = permissionButtonModifier,
-            ) {
-                Text("Allow phone access")
+            )
+            if (mirrorIncomingCalls && !permissions.phoneAccess) {
+                Text("Allow phone access for SIM call controls.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                phoneAction()
+            }
+            if (mirrorIncomingCalls && !permissions.callerIdAccess) {
+                Text("Optional caller ID uses incoming numbers and Contacts.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                callerIdAction()
             }
         }
-        if (mirrorIncomingCalls && !callerIdPermissions) {
-            Text(
-                "Match incoming numbers against Contacts for caller names.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedButton(
-                onClick = { callPermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_CONTACTS)) },
-                modifier = permissionButtonModifier,
-                shape = MaterialTheme.shapes.small,
-                colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-            ) { Text("Allow caller ID") }
-        }
-
     }
 }
 

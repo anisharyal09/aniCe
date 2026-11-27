@@ -21,8 +21,7 @@ struct HomeFeatureAccess: View {
           Button("Explore features", action: onBrowse).buttonStyle(AniCeButtonStyle()).controlSize(.small)
         }
       } else {
-        ScrollView(.horizontal) {
-          HStack(spacing: 8) {
+          ShortcutFlowLayout(spacing: 8) {
             ForEach(favourites) { feature in
               Button { onOpen(feature) } label: {
                 Label(feature.title, systemImage: feature.symbol)
@@ -34,8 +33,6 @@ struct HomeFeatureAccess: View {
               .buttonStyle(AniCeHoverButtonStyle())
             }
           }
-        }
-        .scrollIndicators(.hidden)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -58,6 +55,7 @@ struct FeaturesView: View {
   @AppStorage("ui.favouriteFeatures") private var favouriteFeatures = AppFeature.defaultFavourites
   @AppStorage("ui.featureOrder") private var featureOrder = ""
   @AppStorage("ui.companionPinnedFeatures") private var companionPinnedFeatures = AppFeature.defaultPinnedToCompanion
+  @AppStorage("ui.sidebarPinnedFeatures") private var sidebarPinnedFeatures = ""
   @AppStorage("ui.fontScale") private var fontScale = 1.0
   @Environment(\.colorScheme) private var colorScheme
   private var displayedFeatures: [AppFeature] {
@@ -65,15 +63,21 @@ struct FeaturesView: View {
   }
   var body: some View {
     GeometryReader { geometry in
-    if !favouritesOnly, navigation.featurePanel == .messages {
-      VStack(alignment: .leading, spacing: 16) {
-        Text(AppFeature.messages.title).font(.title2.weight(.semibold))
-        SmsView(model: sms, peers: peers, preferences: smsPreferences)
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      if !favouritesOnly, navigation.featurePanel == .messages {
+        VStack(alignment: .leading, spacing: 16) {
+          Text(AppFeature.messages.title).font(.title2.weight(.semibold))
+          SmsView(model: sms, peers: peers, preferences: smsPreferences)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      } else {
+        featuresScrollContent(width: geometry.size.width)
       }
-      .padding(24)
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    } else {
+    }
+  }
+
+  private func featuresScrollContent(width: CGFloat) -> some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
         if !favouritesOnly, let panel = navigation.featurePanel {
@@ -87,7 +91,8 @@ struct FeaturesView: View {
             MediaView(model: playback, visible: playback.mainVisible)
             DisclosureGroup("Playback setup") { PlaybackSetupView(playback: playback) }
           case .files: TransferView(model: transfer, peers: peers, edgeDrop: edgeDrop)
-          case .clipboard: ClipboardView(model: clipboard, peers: peers)
+          case .clipboard: ClipboardView(model: clipboard, peers: peers,
+            openSettings: { navigation.openSettings(section: "clipboard") })
           case .messages: SmsView(model: sms, peers: peers, preferences: smsPreferences)
           case .keyboardTrackpad: MacKeyboardTrackpadView(model: keyboardTrackpad, onOpenDevices: { navigation.show(.devices) })
           case .findDevice: FindDeviceView(model: findDevice, peers: peers, notifier: findNotifier)
@@ -105,18 +110,18 @@ struct FeaturesView: View {
             }
             .padding(.top, 8)
           }
-          LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .top), count: geometry.size.width >= 850 ? 2 : 1), alignment: .leading, spacing: 0) {
+          LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .top), count: width >= 850 ? 2 : 1), alignment: .leading, spacing: 0) {
             ForEach(displayedFeatures) { item in
               feature(item, in: displayedFeatures)
             }
           }
+          if !favouritesOnly {
+            moreBuiltInCard
+          }
         }
-
       }
       .padding(24)
       .frame(maxWidth: .infinity, alignment: .leading)
-    }
-    }
     }
   }
 
@@ -168,6 +173,9 @@ struct FeaturesView: View {
       Button(isPinned ? "Remove from Menu Bar" : "Pin to Menu Bar") {
         companionPinnedFeatures = feature.toggledPinned(in: companionPinnedFeatures)
       }
+      Button(AppFeature.favourites(in: sidebarPinnedFeatures).contains(feature) ? "Unpin from Sidebar" : "Pin to Sidebar") {
+        sidebarPinnedFeatures = feature.toggled(in: sidebarPinnedFeatures)
+      }
     }
   }
 
@@ -186,9 +194,9 @@ struct FeaturesView: View {
       return switch transfer.state {
       case .incomingOffer(let batch): "\(batch.files.count) incoming files"
       case .waitingForPeerApproval: "Waiting for approval"
-      case .transferring(_, _, let name, _, _, _, _): "Sending · \(name)"
+      case .transferring(_, _, let name, _, _, _, _): "\(transfer.receiving ? "Receiving" : "Sending") · \(name)"
       case .paused: "Transfer paused"
-      case .completed(_, let count, _): "\(count) files sent"
+      case .completed(_, let count, _): "\(count) files \(transfer.receiving ? "received" : "sent")"
       case .rejected: "Transfer declined"
       case .failed: "Transfer failed"
       case .cancelled: "Transfer cancelled"
@@ -210,6 +218,43 @@ struct FeaturesView: View {
     }
   }
 
+  private var moreBuiltInCard: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      AniCePalette.separator(colorScheme).opacity(0.6).frame(height: 0.5)
+        .padding(.top, 20)
+        .padding(.bottom, 10)
+      Button {
+        navigation.openGuide(nil)
+      } label: {
+        HStack(spacing: 8) {
+          (
+            Text("More built into ani")
+              .foregroundColor(AniCePalette.secondaryText(colorScheme))
+            + Text("Ce")
+              .foregroundColor(AniCePalette.accent(colorScheme))
+            + Text(" — ")
+              .foregroundColor(AniCePalette.secondaryText(colorScheme))
+            + Text("see guide")
+              .fontWeight(.medium)
+              .foregroundColor(AniCePalette.secondaryText(colorScheme))
+          )
+          .font(.system(size: 12 * fontScale))
+          .lineLimit(1)
+          .truncationMode(.tail)
+          Spacer(minLength: 12)
+          Image(systemName: "chevron.right")
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(AniCePalette.secondaryText(colorScheme).opacity(0.7))
+        }
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(AniCeHoverButtonStyle(feedbackPadding: 4))
+    }
+    .accessibilityLabel("More built into aniCe — see guide")
+  }
+
 }
 
 // Keeps playback permissions beside player setup rather than exposing another feature launcher.
@@ -220,7 +265,7 @@ struct PlaybackSetupView: View {
     VStack(alignment: .leading, spacing: 10) {
       Toggle("Show on Overview and menu bar", isOn: Binding(
         get: { playback.showOnMac }, set: { playback.setShowOnMac($0) }))
-        .toggleStyle(.checkbox).aniCeControlFeedback().controlSize(.small)
+        .toggleStyle(AniCePreferenceToggleStyle())
       HStack {
         Label(
           playback.phoneSubscribed ? "Active on your phone" : "Open aniCe on your phone",
