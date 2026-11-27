@@ -3,6 +3,20 @@
 import AppKit
 import SwiftUI
 
+// Layout anchors let hosted tests locate the inline controls without relying on screenshot OCR.
+enum SmsNotificationElement: Hashable {
+  case gear, notifications, sound, connectionDetails, connectionStatus(String)
+}
+
+struct SmsNotificationBounds: PreferenceKey {
+  static var defaultValue: [SmsNotificationElement: Anchor<CGRect>] { [:] }
+
+  static func reduce(value: inout [SmsNotificationElement: Anchor<CGRect>],
+    nextValue: () -> [SmsNotificationElement: Anchor<CGRect>]) {
+    value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+  }
+}
+
 /** The per-phone delivery controls, shared by the Settings section and the Messages panel's own popover. */
 struct SmsNotificationControls: View {
   let preferences: SmsPreferences
@@ -12,9 +26,11 @@ struct SmsNotificationControls: View {
     VStack(alignment: .leading, spacing: 6) {
       Toggle("Notifications", isOn: Binding(get: { preferences.notifications(peer) },
         set: { preferences.setNotifications(peer, $0) }))
+        .anchorPreference(key: SmsNotificationBounds.self, value: .bounds) { [.notifications: $0] }
       Toggle("Play sound", isOn: Binding(get: { preferences.sound(peer) },
         set: { preferences.setSound(peer, $0) }))
         .disabled(!preferences.notifications(peer))
+        .anchorPreference(key: SmsNotificationBounds.self, value: .bounds) { [.sound: $0] }
       Toggle("Show message text in notifications", isOn: Binding(get: { preferences.preview(peer) },
         set: { preferences.set(peer, $0) }))
         .disabled(!preferences.notifications(peer))
@@ -536,21 +552,27 @@ struct SmsView: View {
       .help("Notification settings for \(peer.displayName)")
       .accessibilityLabel("Notification settings for \(peer.displayName)")
       .accessibilityValue(controlsOpen ? "Showing" : "Hidden")
+      .anchorPreference(key: SmsNotificationBounds.self, value: .bounds) { [.gear: $0] }
   }
 
   @ViewBuilder private func notificationPanel(_ peer: DeviceIdentity) -> some View {
     VStack(alignment: .leading, spacing: 8) {
       Text(peer.displayName).font(.subheadline.weight(.medium))
       SmsNotificationControls(preferences: preferences, peer: peer)
-      DisclosureGroup("Connection details") {
+      DisclosureGroup {
         VStack(alignment: .leading, spacing: 4) {
-          Text(model.status(peer)).font(.caption).fixedSize(horizontal: false, vertical: true)
+          let status = model.status(peer)
+          Text(status).font(.caption).fixedSize(horizontal: false, vertical: true)
+            .anchorPreference(key: SmsNotificationBounds.self, value: .bounds) { [.connectionStatus(status): $0] }
           if !model.diagnostics(peer).isEmpty {
             Text(model.diagnostics(peer)).font(.caption).textSelection(.enabled)
               .fixedSize(horizontal: false, vertical: true)
           }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+      } label: {
+        Text("Connection details")
+          .anchorPreference(key: SmsNotificationBounds.self, value: .bounds) { [.connectionDetails: $0] }
       }
     }
     .padding(10)

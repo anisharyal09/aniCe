@@ -6,7 +6,7 @@ import CryptoKit
 import SwiftUI
 @testable import aniCe
 
-@MainActor private final class FindNotifierFake: FindDeviceNotifying {
+@MainActor final class FindNotifierFake: FindDeviceNotifying {
   var posts: [String] = []
   var cleared: [String] = []
   var result: FindResult = .submitted

@@ -37,6 +37,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Keep the latest SMS conversation preview when an older message arrives out of order.
 - Release failed transfer-offer notification state so the current offer can be announced again. Ignore obsolete or untagged update taps without clearing the current notice.
 - Restore the Mac Messages gear toggle so per-phone notification settings and **Connection details** open inline inside Messages instead of redirecting to Settings.
+- Check the Messages gear and its displayed connection status directly in hosted UI tests instead of relying on screenshot text recognition.
 - Unify the Auto connect label and capsule action, and remove obsolete preference-size/theme configuration.
 - Restore 20/50/100-item history capacity menus in compact Clipboard settings and History, retain paused/off access and remove duplicate feedback layers and unused clipboard helpers.
 - Keep Shelf edge labels/helpers together, align intrinsic selector faces and Shortcut controls to the trailing edge, and reflow narrow rows without clipping.

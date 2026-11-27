@@ -152,6 +152,8 @@ DOCUMENTED_MACOS_SKIPS = {
     "MediaTests#testPackagedOwnerAgainstCurrentlyPlayingSource",
     "CapabilityRepairTests#testExplicitPackagedPlayerToggleAndSeekAcceptance",
     "OutputVolumeTests#testExplicitPackagedOutputVolumeRoundTrip",
+    # The test first checks whether the host exposes accessibility children for a native switch.
+    "PreferenceToggleTests#testAccessibleControlMatchesNativeSwitchAndDoesNotDuplicateLabelActions",
 }
 
 

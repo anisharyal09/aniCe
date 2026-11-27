@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Exercises capability gating, live assembly, provider paging, reply delivery and data lifetime.
 import XCTest
+import CoreML
 import CryptoKit
 import SwiftUI
 import Vision
@@ -1549,28 +1550,33 @@ final class SmsModelTests: XCTestCase {
       window.orderFront(nil)
       defer { window.contentView = nil; window.close(); model.invalidate() }
       try await Task.sleep(for: .milliseconds(120))
-      XCTAssertTrue(try renderedText(host).contains("Phone A unsent draft"))
+      let firstDraft = try await renderedText(host)
+      XCTAssertTrue(firstDraft.contains("Phone A unsent draft"))
       let target = SmsConversationTarget(peerKey: model.key(second), peerName: second.deviceName,
         address: "+15550002222", threadId: "42")
       XCTAssertTrue(model.openNotificationConversation(target, trustedPeers: [first, second]))
       try await Task.sleep(for: .milliseconds(120))
-      XCTAssertTrue(try renderedText(host).contains("Phone B unsent draft"))
+      let secondDraft = try await renderedText(host)
+      XCTAssertTrue(secondDraft.contains("Phone B unsent draft"))
       XCTAssertEqual(model.draft(first, address: "+15550001111"), "Phone A unsent draft")
       XCTAssertEqual(model.draft(second, address: "+15550002222"), "Phone B unsent draft")
       model.saveDraft("Another Phone B draft", peer: second, address: "+15550003333")
       XCTAssertTrue(model.openNotificationConversation(SmsConversationTarget(peerKey: model.key(second),
         peerName: second.deviceName, address: "+15550003333", threadId: "43"), trustedPeers: [first, second]))
       try await Task.sleep(for: .milliseconds(120))
-      XCTAssertTrue(try renderedText(host).contains("Another Phone B draft"))
+      let otherConversationDraft = try await renderedText(host)
+      XCTAssertTrue(otherConversationDraft.contains("Another Phone B draft"))
       XCTAssertTrue(model.openNotificationConversation(target, trustedPeers: [first, second]))
       try await Task.sleep(for: .milliseconds(120))
-      XCTAssertTrue(try renderedText(host).contains("Phone B unsent draft"))
+      let restoredDraft = try await renderedText(host)
+      XCTAssertTrue(restoredDraft.contains("Phone B unsent draft"))
       XCTAssertTrue(sent(firstChannel, 11).isEmpty)
       XCTAssertTrue(sent(secondChannel, 11).isEmpty)
       model.retired(secondChannel.descriptor)
       try await Task.sleep(for: .milliseconds(80))
       XCTAssertEqual(model.selectedPhoneKey, model.key(second), "The alert must not silently retarget a connected different phone")
-      XCTAssertTrue(try renderedText(host).contains("Phone B unsent draft"))
+      let offlineDraft = try await renderedText(host)
+      XCTAssertTrue(offlineDraft.contains("Phone B unsent draft"))
       if let directory = ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"] {
         let path = URL(fileURLWithPath: directory, isDirectory: true)
         try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
@@ -1585,6 +1591,7 @@ final class SmsModelTests: XCTestCase {
   @MainActor func testGearTogglesInlineNotificationSettingsAndConnectionStatusWithoutRedirecting() async throws {
     for scheme in [ColorScheme.light, .dark] {
       for width in [360.0, 760.0] {
+        let layout = "\(scheme), \(Int(width)) pt"
         let model = make(SmsNotifierSpy(), SmsClock())
         let channel = MockSecuredChannel(transport: "lan", deviceName: "Phone A")
         let peer = try await ready(model, channel)
@@ -1596,16 +1603,23 @@ final class SmsModelTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsSuiteName))
         defer { defaults.removePersistentDomain(forName: defaultsSuiteName) }
         let clipboard = MacClipboardModel(native: ClipboardNativeFake(), preferences: ClipboardPreferences(storage: defaults))
-        defer { clipboard.invalidate() }
         let fileTransfer = MacTransferModel()
-        let findDevice = MacFindDeviceModel(notifier: MacFindDeviceNotifier())
-        let keyboardTrackpad = MacKeyboardTrackpadModel(preferences: defaults)
+        // Opening Messages in this fixture should not start Bluetooth or notification services.
+        let findDevice = MacFindDeviceModel(notifier: FindNotifierFake())
+        let keyboardTrackpad = MacKeyboardTrackpadModel(transport: FakeKeyboardTrackpadTransport(), preferences: defaults)
         let edgeDrop = MacEdgeDropController(model: fileTransfer, preferences: EdgeDropPreferences(storage: defaults))
+        defer {
+          edgeDrop.shutdown()
+          fileTransfer.dismiss()
+          keyboardTrackpad.shutdown()
+          clipboard.invalidate()
+        }
         let navigation = ConnectionNavigation()
         navigation.openFeature(.messages)
 
-        let host = NSHostingView(rootView: FeaturesView(
-          playback: MacPlaybackModel(),
+        var bounds: [SmsNotificationElement: CGRect] = [:]
+        let content = FeaturesView(
+          playback: MacPlaybackModel(preferences: defaults),
           transfer: fileTransfer,
           clipboard: clipboard,
           findDevice: findDevice,
@@ -1616,7 +1630,16 @@ final class SmsModelTests: XCTestCase {
           peers: [record],
           edgeDrop: edgeDrop,
           navigation: navigation
-        ).disclosureGroupStyle(ClickableDisclosureStyle()).environment(\.colorScheme, scheme).frame(width: width, height: 540))
+        ).disclosureGroupStyle(ClickableDisclosureStyle()).environment(\.colorScheme, scheme)
+          .defaultAppStorage(defaults).frame(width: width, height: 540)
+        let host = NSHostingView(rootView: content.overlayPreferenceValue(SmsNotificationBounds.self) { anchors in
+          GeometryReader { geometry in
+            Color.clear.onChange(of: anchors.mapValues { geometry[$0] }, initial: true) { _, frames in
+              bounds = frames
+            }
+          }
+          .allowsHitTesting(false)
+        })
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 540),
           styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -1624,36 +1647,37 @@ final class SmsModelTests: XCTestCase {
         window.contentView = host
         window.orderFront(nil)
         defer { window.contentView = nil; window.close(); model.invalidate() }
-        try await Task.sleep(for: .milliseconds(120))
+        // Finish the initial thread load before delivering the live status under test.
+        await until("initial thread request and Messages gear (\(layout))") {
+          !self.sent(channel, 2).isEmpty && bounds[.gear] != nil
+        }
+        let request = try XCTUnwrap(try lastSent(channel, 2))
+        let done = try records(4, [.text(request.text(0)), .integer(0), .integer(0), .text("")])
+        await expect(.handled, done, channel, model)
         await deliver(model, channel, [incoming.begin] + incoming.fragments + [incoming.commit])
         XCTAssertEqual(model.status(peer), "Message received")
-        try await Task.sleep(for: .milliseconds(60))
-        host.layoutSubtreeIfNeeded()
 
-        let searchField = try XCTUnwrap(editableField(in: host))
-        let fieldRect = searchField.convert(searchField.bounds, to: host)
-        let gearPoint = NSPoint(x: fieldRect.maxX + 20, y: fieldRect.midY)
+        func visibleCenter(_ element: SmsNotificationElement) throws -> NSPoint {
+          let frame = try XCTUnwrap(bounds[element], "Missing \(element) (\(layout))")
+          let y = host.isFlipped ? frame.midY : host.bounds.height - frame.midY
+          let point = NSPoint(x: frame.midX, y: y)
+          XCTAssertTrue(!frame.isEmpty && host.bounds.contains(point), "\(element) must be visible (\(layout))")
+          return point
+        }
 
-        XCTAssertFalse(try renderedText(host).contains("Connection details"))
-        try click(host, in: window, at: gearPoint)
-        try await Task.sleep(for: .milliseconds(120))
-        host.layoutSubtreeIfNeeded()
-
+        XCTAssertNil(bounds[.connectionDetails])
+        try click(host, in: window, at: visibleCenter(.gear))
+        await until("inline notification controls (\(layout))") {
+          bounds[.notifications] != nil && bounds[.sound] != nil && bounds[.connectionDetails] != nil
+        }
         XCTAssertEqual(navigation.destination, .features)
         XCTAssertEqual(navigation.featurePanel, .messages)
         XCTAssertNil(navigation.settingsSection)
-        let openedText = try renderedText(host)
-        XCTAssertTrue(openedText.contains("Notifications"))
-        XCTAssertTrue(openedText.contains("Play sound"))
-        XCTAssertTrue(openedText.contains("Connection details"))
-
-        let detailsPoint = try XCTUnwrap(try textCenter(in: host, matching: "Connection details"))
-        try click(host, in: window, at: detailsPoint)
-        try await Task.sleep(for: .milliseconds(120))
-        host.layoutSubtreeIfNeeded()
-
-        let text = try renderedText(host)
-        XCTAssertTrue(text.contains("Message received"))
+        let received = SmsNotificationElement.connectionStatus("Message received")
+        XCTAssertNil(bounds[received], "The status belongs inside the collapsed disclosure")
+        try click(host, in: window, at: visibleCenter(.connectionDetails))
+        await until("the live message status in Connection details (\(layout))") { bounds[received] != nil }
+        _ = try visibleCenter(received)
 
         if let path = ProcessInfo.processInfo.environment["ANICE_REVIEW_RENDER_DIR"] {
           let folder = URL(fileURLWithPath: path, isDirectory: true)
@@ -1664,60 +1688,45 @@ final class SmsModelTests: XCTestCase {
           try data.write(to: folder.appendingPathComponent("sms-inline-settings-\(scheme)-\(Int(width)).png"))
         }
 
-        try click(host, in: window, at: gearPoint)
-        try await Task.sleep(for: .milliseconds(120))
-        host.layoutSubtreeIfNeeded()
-        XCTAssertFalse(try renderedText(host).contains("Connection details"))
+        try click(host, in: window, at: visibleCenter(.gear))
+        await until("closed inline notification controls (\(layout))") {
+          bounds[.notifications] == nil && bounds[.sound] == nil && bounds[.connectionDetails] == nil && bounds[received] == nil
+        }
       }
     }
   }
 
-  private func editableField(in view: NSView) -> NSTextField? {
-    if let field = view as? NSTextField, field.isEditable { return field }
-    for child in view.subviews {
-      if let found = editableField(in: child) { return found }
-    }
-    return nil
-  }
-
-  private func textCenter(in host: NSView, matching query: String) throws -> NSPoint? {
+  private func renderedText(_ host: NSView) async throws -> String {
     host.layoutSubtreeIfNeeded()
     let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
     host.cacheDisplay(in: host.bounds, to: bitmap)
     let image = try XCTUnwrap(bitmap.cgImage)
-    let request = VNRecognizeTextRequest()
-    request.recognitionLevel = .accurate
-    request.usesLanguageCorrection = false
-    try VNImageRequestHandler(cgImage: image).perform([request])
-    for observation in request.results ?? [] {
-      guard let candidate = observation.topCandidates(1).first?.string, candidate.contains(query) else { continue }
-      let box = observation.boundingBox
-      let y = host.isFlipped ? (1.0 - box.midY) * host.bounds.height : box.midY * host.bounds.height
-      return NSPoint(x: box.midX * host.bounds.width, y: y)
-    }
-    return nil
-  }
-
-  private func renderedText(_ host: NSView) throws -> String {
-    host.layoutSubtreeIfNeeded()
-    let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-    host.cacheDisplay(in: host.bounds, to: bitmap)
-    let image = try XCTUnwrap(bitmap.cgImage)
-    let request = VNRecognizeTextRequest()
-    request.recognitionLevel = .accurate
-    request.usesLanguageCorrection = false
-    try VNImageRequestHandler(cgImage: image).perform([request])
-    return request.results?.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n") ?? ""
+    // Keep Vision's synchronous work off AppKit's event loop, including on a hosted VM.
+    return try await Task.detached {
+      let request = VNRecognizeTextRequest()
+      request.recognitionLevel = .accurate
+      request.usesLanguageCorrection = false
+      for (stage, devices) in try request.supportedComputeStageDevices {
+        let cpu = try XCTUnwrap(devices.first { device in
+          if case .cpu = device { return true }
+          return false
+        }, "Vision does not support CPU text recognition for \(stage.rawValue)")
+        request.setComputeDevice(cpu, for: stage)
+      }
+      try VNImageRequestHandler(cgImage: image).perform([request])
+      return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+    }.value
   }
 
   private func click(_ host: NSView, in window: NSWindow, at point: NSPoint) throws {
     let location = host.convert(point, to: nil)
-    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-      let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
+    let events = try [NSEvent.EventType.leftMouseDown, .leftMouseUp].map { type in
+      try XCTUnwrap(NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
         timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-        context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
-      window.sendEvent(event)
+        context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0))
     }
+    // AppKit can wait inside mouse-down until it can dequeue the matching release.
+    for event in events.reversed() { NSApp.postEvent(event, atStart: true) }
   }
 
   // MARK: - Search

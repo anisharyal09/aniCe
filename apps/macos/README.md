@@ -144,7 +144,9 @@ python3 scripts/test_dev.py
 
 `--only macos` is the CI lane. It requires a full Xcode, rebuilds `build/native/libanice_pairing.a` for Apple Silicon (`arm64`), compiles a native Release build with codesign verification, then runs the hosted suite. The `fast --macos` form also runs the local contract and Rust checks.
 
-The Mac gate includes Keychain tests and rejects zero tests, failures, crashes and undocumented skips. It prints the real-player/manual checks that cannot run.
+The Mac gate includes Keychain tests and rejects zero tests, failures, crashes and undocumented skips. The 40-minute hosted-test command limit covers both the Debug build and the full XCTest suite.
+
+The gate reports real-player checks and the switch accessibility check when the runner cannot execute them. The switch check skips only when the runner cannot inspect even a native SwiftUI switch. `--strict-skips` rejects these omissions.
 
 Timing checks require an awake Mac. Keep the lid open; `caffeinate -i python3 scripts/verify-suite.py --only macos` prevents idle sleep for the run without changing system settings. It does not prevent forced or lid-close sleep.
 
