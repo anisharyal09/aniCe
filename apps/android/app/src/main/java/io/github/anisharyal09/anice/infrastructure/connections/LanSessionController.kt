@@ -1111,18 +1111,21 @@ class LanSessionController(private val app: AniCeApplication,
     }
     private val channelToken get() = "${generation}-${System.identityHashCode(connection)}"
     private fun publishChannel() {
-        val token=channelToken
-        val peer=selected ?: return
-        app.features.available(ChannelDescriptor(token,"lan",peer,transport?.profile?.maximumPlaintext ?: 4000)) { bytes ->
-            val engine=connection ?: throw SessionException(SessionFailure.CANCELLED)
-            if(token!=channelToken || state!=ConnectionState.SECURED) throw SessionException(SessionFailure.CANCELLED)
-            if(!engine.applicationAvailable || transport?.hasCapacity(bytes.size+31) != true) throw SessionBackpressure()
+        val engine = connection ?: return
+        val tcp = transport ?: return
+        val op = generation
+        val peer = selected ?: return
+        app.features.available(ChannelDescriptor(channelToken, "lan", peer, tcp.profile.maximumPlaintext)) { bytes ->
+            if (op != generation || connection !== engine || state != ConnectionState.SECURED) {
+                throw SessionException(SessionFailure.CANCELLED)
+            }
+            if (!engine.applicationAvailable || !tcp.hasCapacity(bytes.size + 31)) throw SessionBackpressure()
             try { withContext(Dispatchers.IO) { engine.sendData(bytes) } }
             catch (error: SessionBackpressure) { throw error }
             catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException && !engine.isClosed) throw error
-                // A closed engine has no future maintenance deadline; its owner must retire it now.
-                if (token == channelToken && connection === engine) finish(error, engine)
+                // A closed engine has no maintenance deadline; retire it on the connection owner.
+                scope.launch { if (op == generation && connection === engine) finish(error, engine) }
                 throw error
             }
         }

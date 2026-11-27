@@ -85,7 +85,7 @@ class FeatureDispatchTests {
         val entered=CompletableDeferred<Unit>(); val release=CompletableDeferred<Unit>(); var sends=0
         dispatch.available(descriptor("first")) { sends++; entered.complete(Unit); release.await() }
         val old=handler.channel
-        val work=async { try { old.sendData(byteArrayOf(1)); false } catch(error: SessionException) { error.reason==SessionFailure.CANCELLED } }
+        val work=async(Dispatchers.IO) { try { old.sendData(byteArrayOf(1)); false } catch(error: SessionException) { error.reason==SessionFailure.CANCELLED } }
         entered.await(); dispatch.available(descriptor("second")) { sends++ }; release.complete(Unit)
         assertTrue(work.await()); assertEquals(1,sends); assertEquals(0,activities)
     }

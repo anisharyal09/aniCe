@@ -6,34 +6,31 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Added
 
-- Add opt-in, payload-free reverse diagnostic counters for capture reads,
-  capture intervals, main-thread presentation delay, queue age, encoding and
+- Add opt-in, payload-free Phone Audio counters for capture reads,
+  capture intervals, sender wake-up delay, queue age, encoding and
   submission; limit each operation to 600 one-second reports and ten minutes.
 - Add Android-to-Mac Phone Audio with an explicit single-use screen-capture
   prompt, a `mediaProjection` foreground service, a bounded three-packet send
   window, shared LAN work ownership and mutual exclusion with Mac-to-phone listening.
-- Bind pending projection consent to its initiating channel, coalesce capture
-  worker delivery, retain Start/Stop under backpressure and fence early/late Ready
-  and native destruction before allowing another capture.
-- Add reverse audio packetization and an externally authorized native
-  AudioPlaybackCapture primitive; the projection prompt and streaming service are
-  owned by the reverse controller.
+- Bind projection consent and native cleanup to the initiating channel. Capture
+  runs on an audio-priority worker; encoding and submission run off the UI
+  thread. Keep Start and Stop under backpressure, and show the destination or
+  call-audio exclusion in the sharing notification.
 - Report capture Stop, revocation and failure causes without crashing the capture
-  worker; retry empty reads and count discarded partial PCM.
-- Add credential-scoped speaker opt-in, silent route recovery and non-private
-  output warnings; revocation stops playback without enabling unknown routes.
+  worker; retry empty reads and discard incomplete audio on stop.
+- Default Mac audio receiving and phone-speaker fallback on for trusted Macs
+  without saved choices. Silently verify routes before playback.
 - Add isolated, non-playback device regressions for accepted audio-worker priority,
   native PCM support, private service declaration and credential/Stop admission.
-- Add credential-scoped Private Listening consent, headphone confirmation and foreground playback with focus, notification Stop and native work leases.
-- Add bounded headphone-route playback, silent priming and worker-side stereo clock-drift resampling for Private Listening.
-- Add the Private Listening v1 CBOR codec with strict UUIDv4, PCM packet and source-timeline validation.
+- Add credential-scoped receiving preferences, headphone confirmation and foreground playback with focus, notification Stop and native work leases.
+- Add bounded headphone playback, silent priming and worker-side stereo clock-drift resampling.
+- Validate Audio Sharing v1 CBOR for Mac-to-Android streams, including stream IDs, PCM packets and sequence offsets.
 
 ### Changed
 
-- Align listening and phone-audio actions with Home's compact rectangular style,
-  retain 48 dp touch targets, make consent/speaker preferences whole-row controls
-  and put the active direction's Stop ahead of setup. Clarify audio-only consent
-  and native stopping states without changing capture or playback tuning.
+- Mark Audio Sharing Experimental in Features. Put local-network setup
+  first when offline, show relevant output guidance, and group buffering and
+  local diagnostics under playback options.
 - Probe elevated listening buffer floors down only after sustained healthy audio
   and promptly trim obsolete software backlog when the target decreases.
 - Use a dedicated audio worker and authenticated worker-side PCM admission; lower adaptive buffering floors and avoid repeated silent priming on ordinary audio gaps.

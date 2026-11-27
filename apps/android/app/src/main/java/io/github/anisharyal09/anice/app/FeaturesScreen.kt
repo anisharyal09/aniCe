@@ -10,14 +10,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.anisharyal09.anice.R
-import io.github.anisharyal09.anice.features.finddevice.FindDeviceController
+import io.github.anisharyal09.anice.features.audiosharing.AudioSharingView
+import io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe
 import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
@@ -45,22 +47,29 @@ fun FeaturesScreen(
             else if (panel == AppFeature.Sms) io.github.anisharyal09.anice.features.sms.SmsView(session.sms, peers)
             else io.github.anisharyal09.anice.features.transfer.TransferView(session.transfer, peers = peers)
         }
-    } else if (!favouritesOnly && panel == AppFeature.PrivateListening) {
+    } else if (!favouritesOnly && panel == AppFeature.AudioSharing) {
+        val trustedMacs = peers.filter { it.active && it.peer.platform == "macos" }.map { it.peer }
+        val target = session.selected ?: session.lan.selected
+        val targetMac = trustedMacs.firstOrNull {
+            target != null && it.deviceId == target.deviceId && it.publicKey == target.publicKey
+        } ?: trustedMacs.singleOrNull()
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(panel.label, style = MaterialTheme.typography.titleMedium)
-            val targetMac = peers.singleOrNull { it.peer.platform == "macos" }?.peer
-                ?: session.selected?.takeIf { it.platform == "macos" }
-            io.github.anisharyal09.anice.features.privatelistening.PrivateListeningView(
-                session.privateListening,
+            Text(stringResource(R.string.listening_title), style = MaterialTheme.typography.titleMedium)
+            AudioSharingView(
+                session.audioSharing,
+                session.phoneAudio,
                 lan = session.lan,
-                connectLan = {
-                    if (session.nearby.pauseStatus == null &&
-                        !io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe.connectionPauseActive &&
-                        !session.lan.requestAutomaticConnection() && !session.lan.connectPreferred()) {
-                        if (targetMac != null) session.lan.connectAlongside(targetMac)
+                pauseStatus = if (CompanionProbe.connectionPauseActive) stringResource(R.string.listening_lan_paused)
+                    else targetMac?.let(session.connectionPause::status),
+                connectLan = targetMac?.let { mac ->
+                    {
+                        if (!CompanionProbe.connectionPauseActive && session.connectionPause.status(mac) == null) {
+                            session.lan.connectAlongside(mac)
+                        }
                     }
                 },
+                openDevices = { navigation.select(AppDestination.Devices, unpaired = trustedMacs.isEmpty()) },
             )
         }
     } else if (!favouritesOnly && panel == AppFeature.PhoneInput) {
@@ -141,7 +150,8 @@ internal fun FeatureEntry(
     canMoveUp: Boolean, canMoveDown: Boolean,
 ) {
     var actionsExpanded by remember(feature) { mutableStateOf(false) }
-    val icon = when (feature) { AppFeature.Playback -> R.drawable.ic_media_play; AppFeature.Files -> R.drawable.ic_file_send; AppFeature.FindDevice -> R.drawable.ic_find_device; AppFeature.Clipboard -> R.drawable.ic_clipboard; AppFeature.DeskDeck -> R.drawable.ic_laptop; AppFeature.PhoneInput -> R.drawable.ic_keyboard; AppFeature.Sms -> R.drawable.ic_sms; AppFeature.PrivateListening -> R.drawable.ic_headphones }
+    val maturity = if (feature == AppFeature.AudioSharing) stringResource(R.string.listening_experimental) else null
+    val icon = when (feature) { AppFeature.Playback -> R.drawable.ic_media_play; AppFeature.Files -> R.drawable.ic_file_send; AppFeature.FindDevice -> R.drawable.ic_find_device; AppFeature.Clipboard -> R.drawable.ic_clipboard; AppFeature.DeskDeck -> R.drawable.ic_laptop; AppFeature.PhoneInput -> R.drawable.ic_keyboard; AppFeature.Sms -> R.drawable.ic_sms; AppFeature.AudioSharing -> R.drawable.ic_headphones }
     Box(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth()) {
             Row(
@@ -153,6 +163,7 @@ internal fun FeatureEntry(
                         onLongClick = { actionsExpanded = true },
                         onClick = onClick
                     )
+                    .then(if (maturity == null) Modifier else Modifier.semantics { stateDescription = maturity })
                     .padding(vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -161,6 +172,10 @@ internal fun FeatureEntry(
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(feature.label, style = MaterialTheme.typography.bodyMedium)
+                    if (maturity != null) {
+                        Text(maturity, style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 }
@@ -194,7 +209,11 @@ private fun featureStatus(feature: AppFeature, session: io.github.anisharyal09.a
         session.state == ConnectionState.SECURED && it.platform == "macos" && session.phoneInput.connected(it)
     }
     return when (feature) {
-    AppFeature.PrivateListening -> session.privateListening.status
+    AppFeature.AudioSharing -> when {
+        session.phoneAudio.busy -> session.phoneAudio.status
+        session.audioSharing.busy -> session.audioSharing.status
+        else -> "Audio between your Mac and phone"
+    }
     AppFeature.Playback -> session.media.playback?.let { current ->
         if (current.source.isEmpty()) "No active playback" else
             (if (current.state == 1L) "Playing" else "Paused") + current.title.takeIf(String::isNotEmpty)?.let { " · $it" }.orEmpty()

@@ -12,14 +12,14 @@ Shared contract changes and compatibility implications, grouped by application v
   timelines, tag isolation and bounded Mac output resync semantics.
 - Clarify reverse single-use channel-bound consent, native cleanup exclusion,
   bounded control retries and current-audio renewal; no additional wire fields.
-- Define Private Listening v1 LAN DATA with six bound message kinds, 960-frame stereo PCM16 packets, checked source timelines and retained-channel maintenance semantics.
+- Define Audio Sharing v1 Mac-to-Android LAN DATA with six bound message kinds, 960-frame stereo PCM16 packets, checked source timelines and retained-channel maintenance semantics.
 
 ### Changed
 
-- Document locally consented Android built-in speaker admission and same-stream
-  route recovery without changing any Private Listening wire bytes.
+- Document Android built-in speaker admission and same-stream route recovery
+  without changing wire bytes.
 - Refine local listening buffer targets and healthy-audio transfer pacing; unchanged six-message PCM, cryptographic and session contracts.
-- Clarify local lower-delay buffering profiles and native startup floors for Private Listening; all six wire messages and crypto/session bounds are unchanged.
+- Clarify local lower-delay buffering profiles and native startup floors for Mac-to-Android streams; all six wire messages and crypto/session bounds are unchanged.
 
 ## [v0.9.0-beta.4]
 

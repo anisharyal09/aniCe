@@ -25,8 +25,8 @@ Contracts define required behavior.
 | **LAN Binding** | `3` (legacy `1`/`2`) | Implemented | [`lan/README.md`](lan/README.md) | Anonymous DNS-SD discovery and bounded TCP stream framing |
 | **Automatic LAN rendezvous** | `2` (legacy `1`) | Implemented | [`lan/AUTOMATIC.md`](lan/AUTOMATIC.md) | Authenticated BLE direct locators and event/demand-triggered LAN admission |
 | **In-flight LAN renewal** | `1` | Implemented | [`lan/RENEWAL.md`](lan/RENEWAL.md) | Authenticated drain barriers and fresh EDHOC over a retained socket |
-| **Private Listening** | `1` | Native integration | [`private-listening/README.md`](private-listening/README.md) | Bounded Mac-to-Android PCM over secured LAN with stream-bound readiness and maintenance |
-| **Phone Audio** | `1` | Native integration | [`private-listening/PHONE_AUDIO.md`](private-listening/PHONE_AUDIO.md) | Explicit Android-to-Mac playback-capture PCM over secured LAN with mutual exclusion |
+| **Audio Sharing (Mac → Android)** | `1` | Native integration | [Mac-to-Android audio contract](audio-sharing/README.md) | Bounded PCM over secured LAN with stream-bound readiness and maintenance |
+| **Phone Audio** | `1` | Native integration | [`audio-sharing/PHONE_AUDIO.md`](audio-sharing/PHONE_AUDIO.md) | Explicit Android-to-Mac playback-capture PCM over secured LAN with mutual exclusion |
 | **Clipboard** | `1` | Implemented | [`clipboard/README.md`](clipboard/README.md) | Native text delivery, per-peer consent and bounded cross-transport retries |
 | **SMS Relay** | `3` | Implemented | [`sms/README.md`](sms/README.md) | Provider thread/history/search reads, live SMS events, optional SIM choice and replies inside secured DATA |
 | **Notification Mirroring** | `1` | Implemented | [`notifications/README.md`](notifications/README.md) | Selected Android app alerts and bounded source icons, native Mac actions and synchronized dismissal inside secured DATA |
@@ -158,11 +158,11 @@ protocol/
 ├── phone-input/
 │   ├── README.md                  # Phone-to-Mac input v1 contract and lifecycle rules
 │   └── phone-input.cddl           # Phone-to-Mac input message shapes
-├── private-listening/
+├── audio-sharing/
 │   ├── PHONE_AUDIO.md             # Phone-to-Mac reverse audio admission, wire tags and capture lifecycle
 │   ├── README.md                  # Audio admission, source timelines and LAN maintenance
 │   ├── phone-audio.cddl           # Bounded reverse phone-audio control and PCM frames
-│   └── private-listening.cddl     # Six bounded private-listening message kinds
+│   └── audio-sharing.cddl     # Six bounded Mac-to-Android audio message kinds
 ├── notifications/
 │   ├── README.md                  # Android-to-Mac alert mirroring behavior and lifecycle
 │   └── notifications.cddl         # Notification message shapes
@@ -203,9 +203,9 @@ protocol/
     ├── phone-audio/
     │   ├── phone-audio-vectors.json # Canonical and rejected reverse phone-audio messages
     │   └── generate.py              # Independent reverse phone-audio CBOR oracle
-    ├── private-listening/
-    │   ├── vectors.json            # Canonical audio and rejected private-listening messages
-    │   └── generate_private_listening_vectors.py # Independent CBOR and PCM timeline oracle
+    ├── audio-sharing/
+    │   ├── vectors.json            # Canonical and rejected Mac-to-Android audio messages
+    │   └── generate_audio_sharing_vectors.py # Independent CBOR and PCM timeline oracle
     ├── notifications/
     │   ├── notification-vectors.json # Positive & negative notification mirroring fixtures
     │   └── generate_notification_vectors.py # Independent CBOR fixture generator
@@ -231,9 +231,9 @@ protocol/
 
 Now Playing also defines separately advertised [Mac output volume](media/OUTPUT_VOLUME.md), with independent positive/negative fixtures and unchanged media/player-volume v1 encodings.
 
-## Private Listening
+## Audio Sharing
 
-[Private Listening v1](private-listening/README.md) defines fixed 48-kHz stereo PCM16 audio, stream-bound Start/Ready/Stop, health reports and bounded rebuffering over existing authenticated LAN DATA. Successful retained-socket renewal preserves its stream identity; actual retirement stops it. [CDDL](private-listening/private-listening.cddl) binds each kind to its payload, and [independent fixtures](test-vectors/private-listening/vectors.json) define canonical bytes and rejected field/timeline bounds. [Phone Audio v1](private-listening/PHONE_AUDIO.md) extends the family with mutually exclusive Android-to-Mac playback capture under explicit single-use local projection consent, bound by [reverse CDDL](private-listening/phone-audio.cddl) and [independent fixtures](test-vectors/phone-audio/phone-audio-vectors.json).
+[Audio Sharing v1 (Mac → Android)](audio-sharing/README.md) defines fixed 48-kHz stereo PCM16 audio, stream-bound Start/Ready/Stop, health reports and bounded rebuffering over existing authenticated LAN DATA. Successful retained-socket renewal preserves its stream identity; actual retirement stops it. [CDDL](audio-sharing/audio-sharing.cddl) binds each kind to its payload, and [independent fixtures](test-vectors/audio-sharing/vectors.json) define canonical bytes and rejected field/timeline bounds. [Phone Audio v1](audio-sharing/PHONE_AUDIO.md) defines the mutually exclusive Android-to-Mac direction, with explicit single-use local projection consent, [reverse CDDL](audio-sharing/phone-audio.cddl) and [independent fixtures](test-vectors/phone-audio/phone-audio-vectors.json).
 
 ## File Transfer
 

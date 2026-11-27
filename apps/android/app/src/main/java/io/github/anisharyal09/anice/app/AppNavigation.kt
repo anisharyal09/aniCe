@@ -15,30 +15,33 @@ internal fun comparisonUsesDeviceSheet(destination: AppDestination, route: Devic
     route == DeviceRoute.Pairing && destination in listOf(AppDestination.Home, AppDestination.Devices)
 
 // Only local presentation identifiers are persisted; feature support remains with its owner.
-enum class AppFeature(val label: String) {
+enum class AppFeature(val label: String, private val savedName: String? = null) {
     PhoneInput("Control Mac"), DeskDeck("Mac Desk Deck"), Files("Send files"), Clipboard("Clipboard"),
-    Playback("Now Playing"), Sms("Messages"), FindDevice("Find Device"), PrivateListening("Private Listening");
+    Playback("Now Playing"), Sms("Messages"), FindDevice("Find Device"), AudioSharing("Audio Sharing", "PrivateListening");
+    internal val storageKey: String get() = savedName ?: name
     fun toggled(value: String): String {
         val saved = favourites(value).toMutableList()
         if (!saved.remove(this)) saved.add(this)
-        return saved.joinToString(",") { it.name }
+        return saved.joinToString(",") { it.storageKey }
     }
     companion object {
         const val DEFAULT_FAVOURITES = "PhoneInput,DeskDeck,Clipboard"
+        internal fun fromStorage(key: String?): AppFeature? = entries.firstOrNull { it.storageKey == key }
+
         fun favourites(value: String): List<AppFeature> {
-            return value.split(',').mapNotNull { name -> entries.firstOrNull { it.name == name } }.distinct()
+            return value.split(',').mapNotNull(::fromStorage).distinct()
         }
         fun ordered(value: String): List<AppFeature> {
-            val saved = value.split(',').mapNotNull { name -> entries.firstOrNull { it.name == name } }.distinct()
+            val saved = favourites(value)
             return saved + entries.filterNot(saved::contains)
         }
         fun moved(feature: AppFeature, rows: List<AppFeature>, offset: Int): String {
             val reordered = rows.toMutableList()
             val from = reordered.indexOf(feature)
-            if (from < 0 || reordered.size < 2) return reordered.joinToString(",") { it.name }
+            if (from < 0 || reordered.size < 2) return reordered.joinToString(",") { it.storageKey }
             val to = (from + offset).coerceIn(0, reordered.lastIndex)
             reordered.add(to, reordered.removeAt(from))
-            return reordered.joinToString(",") { it.name }
+            return reordered.joinToString(",") { it.storageKey }
         }
     }
 }
@@ -88,7 +91,7 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
     }
     companion object {
         val saver = listSaver<AppNavigation, String>(
-            save = { listOf(it.destination.name, it.route.name, it.focusedPeer.orEmpty(), it.settingsRoute.name, it.mediaDetails.toString(), it.findDetails.toString(), it.favouriteFeatures, it.featurePanel?.name.orEmpty(), it.featureOrigin.name, it.featureOrder) },
+            save = { listOf(it.destination.name, it.route.name, it.focusedPeer.orEmpty(), it.settingsRoute.name, it.mediaDetails.toString(), it.findDetails.toString(), it.favouriteFeatures, it.featurePanel?.storageKey.orEmpty(), it.featureOrigin.name, it.featureOrder) },
             restore = { saved ->
                 // Older saved state can still point at the removed Permissions destination.
                 val settingsRoute = SettingsRoute.entries.firstOrNull { it.name == saved.getOrNull(3) }
@@ -102,7 +105,7 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
                     value.mediaDetails = saved.getOrNull(4) == "true"
                     value.findDetails = saved.getOrNull(5) == "true"
                     value.favouriteFeatures = saved.getOrNull(6).orEmpty()
-                    value.featurePanel = AppFeature.entries.firstOrNull { feature -> feature.name == saved.getOrNull(7) }
+                    value.featurePanel = AppFeature.fromStorage(saved.getOrNull(7))
                     value.featureOrigin = AppDestination.entries.firstOrNull { page -> page.name == saved.getOrNull(8) }
                         ?: AppDestination.Features
                     value.featureOrder = saved.getOrNull(9).orEmpty()

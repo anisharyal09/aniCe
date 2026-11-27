@@ -17,7 +17,7 @@ This guide describes the BLE/LAN record path, resource budgets and instrumentati
 | Socket write deadline | 10 seconds | [LAN](../protocol/lan/README.md) |
 | CBOR structure | 512 items, 8 levels; profile-specific byte limit | [Session](../protocol/session/README.md) |
 | Receive credit | Four 3,072-byte BLE chunks; up to eight negotiated LAN chunks | [Transfer](../protocol/transfer/README.md) |
-| Private Listening audio | 50 packets/second; 960 stereo frames / 3,840 PCM bytes; at most 3,927 Audio CBOR bytes | [Private Listening](../protocol/private-listening/README.md) |
+| Audio Sharing (Mac → Android) | 50 packets/second; 960 stereo frames / 3,840 PCM bytes; at most 3,927 Audio CBOR bytes | [Mac-to-Android audio contract](../protocol/audio-sharing/README.md) |
 
 Larger records amortize per-record validation. At 8 MiB/s:
 
@@ -107,7 +107,7 @@ A slower initial probe or an advancing-ACK gap above one second constrains subse
 
 After a five-second cooldown, advancing credit allows a fresh probe once outstanding data drains. Only an acknowledged fresh probe restores the larger window. Source preparation and fully drained idle time are excluded from probe/ACK-gap timing.
 
-While Private Listening owns pacing, App initially caps future LAN file chunks at 65,536 bytes and outstanding unacknowledged file data at 131,072 bytes. Fresh advancing audio health may recover credit in 128-KiB steps every four healthy seconds, up to 1 MiB, with future chunks up to 128 KiB. The negotiated chunk-count window and delayed-path qualification still cap actual credit. New underruns, buffering or stale health reset pacing to its initial bound. A policy change fences prepared plaintext before submission; source reads are not rewound or valid transfer bytes discarded. Existing submitted bytes drain normally, and normal transfer policy returns after the listening lease ends.
+While Audio Sharing sends Mac audio to the phone, the app initially caps future LAN file chunks at 65,536 bytes and outstanding unacknowledged file data at 131,072 bytes. Fresh advancing audio health may recover credit in 128-KiB steps every four healthy seconds, up to 1 MiB, with future chunks up to 128 KiB. The negotiated chunk-count window and delayed-path qualification still cap actual credit. New underruns, buffering or stale health reset pacing to its initial bound. A policy change fences prepared plaintext before submission; source reads are not rewound or valid transfer bytes discarded. Existing submitted bytes drain normally, and normal transfer policy returns after the listening lease ends.
 
 On large-chunk LAN links, smaller-than-negotiated chunks return credit immediately. Full-size chunks use the quarter-window byte threshold; a 20-ms timer also flushes written progress. These rules bound bytes ahead of controls, not elapsed latency on a lossy path.
 
@@ -126,7 +126,7 @@ LAN renewal closes sealing admission and drains nonce-owned submissions before f
 
 Normal TCP EOF permits at most ten seconds for accepted delivery to drain. Explicit close, authentication failure and native transport failure retire immediately.
 
-## Private Listening audio primitives
+## Mac-to-Android audio capture and playback
 
 The Mac tap callback copies Float32 frames into a source-rate 200-ms SPSC ring. It allocates, locks and seals no records; incoming overflow advances the source timeline without overwriting consumer-owned frames. The worker inspects the tap format, converts to 48-kHz stereo and clips to fixed 960-frame PCM16 packets. Packet boundaries expose skipped source intervals instead of padding them.
 
@@ -161,10 +161,10 @@ and existing delayed-path qualification remain authoritative.
 
 ## Phone Audio sender and receiver
 
-Android playback capture reads 960-frame PCM16 packets on a dedicated `THREAD_PRIORITY_AUDIO` capture worker (`PrivateListeningAudioWorker`) and offers them to a three-packet unsent window plus at most one in-flight send. `PhoneAudioController` wakes its serialized off-Main `Dispatchers.IO.limitedParallelism(1)` send queue directly from the capture worker so UI rendering and Recents transitions do not block encoding, encryption or socket submission. On the Mac, `MacPhoneAudioOutput` tracks buffer completion synchronously with `OSAllocatedUnfairLock`, primes a bounded prefill cushion before starting playback and applies a 5 ms boundary fade on startup and recovery while staying within the 6-packet (120 ms) output ceiling. Neither path persists PCM.
+Android reads PCM16 on a dedicated `THREAD_PRIORITY_AUDIO` capture worker and sends 960-frame packets through a three-packet window plus one in-flight send. A serialized off-main dispatcher handles encoding and submission; LAN lifecycle mutations stay on the connection owner. The Mac player starts after three packets or an 80-ms fallback, re-buffers on an empty player queue, and fades in over 5 ms at startup, after a sequence gap, or after re-buffering. Its six-packet (120-ms) cap counts audio still waiting to render at the player node. Downstream output-device latency does not count toward the cap. Neither path persists PCM.
 
 The preview's opt-in counters separate capture read time, capture interval,
-main-thread presentation wait, queue age at dequeue, encoding and submission on
+sender wake-up wait (the legacy `presentation_wait` field), queue age at dequeue, encoding and submission on
 Android, and arrival interval, receiver admission, sequence gaps and native
 output backlog/resync/completion on the Mac. All values are local elapsed
 intervals; phone and Mac clocks are not synchronized, submission completion is
@@ -204,7 +204,7 @@ python3 scripts/verify-lan-interchange.py --serial PHONE_SERIAL \
 
 The [benchmark contract](../protocol/lan/BENCHMARK.md) defines payloads and metrics. Native interchange scripts target the normal Android test package; do not run them against an unrelated installed production app. Raw TCP excludes records, transfer credit and file storage and must not be presented as file-transfer throughput.
 
-For user-operated Private Listening comparisons, follow the [physical-test guide](PRIVATE_LISTENING_TESTING.md). `scripts/check-listening-health.py` queries an explicitly selected Transfer Preview without activating playback; optional layout-checked native track counters complement app screenshots. Filtered snapshots, Wi-Fi PHY rates and CPU ticks are diagnostics, not source-to-ear latency or file-throughput benchmarks.
+For Audio Sharing comparisons, follow the [physical-test guide](AUDIO_SHARING_TESTING.md). `scripts/check-listening-health.py` queries an explicitly selected Transfer Preview without activating playback; optional layout-checked native track counters complement app screenshots. Filtered snapshots, Wi-Fi PHY rates and CPU ticks are diagnostics, not source-to-ear latency or file-throughput benchmarks.
 
 ## Optimization constraints
 

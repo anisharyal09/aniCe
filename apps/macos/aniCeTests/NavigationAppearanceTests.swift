@@ -141,6 +141,8 @@ extension SessionTests {
   @MainActor func testFavouritesIgnoreUnknownEntriesAndRouteWithoutChangingDeviceContext() {
     XCTAssertEqual(AppFeature.favourites(in: "files,files,unknown,playback"), [.files, .playback])
     XCTAssertTrue(AppFeature.favourites(in: "unknown").isEmpty)
+    XCTAssertEqual(AppFeature.favourites(in: "privateListening").map(\.title), ["Audio Sharing"])
+    XCTAssertTrue(AppFeature.isPinned(.audioSharing, in: "privateListening"))
     XCTAssertTrue(AppFeature.favourites(in: "typeToMac").isEmpty)
     XCTAssertEqual(AppFeature.files.toggled(in: "files,unknown,playback"), "playback")
     XCTAssertEqual(AppFeature.findDevice.toggled(in: "files,files"), "files,findDevice")

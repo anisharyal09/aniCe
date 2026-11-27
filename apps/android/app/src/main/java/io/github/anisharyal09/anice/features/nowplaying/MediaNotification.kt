@@ -105,7 +105,7 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
                 manager.cancel(ID)
                 actions.forEach { it.cancel() }; actions.clear()
                 session?.setMetadata(null)
-                val playing = app.privateListening.state == 2L
+                val playing = app.audioSharing.state == 2L
                 session?.setPlaybackState(PlaybackState.Builder()
                     .setState(if (playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
                         PlaybackState.PLAYBACK_POSITION_UNKNOWN, if (playing) 1f else 0f).build())

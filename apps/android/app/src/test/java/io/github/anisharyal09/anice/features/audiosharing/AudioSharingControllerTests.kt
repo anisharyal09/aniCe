@@ -1,0 +1,461 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Verifies consent, service tickets, stale traffic and retained-channel maintenance with deterministic native-output fakes.
+package io.github.anisharyal09.anice.features.audiosharing
+
+import io.github.anisharyal09.anice.infrastructure.connections.ChannelDescriptor
+import io.github.anisharyal09.anice.infrastructure.connections.ChannelMaintenance
+import io.github.anisharyal09.anice.infrastructure.connections.DataHandling
+import io.github.anisharyal09.anice.infrastructure.connections.SecuredChannel
+import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
+import io.github.anisharyal09.anice.infrastructure.session.Cbor
+import io.github.anisharyal09.anice.infrastructure.session.SessionBackpressure
+import io.github.anisharyal09.anice.infrastructure.session.SessionMaintenanceSnapshot
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.runtime.snapshots.SnapshotStateObserver
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.*
+import org.junit.Test
+
+class AudioSharingControllerTests {
+    @Test fun startingListeningInvalidatesObservedControlsWithoutAnotherNavigation() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        var updates = 0
+        val observer = SnapshotStateObserver { it() }
+        observer.start()
+        try {
+            observer.observeReads(h, { updates++ }) { assertFalse(h.owner.busy) }
+            h.start()
+            Snapshot.sendApplyNotifications()
+            assertTrue("Active ownership must invalidate the opposite direction's controls", updates > 0)
+        } finally { observer.stop(); h.owner.stop() }
+    }
+
+    @Test fun consentControlIsUnavailableUntilIdentityLoadsAndAfterRetirement() = runBlocking {
+        val clock = Clock()
+        val channel = Channel(clock)
+        val local = CompletableDeferred<String>()
+        val owner = AudioSharingController(now = { clock.now }, dispatcher = Dispatchers.Unconfined,
+            automaticTicks = false)
+        owner.loadLocalFingerprint = { local.await() }
+        assertFalse(owner.canSetConsent)
+        owner.available(channel)
+        assertFalse(owner.canSetConsent)
+        local.complete("b".repeat(64))
+        assertTrue(owner.canSetConsent)
+        owner.retired(channel.descriptor)
+        assertFalse(owner.canSetConsent)
+    }
+
+    @Test fun reverseOwnershipRefusesForwardStartWithoutStoppingTheReverseOperation() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.owner.reverseActive = { true }
+        h.start()
+        assertEquals(listOf(2L), h.results())
+        assertFalse(h.owner.active)
+        assertEquals(0, h.starts)
+        assertEquals(0, h.stopped)
+        h.owner.reverseActive = { false }
+        h.start(OTHER_ID)
+        assertTrue(h.owner.active)
+        h.owner.stop()
+    }
+
+    @Test fun speakerPermissionIsFrozenForTheTicketAndRevocationStopsOutput() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.owner.setSpeakerFallback(true)
+        h.start()
+        val ticket = requireNotNull(h.request)
+        assertTrue(ticket.speakerFallback)
+        val output = h.attach()
+        h.owner.setSpeakerFallback(false)
+        assertFalse(h.owner.active)
+        assertEquals(1, output.closed)
+        assertFalse(h.owner.speakerFallbackEnabled)
+        h.owner.serviceDestroyed(ticket, h)
+        h.start(OTHER_ID)
+        assertFalse(requireNotNull(h.request).speakerFallback)
+        h.owner.setSpeakerFallback(true)
+        assertFalse(h.owner.speakerFallbackEnabled)
+        h.owner.stop()
+    }
+
+    @Test fun speakerRouteRecoveryDoesNotReplaceTheStreamAndStopFencesIt() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.owner.setSpeakerFallback(true)
+        h.start()
+        val ticket = requireNotNull(h.request)
+        val output = h.attach()
+        h.owner.outputRouteChanged(ticket)
+        assertTrue(h.owner.active)
+        assertEquals(ID, h.owner.streamId)
+        assertEquals(1, output.resumed)
+        h.owner.stop()
+        h.owner.outputRouteChanged(ticket)
+        assertEquals(1, output.resumed)
+    }
+    @Test fun workerAudioFeedsReadyOutputWithoutUiDeliveryAndStopsAtTheSameStreamBoundary() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.start()
+        val output = h.attach()
+        h.clock.now = 1000
+        val packet = AudioSharingMessage.audio(ID, 1, ByteArray(3840)).encode()
+        assertEquals(DataHandling.HANDLED, h.owner.handleOnWorker(h.channel.descriptor, packet))
+        assertEquals(1, output.audio.size)
+        assertEquals(DataHandling.DISCARDED, h.owner.handleOnWorker(h.channel.descriptor, packet))
+        h.owner.stop()
+        assertEquals(DataHandling.DISCARDED, h.owner.handleOnWorker(h.channel.descriptor,
+            AudioSharingMessage.audio(ID, 2, ByteArray(3840)).encode()))
+        assertEquals(1, output.audio.size)
+    }
+    @Test fun profileIsFrozenForTheCurrentTicketAndRetiredHealthCannotReappear() = runBlocking {
+        val h = Harness()
+        h.owner.setBufferProfile(ListeningBufferProfile.LOWER_DELAY)
+        h.owner.setConsent(true)
+        h.start()
+        val ticket = requireNotNull(h.request)
+        assertEquals(ListeningBufferProfile.LOWER_DELAY, ticket.bufferProfile)
+        h.owner.setBufferProfile(ListeningBufferProfile.BALANCED)
+        assertEquals(ListeningBufferProfile.LOWER_DELAY, h.owner.bufferProfile)
+        h.attach()
+        h.owner.playbackHealth(ticket, ListeningPlaybackHealth(1, 960, 3840, 0, false, targetFrames = 3840))
+        assertEquals(3840, h.owner.diagnostics?.targetFrames)
+        h.owner.focusChanged(ticket, false)
+        assertNull(h.owner.diagnostics)
+        h.owner.playbackHealth(ticket, ListeningPlaybackHealth(2, 1920, 3840, 0, false))
+        assertNull(h.owner.diagnostics)
+        h.owner.stop()
+        assertNull(h.owner.diagnostics)
+        h.owner.playbackHealth(ticket, ListeningPlaybackHealth(2, 1920, 9600, 1, false))
+        assertNull(h.owner.diagnostics)
+        h.owner.serviceDestroyed(ticket, h)
+        h.owner.setBufferProfile(ListeningBufferProfile.BALANCED)
+        h.start(OTHER_ID)
+        assertEquals(ListeningBufferProfile.BALANCED, requireNotNull(h.request).bufferProfile)
+        h.owner.stop()
+    }
+
+    private class Clock(var now: Long = 0)
+    private class Channel(private val clock: Clock, instance: String = "channel") : SecuredChannel {
+        override val descriptor = ChannelDescriptor(instance, "lan", DeviceIdentity(
+            "01234567-89ab-4cde-8fab-0123456789ab", "Fixture Mac", "macos", "fixture-key", "a".repeat(64)))
+        override val maintenance = ChannelMaintenance { clock.now }
+        val sent = mutableListOf<AudioSharingMessage>()
+        var backpressured = false
+        var attempts = 0
+        override suspend fun sendData(bytes: ByteArray) {
+            attempts++
+            if (backpressured) throw SessionBackpressure()
+            sent.add(requireNotNull(AudioSharingMessage.decode(bytes)))
+        }
+    }
+    private class Output : AudioSharingOutput {
+        var paused = 0
+        var resumed = 0
+        var closed = 0
+        val audio = mutableListOf<AudioSharingMessage>()
+        var resumeGate: CompletableDeferred<Unit>? = null
+        override fun offer(message: AudioSharingMessage): Boolean { audio.add(message); return true }
+        override fun pause() { paused++ }
+        override suspend fun resume() { resumed++; resumeGate?.await() }
+        override fun close() { closed++ }
+    }
+    private class Harness {
+        val clock = Clock()
+        val channel = Channel(clock)
+        val owner = AudioSharingController(now = { clock.now }, dispatcher = Dispatchers.Unconfined,
+            automaticTicks = false)
+        var starts = 0
+        var request: AudioSharingRequest? = null
+        var stopped = 0
+        val leases = mutableListOf<Boolean>()
+        init {
+            owner.loadLocalFingerprint = { "b".repeat(64) }
+            owner.startupAllowed = { true }
+            owner.startService = { request = it; starts++ }
+            owner.stopService = { stopped++ }
+            owner.serviceOwnershipChanged = { _, _, acquired -> leases.add(acquired) }
+            owner.available(channel)
+        }
+        suspend fun start(id: String = ID) {
+            owner.handle(channel.descriptor, AudioSharingMessage.start(id).encode())
+        }
+        fun attach(output: Output = Output()): Output {
+            assertTrue(owner.serviceAttached(requireNotNull(request), this, output))
+            owner.ready(requireNotNull(request))
+            return output
+        }
+        fun results() = channel.sent.filter { it.kind == 2L }.map { it.number(1) }
+        suspend fun audio(sequence: Long) = owner.handle(channel.descriptor,
+            AudioSharingMessage.audio(ID, sequence, ByteArray(3840)).encode())
+    }
+
+    @Test fun receivingDefaultsOnButExplicitOffRefusesStart() = runBlocking {
+        val h = Harness()
+        assertTrue(h.owner.consentEnabled)
+        assertTrue(h.owner.speakerFallbackEnabled)
+        assertTrue(h.channel.sent.first().flag(4))
+        assertEquals(0, h.starts)
+        h.owner.setConsent(false)
+        assertFalse(h.owner.consentEnabled)
+        assertFalse(h.channel.sent.last().flag(4))
+        val peer = h.channel.descriptor.peer
+        assertFalse(h.owner.preferences.enabled("b".repeat(64), peer))
+        assertTrue(h.owner.preferences.enabled("b".repeat(64), peer.copy(publicKey = "replacement-key")))
+        h.start()
+        assertEquals(listOf(1L), h.results())
+        assertEquals(0, h.starts)
+        h.owner.setConsent(true)
+        h.start() // A refused stream ID stays retired on this channel.
+        assertEquals(0, h.starts)
+        h.start(OTHER_ID)
+        assertEquals(1, h.starts)
+        h.owner.stop()
+    }
+
+    @Test fun backgroundRefusalNeverCreatesAServiceTicket() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.owner.startupAllowed = { false }
+        h.start()
+        assertEquals(listOf(4L), h.results())
+        assertEquals(0, h.starts)
+        assertFalse(h.owner.active)
+    }
+
+    @Test fun startsCoalesceAndOldServiceCompletionsCannotReviveStoppedAudio() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.start()
+        val request = requireNotNull(h.request)
+        h.start()
+        assertEquals(1, h.starts)
+        h.start(OTHER_ID)
+        assertEquals(listOf(2L), h.results())
+        val output = h.attach()
+        assertEquals(listOf(2L, 0L), h.results())
+        h.start()
+        assertEquals(listOf(2L, 0L, 0L), h.results())
+        assertEquals(DataHandling.HANDLED, h.audio(1))
+        assertEquals(DataHandling.DISCARDED, h.audio(1))
+        assertEquals(1, output.audio.size)
+        h.owner.stop()
+        h.owner.ready(request)
+        assertFalse(h.owner.active)
+        assertEquals(1, output.closed)
+        assertTrue(h.channel.sent.any { it.kind == 4L })
+    }
+
+    @Test fun watchdogAndFirstAudioTimeoutRemainBoundedWithoutBreakingSilentAudio() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.start()
+        val output = h.attach()
+        h.clock.now = 4000
+        h.audio(1)
+        h.clock.now = 13000
+        h.owner.tick()
+        assertTrue(h.owner.active)
+        h.clock.now = 14000
+        h.owner.tick()
+        assertFalse(h.owner.active)
+        assertEquals(1, output.closed)
+    }
+
+    @Test fun maintenanceKeepsTheSameStreamAndBuffersDuringSilentRepriming() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.start()
+        val output = h.attach()
+        h.audio(1)
+        h.clock.now = 1000
+        h.channel.maintenance.update(SessionMaintenanceSnapshot(sinceMillis = 1000, revision = 1))
+        h.owner.capacityAvailable(h.channel.descriptor)
+        assertEquals(4L, h.owner.state)
+        h.clock.now = 45000
+        h.owner.tick()
+        assertTrue(h.owner.active)
+        h.audio(2)
+        assertEquals(1, output.audio.size)
+        output.resumeGate = CompletableDeferred()
+        h.channel.maintenance.update(SessionMaintenanceSnapshot(elapsedMillis = 44000, revision = 2))
+        h.owner.capacityAvailable(h.channel.descriptor)
+        assertEquals(ID, h.owner.streamId)
+        assertEquals(1, output.resumed)
+        assertEquals(1, h.starts)
+        h.audio(3)
+        assertEquals(2, output.audio.size) // Output gate, not wire admission, owns audible re-priming.
+        output.resumeGate!!.complete(Unit)
+        h.owner.tick()
+        assertTrue(h.owner.active)
+        h.owner.stop()
+    }
+
+    @Test fun coalescedMaintenanceStillDiscardsOldAudioAndLateRetirementCannotCloseReplacement() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.start()
+        val output = h.attach()
+        h.clock.now = 3000
+        h.channel.maintenance.update(SessionMaintenanceSnapshot(elapsedMillis = 2000, revision = 2))
+        h.owner.capacityAvailable(h.channel.descriptor)
+        assertEquals(1, output.paused)
+        assertEquals(1, output.resumed)
+        val replacement = Channel(h.clock, instance = "replacement")
+        h.owner.available(replacement)
+        assertEquals(1, output.closed)
+        h.owner.retired(h.channel.descriptor)
+        assertEquals(replacement.descriptor.peer, h.owner.peer)
+        assertFalse(h.owner.active)
+    }
+
+    @Test fun focusPauseHasAnAbsoluteExpiryAndPermanentLossEndsOwnership() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.start()
+        val output = h.attach()
+        h.owner.focusChanged(requireNotNull(h.request), false)
+        assertEquals(3L, h.owner.state)
+        h.audio(1)
+        assertTrue(output.audio.isEmpty())
+        for (time in 1000L..89000L step 1000) {
+            h.clock.now = time
+            val status = AudioSharingMessage(5, listOf(Cbor.Text(ID), Cbor.Integer(0), Cbor.Integer(3),
+                Cbor.Integer(0), Cbor.Integer(0), Cbor.Integer(0), Cbor.Integer(0)))
+            h.owner.handle(h.channel.descriptor, status.encode())
+            h.owner.tick()
+        }
+        assertTrue(h.owner.active)
+        h.clock.now = 90000
+        h.owner.tick()
+        assertFalse(h.owner.active)
+        val h2 = Harness()
+        h2.owner.setConsent(true)
+        h2.start()
+        val second = h2.attach()
+        h2.owner.focusChanged(requireNotNull(h2.request), false, permanent = true)
+        assertFalse(h2.owner.active)
+        assertEquals(1, second.closed)
+    }
+
+    @Test fun preparationTimeoutAndInvalidSideNeverPromoteTheStream() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.start()
+        h.clock.now = 5000
+        h.owner.tick()
+        assertFalse(h.owner.active)
+        assertEquals(listOf(9L), h.results())
+        val h2 = Harness()
+        h2.owner.setConsent(true)
+        h2.start()
+        h2.attach()
+        val status = AudioSharingMessage(5, listOf(Cbor.Text(ID), Cbor.Integer(1), Cbor.Integer(2),
+            Cbor.Integer(0), Cbor.Integer(0), Cbor.Integer(0), Cbor.Integer(0)))
+        assertEquals(DataHandling.DISCARDED, h2.owner.handle(h2.channel.descriptor, status.encode()))
+        h2.owner.stop()
+    }
+
+    @Test fun serviceDestructionFromAnOldOwnerCannotReleaseAReplacementOperation() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.start()
+        val old = requireNotNull(h.request)
+        h.attach()
+        h.owner.stop()
+        h.start(OTHER_ID)
+        assertFalse(h.owner.active) // Wait for native teardown rather than stopping a new service by class.
+        h.owner.serviceDestroyed(old, h)
+        h.start(OTHER_ID)
+        assertTrue(h.owner.active)
+        val replacement = requireNotNull(h.request)
+        assertNotSame(old, replacement)
+        h.owner.serviceDestroyed(old, h)
+        assertTrue(h.owner.active)
+        h.owner.stop()
+    }
+
+    @Test fun macStatusCannotExtendTheFirstAudioDeadlineAndNativeDestructionDoesNotLatchBusy() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.start()
+        h.attach()
+        h.clock.now = 4000
+        val report = AudioSharingMessage(5, listOf(Cbor.Text(ID), Cbor.Integer(0), Cbor.Integer(2),
+            Cbor.Integer(0), Cbor.Integer(0), Cbor.Integer(0), Cbor.Integer(0)))
+        h.owner.handle(h.channel.descriptor, report.encode())
+        h.clock.now = 5000
+        h.owner.tick()
+        assertFalse(h.owner.active)
+        val old = requireNotNull(h.request)
+        h.owner.serviceDestroyed(old, h)
+        h.start(OTHER_ID)
+        h.attach()
+        val second = requireNotNull(h.request)
+        h.owner.serviceDestroyed(second, h)
+        assertFalse(h.owner.active)
+        val fresh = "01234567-89ab-4cde-8fab-0123456789ad"
+        h.start(fresh)
+        assertTrue(h.owner.active)
+        h.owner.stop()
+    }
+
+    @Test fun backpressuredTicksWaitForCapacityWithoutSpinning() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.start()
+        val ticket = requireNotNull(h.request)
+        h.attach()
+        h.owner.ready(ticket)
+        val before = h.channel.attempts
+        h.channel.backpressured = true
+        h.clock.now = 1000
+        h.owner.tick()
+        assertEquals(before + 1, h.channel.attempts)
+        h.clock.now = 2000
+        h.owner.tick()
+        h.clock.now = 3000
+        h.owner.tick()
+        repeat(10) { h.owner.tick() }
+        assertEquals(before + 1, h.channel.attempts)
+        h.channel.backpressured = false
+        h.owner.capacityAvailable(h.channel.descriptor)
+        assertEquals(before + 2, h.channel.attempts)
+        assertEquals(5L, h.channel.sent.last().kind)
+        h.owner.stop()
+    }
+
+    @Test fun postReadyTimeoutSendsPreparationExpiredStopReason() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.start()
+        val ticket = requireNotNull(h.request)
+        h.attach()
+        h.owner.ready(ticket)
+        h.owner.failed(ticket, 9, "Timed out.")
+        assertFalse(h.owner.active)
+        assertEquals(4L, h.channel.sent.last().kind)
+        assertEquals(7L, h.channel.sent.last().number(1))
+    }
+
+    @Test fun offlineActionsTriggerLanRequired() {
+        val owner = AudioSharingController(dispatcher = Dispatchers.Unconfined, automaticTicks = false)
+        var requests = 0
+        owner.onLanRequired = { requests++ }
+        owner.setConsent(true)
+        owner.setSpeakerFallback(true)
+        owner.setBufferProfile(ListeningBufferProfile.LOWER_DELAY)
+        assertEquals(3, requests)
+    }
+
+    companion object {
+        private const val ID = "01234567-89ab-4cde-8fab-0123456789ab"
+        private const val OTHER_ID = "01234567-89ab-4cde-8fab-0123456789ac"
+    }
+}

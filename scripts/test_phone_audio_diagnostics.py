@@ -104,6 +104,16 @@ class PhoneAudioDiagnosticTests(unittest.TestCase):
         self.assertIsNone(delta["read_calls"])
         self.assertIsNone(delta["queue_replaced_packets"])
 
+    def test_mac_rendered_and_legacy_playback_callbacks_remain_distinct(self):
+        legacy = diagnostics.sanitized_row(row("macos", output_played_back_callbacks=4))
+        before = diagnostics.sanitized_row(row("macos", output_rendered_callbacks=8))
+        after = diagnostics.sanitized_row(row("macos", elapsed=2000, output_rendered_callbacks=12))
+        self.assertEqual(legacy["output_played_back_callbacks"], 4)
+        self.assertNotIn("output_rendered_callbacks", legacy)
+        delta = diagnostics.counter_delta(before, after, "macos")
+        self.assertEqual(delta["output_rendered_callbacks"], 4)
+        self.assertIsNone(delta["output_played_back_callbacks"])
+
     def test_symlink_and_nonregular_inputs_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)

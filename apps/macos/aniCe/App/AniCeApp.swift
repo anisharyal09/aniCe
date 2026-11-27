@@ -13,7 +13,7 @@ struct AniCeApp: App {
   @State private var session: MacSessionModel
   @State private var pairing: MacPairingModel
   @State private var lan: MacLanSessionModel
-  @State private var privateListening: MacPrivateListeningModel
+  @State private var audioSharing: MacAudioSharingModel
   @State private var phoneAudio: MacPhoneAudioModel
   @State private var connectionPause: MacConnectionPauseModel
   @State private var playback: MacPlaybackModel
@@ -38,7 +38,7 @@ struct AniCeApp: App {
   @State private var hotkeyManager: GlobalHotkeyManager?
   @State private var servicesStarted = false
   #if DEBUG && ANICE_TRANSFER_PREVIEW
-  @State private var physicalListening: PrivateListeningPhysicalRunner?
+  @State private var physicalListening: AudioSharingPhysicalRunner?
   #endif
   @State private var comparisonPresenter: MacComparisonPresenter?
 
@@ -101,8 +101,8 @@ struct AniCeApp: App {
     let peers = SessionPeerReservation()
     let lan = MacLanSessionModel(identity: identity.service, peers: peers, preferences: .standard, store: { try await pairing.sessionStore() })
     _lan = State(initialValue: lan)
-    let privateListening = MacPrivateListeningModel(preferences: IdentityView.isTesting ? nil : .standard)
-    _privateListening = State(initialValue: privateListening)
+    let audioSharing = MacAudioSharingModel(preferences: IdentityView.isTesting ? nil : .standard)
+    _audioSharing = State(initialValue: audioSharing)
     let phoneAudioDiagnostics = !IdentityView.isTesting && MacPhoneAudioDiagnostics.runtimeEnabled
     let phoneAudio = MacPhoneAudioModel(
       receiver: PhoneAudioReceiver(output: MacPhoneAudioOutput(diagnosticsEnabled: phoneAudioDiagnostics)),
@@ -115,13 +115,13 @@ struct AniCeApp: App {
       NSLog("%@", MacPhoneAudioDiagnostics.prefix + value)
     }
     _phoneAudio = State(initialValue: phoneAudio)
-    phoneAudio.forwardActive = { [weak privateListening] in privateListening?.busy ?? false }
-    phoneAudio.onActiveChanged = { [weak privateListening] active in
-      privateListening?.setReverseActive(active)
+    phoneAudio.forwardActive = { [weak audioSharing] in audioSharing?.busy ?? false }
+    phoneAudio.onActiveChanged = { [weak audioSharing] active in
+      audioSharing?.setReverseActive(active)
     }
     #if DEBUG && ANICE_TRANSFER_PREVIEW
-    _physicalListening = State(initialValue: PrivateListeningPhysicalRunner(
-      listening: privateListening, transfer: transfer,
+    _physicalListening = State(initialValue: AudioSharingPhysicalRunner(
+      listening: audioSharing, transfer: transfer,
       connectionState: { [weak lan] in lan?.state ?? "Unavailable" },
       connect: { [weak pairing, weak lan] in
         guard let lan, let phones = pairing?.peers.filter({ $0.active && $0.peer.platform == "android" }),
@@ -130,12 +130,12 @@ struct AniCeApp: App {
         return true
       }))
     #endif
-    privateListening.pacingChanged = { [weak transfer] active in transfer?.setLowLatencyMediaActive(active) }
-    privateListening.transferReady = { [weak transfer] in transfer?.lowLatencyBacklogReady ?? true }
-    privateListening.transferHealth = { [weak transfer] healthy, sequence, underruns in
+    audioSharing.pacingChanged = { [weak transfer] active in transfer?.setLowLatencyMediaActive(active) }
+    audioSharing.transferReady = { [weak transfer] in transfer?.lowLatencyBacklogReady ?? true }
+    audioSharing.transferHealth = { [weak transfer] healthy, sequence, underruns in
       transfer?.reportListeningHealth(healthy, sequence: sequence, underruns: underruns)
     }
-    privateListening.onLanRequired = { [weak lan] in lan?.requestAutomaticConnection() ?? false }
+    audioSharing.onLanRequired = { [weak lan] in lan?.requestAutomaticConnection() ?? false }
     phoneAudio.onLanRequired = { [weak lan] in lan?.requestAutomaticConnection() ?? false }
     clipboard.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
     transfer.onLanRequired = { [weak lan] in lan?.requestAutomaticConnection() ?? false }
@@ -200,7 +200,7 @@ struct AniCeApp: App {
     features.register(MacCompanionSetup(advertising: { radio.setCompanionSetupAdvertising($0) }))
     features.register(playback)
     features.register(phoneAudio)
-    features.register(privateListening)
+    features.register(audioSharing)
     features.register(transfer)
     features.register(findDevice)
     features.register(clipboard)
@@ -252,7 +252,7 @@ struct AniCeApp: App {
       if !navigation.automaticAfterPairing { session.allow() }
     }
     pairing.trustRemoved = {
-      privateListening.stop(reason: 7, message: "Trust changed.", notify: false)
+      audioSharing.stop(reason: 7, message: "Trust changed.", notify: false)
       phoneAudio.invalidate()
       PeerNames.shared.invalidate()
       connectionPause.clear()
@@ -268,7 +268,7 @@ struct AniCeApp: App {
       }
     }
     identity.onIdentityReset = {
-      privateListening.stop(reason: 7, message: "Local identity changed.", notify: false)
+      audioSharing.stop(reason: 7, message: "Local identity changed.", notify: false)
       phoneAudio.invalidate()
       PeerNames.shared.invalidate()
       connectionPause.clear()
@@ -297,7 +297,7 @@ struct AniCeApp: App {
     // Hosted tests must not restore the user's saved radio or clipboard owners.
     guard !IdentityView.isTesting else { return }
     clipboard.installLifecycle()
-    privateListening.installLifecycle()
+    audioSharing.installLifecycle()
     phoneAudio.installLifecycle()
     session.restoreAutomatic()
     comparisonPresenter = MacComparisonPresenter(model: pairing) {
@@ -313,7 +313,7 @@ struct AniCeApp: App {
     hotkey.onToggleKeyboard = { [weak floatingKeyboard] in floatingKeyboard?.toggleVisibility() }
     hotkeyManager = hotkey
     delegate.onTerminate = {
-      privateListening.shutdown()
+      audioSharing.shutdown()
       phoneAudio.shutdown()
       pairing.cancel()
       comparisonPresenter?.hide()
@@ -324,7 +324,7 @@ struct AniCeApp: App {
     }
     delegate.installCompanion(
       CompanionView(identity: identity, discovery: discovery, pairing: pairing,
-        session: session, lan: lan, privateListening: privateListening, connectionPause: connectionPause, playback: playback, transfer: transfer, clipboard: clipboard,
+        session: session, lan: lan, audioSharing: audioSharing, connectionPause: connectionPause, playback: playback, transfer: transfer, clipboard: clipboard,
         keyboardTrackpad: keyboardTrackpad, floatingKeyboard: floatingKeyboard, phonePower: phonePower, navigation: navigation,
         openMainWindow: { delegate.openMainFromCompanion() }),
       navigation: navigation, floatingKeyboard: floatingKeyboard)
@@ -359,7 +359,7 @@ struct AniCeApp: App {
     Window(MacAppStorage.applicationName, id: "main") {
       MainWindowView(
         delegate: delegate, identity: identity, discovery: discovery, pairing: pairing,
-        session: session, lan: lan, privateListening: privateListening, phoneAudio: phoneAudio, connectionPause: connectionPause, playback: playback, transfer: transfer, edgeDrop: edgeDrop,
+        session: session, lan: lan, audioSharing: audioSharing, phoneAudio: phoneAudio, connectionPause: connectionPause, playback: playback, transfer: transfer, edgeDrop: edgeDrop,
         clipboard: clipboard, findDevice: findDevice, findNotifier: findNotifier, sms: sms,
         keyboardTrackpad: keyboardTrackpad, phoneInput: phoneInput, smsPreferences: smsPreferences,
         onInitialRender: {

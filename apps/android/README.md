@@ -11,8 +11,9 @@ Release candidate: **0.9.0-beta.4 · build 90024** (unpublished). See [installat
 ## Using the Android app
 
 - **Home** shows the trusted Mac, peer battery/charging status, current transfers and playback. **Devices** owns pairing, trusted devices, transport controls and diagnostics.
-- **Features** opens Control Mac, Mac Desk Deck, Send files, Clipboard, Now Playing, Messages and Find Device. **Favourites** keeps your chosen shortcuts and saved order.
+- **Features** opens Control Mac, Mac Desk Deck, Send files, Clipboard, Now Playing, Messages, Find Device and Audio Sharing. **Favourites** keeps your chosen shortcuts and saved order.
 - **Now Playing** brings Mac track details, album artwork, player selection and supported transport/volume controls to Home and the full player. Phone volume buttons can adjust supported Mac output; notification and lock-screen controls require eligible background ownership. Artwork travels over LAN, and audio stays on the Mac. See [playback and background limits](../../docs/features/NOW_PLAYING.md).
+- **[Audio Sharing](../../docs/features/AUDIO_SHARING.md)** (Experimental) plays Mac audio on your phone or shares eligible phone audio with your Mac over the local network.
 - **Share → Send to Mac** accepts supported files, literal text and links. Compatible text-selection menus also expose Send to Mac. A single HTTP(S) link offers Open in Mac when supported; other applications decide whether the selection action is visible.
 - **Clipboard → Share → More options** offers setup for the Send to Mac Quick Settings tile. The tile opens a focused capture panel; it cannot read the clipboard continuously in the background. Automatic sharing and saved local history are separate, default-off preferences.
 - **Settings → Notification sync** configures Notification Access, selected source apps, incoming-call controls and optional caller ID. **Settings → Do Not Disturb** enables phone-to-Mac sync after the Mac Shortcuts are configured. Desk Deck's DND button is a separate Mac-local action.

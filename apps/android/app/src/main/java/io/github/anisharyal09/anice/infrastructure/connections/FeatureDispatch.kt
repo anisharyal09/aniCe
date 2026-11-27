@@ -71,7 +71,8 @@ class FeatureDispatch(private val now: () -> Long = { android.os.SystemClock.ela
     presentation: CoroutineDispatcher = Dispatchers.Main.immediate) {
     var applicationActivity: (ChannelDescriptor, ByteArray) -> Unit = { _, _ -> }
     private val handlers = mutableListOf<FeatureHandler>()
-    private val channels = mutableMapOf<String, SecuredChannel>()
+    // Lifecycle publishes on Main; off-main senders only read the current route.
+    @Volatile private var channels = emptyMap<String, SecuredChannel>()
     private class WorkerRoute(val channel: SecuredChannel, val handlers: List<WorkerFeatureHandler>) {
         var receiptAt: Long? = null
         @Synchronized fun reportAt(time: Long): Boolean {
@@ -116,7 +117,7 @@ class FeatureDispatch(private val now: () -> Long = { android.os.SystemClock.ela
                 applicationActivity(descriptor, bytes)
             }
         }
-        channels[descriptor.transport] = channel
+        channels = channels + (descriptor.transport to channel)
         handlers.forEach { it.available(channel) }
         synchronized(receiptLock) {
             workerRoutes = workerRoutes + (descriptor.transport to
@@ -124,7 +125,8 @@ class FeatureDispatch(private val now: () -> Long = { android.os.SystemClock.ela
         }
     }
     fun retired(transport: String) {
-        val old = channels.remove(transport) ?: return
+        val old = channels[transport] ?: return
+        channels = channels - transport
         synchronized(receiptLock) {
             workerRoutes = workerRoutes - transport
             if (workerRoutes.values.all { it.handlers.isEmpty() }) { receiptJob?.cancel(); receiptJob = null }

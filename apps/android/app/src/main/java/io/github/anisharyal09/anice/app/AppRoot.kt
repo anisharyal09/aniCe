@@ -88,10 +88,10 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     LaunchedEffect(session.media.openWorkspaceRequest) {
         if(session.media.openWorkspaceRequest) { navigation.openFeature(AppFeature.Playback);session.media.workspaceOpened() }
     }
-    LaunchedEffect(session.privateListening.openWorkspaceRequest) {
-        if (session.privateListening.openWorkspaceRequest) {
-            navigation.openFeature(AppFeature.PrivateListening)
-            session.privateListening.workspaceOpened()
+    LaunchedEffect(session.audioSharing.openWorkspaceRequest) {
+        if (session.audioSharing.openWorkspaceRequest) {
+            navigation.openFeature(AppFeature.AudioSharing)
+            session.audioSharing.workspaceOpened()
         }
     }
     LaunchedEffect(identity.state.snapshot?.identity?.fingerprint) {

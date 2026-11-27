@@ -30,7 +30,7 @@ SIDE_INTEGERS = {
     "macos": frozenset((
         "arriving_packets", "accepted_packets", "discarded_packets", "sequence_gap_events",
         "sequence_missing_packets", "output_queued_frames", "output_resyncs",
-        "output_unavailable_drops", "output_scheduled_packets", "output_played_back_callbacks",
+        "output_unavailable_drops", "output_scheduled_packets", "output_rendered_callbacks", "output_played_back_callbacks",
         "output_empty_pending_transitions", "output_completion_max_us", "output_snapshot_age_us",
     )),
 }
@@ -47,7 +47,8 @@ COUNTERS = {
     "macos": frozenset((
         "arriving_packets", "accepted_packets", "discarded_packets", "sequence_gap_events",
         "sequence_missing_packets", "output_resyncs", "output_unavailable_drops",
-        "output_scheduled_packets", "output_played_back_callbacks", "output_empty_pending_transitions",
+        "output_scheduled_packets", "output_rendered_callbacks", "output_played_back_callbacks",
+        "output_empty_pending_transitions",
     )),
 }
 

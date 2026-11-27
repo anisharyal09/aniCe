@@ -23,7 +23,8 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
     val deskDeck = (application as AniCeApplication).deskDeck
     val findDevice = (application as AniCeApplication).findDevice
     val media = (application as AniCeApplication).nowPlaying
-    val privateListening = (application as AniCeApplication).privateListening
+    val audioSharing = (application as AniCeApplication).audioSharing
+    val phoneAudio = (application as AniCeApplication).phoneAudio
     val transfer = (application as AniCeApplication).transfer
     val lan = (application as AniCeApplication).lanSessionController
     val connectionPause = (application as AniCeApplication).connectionPause

@@ -25,7 +25,7 @@ The Mac publishes its numeric IPv4 endpoint when its listener is ready, without 
 Automatic setup runs on connection events and feature demand:
 
 - A new secured BLE channel, restored eligibility, app return or usable Wi-Fi address restoration can start an attempt.
-- Eligible BLE feature traffic, file selection, Private Listening / Phone Audio views or actions, and companion-owned playback can request LAN.
+- Eligible BLE feature traffic, file selection, Audio Sharing views or actions, and companion-owned playback can request LAN.
 - A failed automatic attempt retries twice, after 2 and 5 seconds. Further work waits for a new event, explicit demand or manual connection.
 - Duplicate callbacks and an expired Allow window do not restart discovery.
 

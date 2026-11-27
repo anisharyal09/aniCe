@@ -162,8 +162,8 @@ class AniCeApplication : Application() {
     private val phoneInputOwner = lazy { io.github.anisharyal09.anice.features.phoneinput.PhoneInputController() }
     val phoneInput get() = phoneInputOwner.value
     private val listeningOwner = lazy {
-        io.github.anisharyal09.anice.features.privatelistening.PrivateListeningController(
-            preferences = io.github.anisharyal09.anice.features.privatelistening.PrivateListeningPreferences(
+        io.github.anisharyal09.anice.features.audiosharing.AudioSharingController(
+            preferences = io.github.anisharyal09.anice.features.audiosharing.AudioSharingPreferences(
                 getSharedPreferences("private_listening", MODE_PRIVATE))
         ).also { listening ->
             listening.loadLocalFingerprint = {
@@ -191,7 +191,7 @@ class AniCeApplication : Application() {
                 lanSessionController.updateWorkOwner(owner, eligible)
                 if (eligible) {
                     if (!listeningWorkLeases.containsKey(owner)) {
-                        listeningWorkLeases[owner] = lanSessionController.acquireWorkLease("private-listening", owner)
+                        listeningWorkLeases[owner] = lanSessionController.acquireWorkLease("audio-sharing", owner)
                     }
                 } else {
                     listeningWorkLeases.remove(owner)?.close()
@@ -210,10 +210,10 @@ class AniCeApplication : Application() {
         }
     }
     private val listeningWorkLeases = java.util.IdentityHashMap<Any, AutoCloseable>()
-    val privateListening get() = listeningOwner.value
-    private val phoneAudioOwner: Lazy<io.github.anisharyal09.anice.features.privatelistening.PhoneAudioController> = lazy {
-        io.github.anisharyal09.anice.features.privatelistening.PhoneAudioController().also { reverse ->
-            val probe = io.github.anisharyal09.anice.features.privatelistening.PhoneAudioDiagnostics
+    val audioSharing get() = listeningOwner.value
+    private val phoneAudioOwner: Lazy<io.github.anisharyal09.anice.features.audiosharing.PhoneAudioController> = lazy {
+        io.github.anisharyal09.anice.features.audiosharing.PhoneAudioController().also { reverse ->
+            val probe = io.github.anisharyal09.anice.features.audiosharing.PhoneAudioDiagnostics
             reverse.diagnosticsEnabled = probe.allowed(
                 applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0,
                 packageName, android.util.Log.isLoggable(probe.TAG, android.util.Log.DEBUG))
@@ -293,17 +293,19 @@ class AniCeApplication : Application() {
     val features by lazy {
         io.github.anisharyal09.anice.infrastructure.connections.FeatureDispatch().also {
             it.applicationActivity = { descriptor, bytes ->
-                val pauseNotice = try {
-                    io.github.anisharyal09.anice.features.connectionpause.ConnectionPauseMessage.decode(bytes) != null
-                } catch (_: io.github.anisharyal09.anice.features.connectionpause.ConnectionPauseWireException) { false }
-                if (!pauseNotice) lanSessionController.onApplicationActivity(descriptor, bytes)
+                if (descriptor.transport == "ble") {
+                    val pauseNotice = try {
+                        io.github.anisharyal09.anice.features.connectionpause.ConnectionPauseMessage.decode(bytes) != null
+                    } catch (_: io.github.anisharyal09.anice.features.connectionpause.ConnectionPauseWireException) { false }
+                    if (!pauseNotice) lanSessionController.onApplicationActivity(descriptor, bytes)
+                }
             }
             it.register(lanSessionController.rendezvous)
             it.register(companionSetup)
             it.register(peerNames)
             it.register(nowPlaying)
             it.register(phoneAudio)
-            it.register(privateListening)
+            it.register(audioSharing)
             it.register(transfer)
             it.register(findDevice)
             it.register(clipboard)
@@ -327,7 +329,7 @@ class AniCeApplication : Application() {
     val sessionController get() = bleOwner.value
     private fun invalidateSessions() {
         if (listeningOwner.isInitialized()) {
-            android.os.Handler(android.os.Looper.getMainLooper()).post { privateListening.invalidate() }
+            android.os.Handler(android.os.Looper.getMainLooper()).post { audioSharing.invalidate() }
         }
         if (phoneAudioOwner.isInitialized()) {
             android.os.Handler(android.os.Looper.getMainLooper()).post { phoneAudio.invalidate() }

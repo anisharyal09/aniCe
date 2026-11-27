@@ -29,7 +29,7 @@ import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun MediaView(owner: MediaController, compact: Boolean=false, showPlayerSelector: Boolean=true, compactVolume: Boolean=false, overview: Boolean = false, open: (() -> Unit)? = null) {
-    val listening = (LocalContext.current.applicationContext as? AniCeApplication)?.privateListening?.active == true
+    val listening = (LocalContext.current.applicationContext as? AniCeApplication)?.audioSharing?.active == true
     val media=owner.displayedPlayback
     var showProcessing by remember { mutableStateOf(false) }
     LaunchedEffect(owner.busy, owner.feedback) {

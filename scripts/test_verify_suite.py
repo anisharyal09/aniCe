@@ -67,18 +67,18 @@ class JunitGateTests(unittest.TestCase):
             with self.assertRaises(suite.GateError):
                 suite.validate_results(results, "fake", minimum=1)
 
-    def test_private_listening_device_checks_have_only_explicit_visible_skips(self):
+    def test_audio_sharing_device_checks_have_only_explicit_visible_skips(self):
         names = {
             "installedListeningServiceIsPrivateAndMediaPlaybackScoped",
             "audioWorkerUsesOneNativeAudioPriorityThreadAndReleasesIt",
             "platformPcmBufferQueryFitsTheBudgetWithoutOpeningAnAudioTrack",
             "credentialConsentAndStopFenceWorkerAdmissionWithoutNativePlayback",
         }
-        prefix = "PrivateListeningDeviceRegressionTests#"
+        prefix = "AudioSharingDeviceRegressionTests#"
         declared = {item for item in suite.DOCUMENTED_ANDROID_SKIPS if item.startswith(prefix)}
         self.assertEqual(declared, {prefix + name for name in names})
         results = [suite.TestResult("pkg.OrdinaryTest", "runs", "passed", "")]
-        results += [suite.TestResult("pkg.PrivateListeningDeviceRegressionTests", name, "skipped",
+        results += [suite.TestResult("pkg.AudioSharingDeviceRegressionTests", name, "skipped",
                                     "Requires the isolated Transfer Preview") for name in sorted(names)]
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
@@ -89,7 +89,7 @@ class JunitGateTests(unittest.TestCase):
             self.assertIn("documented skip: pkg." + prefix + name, output.getvalue())
         with self.assertRaises(suite.GateError):
             suite.validate_results(results + [
-                suite.TestResult("pkg.PrivateListeningDeviceRegressionTests", "unexpected", "skipped", "")
+                suite.TestResult("pkg.AudioSharingDeviceRegressionTests", "unexpected", "skipped", "")
             ], "fixture", minimum=1, documented=suite.DOCUMENTED_ANDROID_SKIPS)
 
     def test_crash_error_and_ignored_test_are_rejected(self):
@@ -982,8 +982,8 @@ class VectorGateTests(unittest.TestCase):
         self.assertEqual(generators, {path.resolve() for path in selected})
         self.assertEqual(len(suite.VECTOR_CHECKS), 21)
         self.assertIn(("SAS pairing vectors", "generate_sas_vectors.py", ()), suite.VECTOR_CHECKS)
-        self.assertIn(("Private Listening vectors",
-                       "private-listening/generate_private_listening_vectors.py", ()), suite.VECTOR_CHECKS)
+        self.assertIn(("Audio Sharing vectors",
+                       "audio-sharing/generate_audio_sharing_vectors.py", ()), suite.VECTOR_CHECKS)
         self.assertIn(("Phone Audio vectors", "phone-audio/generate.py", ()), suite.VECTOR_CHECKS)
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
@@ -1008,7 +1008,7 @@ class VectorGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
             for relative, fixture in (
-                ("private-listening/generate_private_listening_vectors.py", "vectors.json"),
+                ("audio-sharing/generate_audio_sharing_vectors.py", "vectors.json"),
                 ("notifications/generate_notification_vectors.py", "notification-vectors.json"),
                 ("phone-input/generate.py", "phone-input-vectors.json"),
                 ("session/generate_control_vectors.py", "control-vectors.json"),

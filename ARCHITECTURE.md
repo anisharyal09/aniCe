@@ -86,25 +86,25 @@ The current native implementations advertise the following receive limits. These
 
 Profile 4 reserves a 524,416-byte authenticated plaintext budget for each transfer envelope, including metadata. These bounds are defined in the [LAN profile](protocol/lan/TRANSFER_PROFILE.md) and [transfer contract](protocol/transfer/README.md). A 512-KiB chunk is 0.5 MiB.
 
-## Private Listening
+## Audio Sharing
 
-Android has an explicit default-off, credential-scoped built-in speaker fallback
-exception to headphone-only routing. It adds no transport or wire field: the
+Android defaults receiving and built-in speaker fallback on for authenticated
+Mac peers without saved choices. Speaker fallback adds no transport or wire field: the
 native worker pauses/flushes and silently re-verifies output before current audio
 resumes; revocation stops listening. Speaker playback is deliberately not private.
 
 Mac process taps capture fixed 48-kHz stereo PCM16 for one authenticated Android peer over an already-secured LAN channel. Android receiving consent binds the full peer credential and current local identity; an eligible native mediaPlayback service owns headphone routing, focus and job-scoped LAN work. Mac suppresses tapped-process output only after phone Ready and keeps reading/discarding during interruptions. Existing channel maintenance preserves stream ownership across retained-socket renewal; actual retirement ends listening without replay.
 
-Audio workers retain bounded plaintext/native queues. Android owns adaptive Balanced and opt-in Lower delay profiles, platform-aware native startup/write limits and local backlog diagnostics; none synchronizes arbitrary Mac video or changes wire PCM. App assembly switches phone media volume to local output and paces future transfer chunks/credit during listening without changing session framing, crypto validation or Connections feature dependencies. See [feature behavior](docs/features/PRIVATE_LISTENING.md) and [Private Listening v1](protocol/private-listening/README.md).
+Audio workers retain bounded plaintext/native queues. Android owns adaptive Balanced and opt-in Lower delay profiles, platform-aware native startup/write limits and local backlog diagnostics; none synchronizes arbitrary Mac video or changes wire PCM. App assembly switches phone media volume to local output and paces future transfer chunks/credit during listening without changing session framing, crypto validation or Connections feature dependencies. See the [Audio Sharing guide](docs/features/AUDIO_SHARING.md) and [Mac-to-Android audio contract](protocol/audio-sharing/README.md).
 
-Android's shared feature dispatcher offers an opt-in synchronous worker-admission hook after record authentication. Private Listening uses it only for fully validated Audio, fenced by the immutable channel and current stream's focus/maintenance gate; other messages and feature presentation remain ordered on Main. A service-owned audio-priority scheduler runs native playback separately from UI and file work. The feature dispatcher adds no audio codec, headphone policy or transport/security stack. Playback health gradually recovers bounded transfer credit inside negotiated limits, with immediate contraction on interruption or stale health.
+Android's shared feature dispatcher offers an opt-in synchronous worker-admission hook after record authentication. Audio Sharing uses it for fully validated Mac-to-Android Audio, fenced by the immutable channel and current stream's focus/maintenance gate; other messages and feature presentation remain ordered on Main. A service-owned audio-priority scheduler runs native playback separately from UI and file work. The feature dispatcher adds no audio codec, headphone policy or transport/security stack. Playback health gradually recovers bounded transfer credit inside negotiated limits, with immediate contraction on interruption or stale health.
 
 Transfer also admits authenticated chunk-shaped DATA to its existing bounded FIFO through the worker hook when there is capacity; decoding/storage/ACK progress remains feature-owned. FIFO exhaustion retains the ordinary suspending delivery path, and the same queue precedes resume/drain barriers. No valid file bytes are discarded to schedule listening.
 
 Phone Audio reverses the direction using its own `"aniCe phone audio"` envelope.
 Android's locally granted single-use MediaProjection service owns eligible
 playback capture and a shared job-scoped LAN lease, with three unsent PCM packets
-plus one send and coalesced presentation wake-ups. Mac's default-off receiving
+plus one in-flight send on a serialized off-main dispatcher. Mac's default-off receiving
 consent binds the local identity and full phone credential; its owner fences
 native preparation/cleanup, retired stream IDs and output-device loss. Both
 directions refuse conflicting starts, including native cleanup, rather than
@@ -113,7 +113,7 @@ actual retirement never restarts capture. The phone is not muted and Mac output
 is not promised private. The exact preview can emit bounded local timing counters
 and the repository can summarize them without audio; these add no envelope field,
 and their local clocks and queue states do not attribute a root cause. See
-[Phone Audio v1](protocol/private-listening/PHONE_AUDIO.md).
+[Phone Audio v1](protocol/audio-sharing/PHONE_AUDIO.md).
 
 ## Application DATA and source organization
 

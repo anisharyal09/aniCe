@@ -65,7 +65,7 @@ SUITE_ORDER = (
 
 VECTOR_CHECKS = (
     ("Connection pause vectors", "connection-pause/generate.py", ()),
-    ("Private Listening vectors", "private-listening/generate_private_listening_vectors.py", ()),
+    ("Audio Sharing vectors", "audio-sharing/generate_audio_sharing_vectors.py", ()),
     ("Phone Audio vectors", "phone-audio/generate.py", ()),
     ("Clipboard vectors", "clipboard/generate_clipboard_vectors.py", ()),
     ("Transfer vectors", "transfer/generate_transfer_vectors.py", ()),
@@ -92,17 +92,17 @@ VECTOR_CHECKS = (
 # interchange harnesses run their selected tests with arguments and accept no
 # skips at all; this list only covers the broad connected/hosted runs.
 DOCUMENTED_ANDROID_SKIPS = {
-    "PhysicalPrivateListeningTest#repeatedNativeHeadphonePreparationReportsActualThresholdAndProgress",
-    "PhysicalPrivateListeningTest#authenticatedListeningRoundUsesRealServiceAndExistingConsent",
+    "PhysicalAudioSharingTest#repeatedNativeHeadphonePreparationReportsActualThresholdAndProgress",
+    "PhysicalAudioSharingTest#authenticatedListeningRoundUsesRealServiceAndExistingConsent",
     # These selected non-playback checks require the isolated Transfer Preview;
     # ordinary connected lanes intentionally use another installed app identity.
-    "PrivateListeningDeviceRegressionTests#installedListeningServiceIsPrivateAndMediaPlaybackScoped",
-    "PrivateListeningDeviceRegressionTests#audioWorkerUsesOneNativeAudioPriorityThreadAndReleasesIt",
-    "PrivateListeningDeviceRegressionTests#platformPcmBufferQueryFitsTheBudgetWithoutOpeningAnAudioTrack",
-    "PrivateListeningDeviceRegressionTests#credentialConsentAndStopFenceWorkerAdmissionWithoutNativePlayback",
+    "AudioSharingDeviceRegressionTests#installedListeningServiceIsPrivateAndMediaPlaybackScoped",
+    "AudioSharingDeviceRegressionTests#audioWorkerUsesOneNativeAudioPriorityThreadAndReleasesIt",
+    "AudioSharingDeviceRegressionTests#platformPcmBufferQueryFitsTheBudgetWithoutOpeningAnAudioTrack",
+    "AudioSharingDeviceRegressionTests#credentialConsentAndStopFenceWorkerAdmissionWithoutNativePlayback",
     # Audio-free listening layouts require their isolated emulator-only UI package.
-    "PrivateListeningSurfaceTests#bufferChoicesReflowAcrossThemesWidthsAndTextScalesWithoutStartingAudio",
-    "PrivateListeningSurfaceTests#compactActionMatchesHomeAndCheckboxLabelTogglesOnlyOnce",
+    "AudioSharingSurfaceTests#bufferChoicesReflowAcrossThemesWidthsAndTextScalesWithoutStartingAudio",
+    "AudioSharingSurfaceTests#compactActionMatchesHomeAndCheckboxLabelTogglesOnlyOnce",
     # Synthetic approval/comparison surfaces are UI-preview emulator tests, not real-device consent.
     "CompanionApprovalRequestTest#enrollmentAlwaysUsesSingleDeviceApprovalForThePinnedMac",
     "CompanionSetupPresentationTest#rotationRetainsOneApprovalAndCancelFencesItsLateResult",

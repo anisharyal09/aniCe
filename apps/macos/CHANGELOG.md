@@ -15,26 +15,29 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Fence asynchronous reverse preparation, retired stream IDs and late output
   completions; retain control messages under backpressure and clear older output
   through retained-channel renewal while exposing honest backlog/resync counters.
-- Add reverse audio wire validation and a bounded AVAudioEngine output primitive.
+- Add reverse audio wire validation and bounded AVAudioEngine playback with
+  short prefill, a queue measured before output-device latency, and fades at
+  startup and after packet gaps or re-buffering.
 - Stop reverse output on native configuration/device changes, resync at the
   bounded cap, and fence duplicate, stale and unbound reverse streams in Mac
   admission; reverse envelopes now have independent fixtures.
-- Add explicit Private Listening capture preparation, Start/Stop and companion status with LAN-maintenance-aware audio ownership.
+- Add explicit Audio Sharing capture preparation, Start/Stop and companion status with LAN-maintenance-aware audio ownership.
 - Add private Core Audio tap capture, a lock-free bounded audio handoff and fixed stereo PCM packetization on macOS 14.2+.
-- Add the Private Listening v1 CBOR codec with strict UUIDv4, PCM packet and source-timeline validation.
+- Validate Audio Sharing v1 CBOR for Mac-to-Android streams, including stream IDs, PCM packets and sequence offsets.
 
 ### Changed
 
-- Use scaled compact listening actions with narrow-width reflow, next-step
-  preparation/Start emphasis and active-direction Stop priority. Explain phone
-  receiving setup and show cleanup without an ineffective repeat Stop.
+- Mark Audio Sharing Experimental in Features. Put local-network setup
+  first when offline, show the next preparation or Start action, and keep Stop
+  above secondary playback details.
+- Validate each incoming Phone Audio message once before dispatch.
 - Restore tap output before native teardown and report restoration in progress; recover transfer credit from advancing healthy headphone status.
-- Trim stalled Private Listening capture to a newest 60-ms interval and reduce unsealed audio buildup without discarding sealed records.
+- Trim stalled Mac capture to the newest 60 ms and reduce unsealed audio buildup without discarding sealed records.
 - Raise the Mac deployment target to 14.2 for private Core Audio process taps.
 
 ### Fixed
 
-- Do not wait on terminal/dismissed transfer counters before Private Listening;
+- Do not wait on terminal/dismissed transfer counters before sending Mac audio;
   an owned outgoing file still enforces the same drain bound.
 - Keep healthy Balanced listening buffers eligible for transfer-credit recovery
   instead of rejecting every backlog above 200 ms.

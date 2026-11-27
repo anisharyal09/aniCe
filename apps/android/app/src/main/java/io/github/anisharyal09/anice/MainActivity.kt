@@ -139,7 +139,7 @@ class MainActivity : ComponentActivity() {
     }
     private fun listeningNavigation(intent: Intent?) {
         if (intent?.getBooleanExtra(io.github.anisharyal09.anice.features.privatelistening.PrivateListeningService.OPEN, false) == true) {
-            (application as AniCeApplication).privateListening.openWorkspace()
+            (application as AniCeApplication).audioSharing.openWorkspace()
             intent.removeExtra(io.github.anisharyal09.anice.features.privatelistening.PrivateListeningService.OPEN)
         }
     }
