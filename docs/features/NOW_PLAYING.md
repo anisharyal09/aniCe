@@ -1,6 +1,6 @@
 # Now Playing
 
-Android Home and **Features → Now Playing** control playback on the connected trusted Mac. The full player shows artwork, player selection, play/pause, previous/next and seeking when the selected source supports them. Audio stays on the Mac.
+Android Home and **Features → Now Playing** control playback on the connected trusted Mac. The full player shows artwork, player selection, play/pause, previous/next and seeking when the selected source supports them. Audio stays on Mac unless [Audio Sharing](AUDIO_SHARING.md) explicitly streams system audio to the phone.
 
 ## Player selection and controls
 
@@ -14,6 +14,7 @@ The available actions belong to the selected running player. Metadata alone does
 
 - **Player volume** changes the selected application's volume. Music and Spotify are candidates; the Mac must grant the required permission and complete the explicit player-control check. Browsers, wrappers and unsupported targets do not expose this slider.
 - **Mac output volume** changes the default output device. Phone volume buttons and system media controls use five-point steps while playback is active and the output device has writable volume. Fixed-volume devices remain unavailable.
+- While Audio Sharing plays Mac audio on the phone, the phone's volume buttons and system media volume control its local output. Existing player-volume controls remain separate.
 
 Native playback controls use their available native route. Scripting controls require an explicit Mac permission action; phone commands cannot open approval prompts. **Refresh player controls** preserves selection and can recover available support without replaying writes.
 
@@ -35,7 +36,7 @@ Artwork travels only over LAN. It belongs to the current recording and subscript
 
 Controls share the ordered LAN stream with file transfers. Already-submitted transfer bytes cannot be reprioritized behind a later media command. Repeated continuous controls retain only their latest unsent intent, with bounded feedback and deadlines.
 
-Disconnect, player exit, trust removal or channel replacement clears remote state. Audio streaming, shuffle, lyrics, queues and a separate media background service are not provided.
+Disconnect, player exit, trust removal or channel replacement clears remote state. Now Playing does not itself capture/play audio, expose shuffle/lyrics/queues or own a playback service; Audio Sharing supplies its independent audio service.
 
 ## Implementation and attribution
 

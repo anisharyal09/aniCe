@@ -403,10 +403,12 @@ extension SessionTests {
   @MainActor func testFavouritesIgnoreUnknownEntriesAndRouteWithoutChangingDeviceContext() {
     XCTAssertEqual(AppFeature.favourites(in: "files,files,unknown,playback"), [.files, .playback])
     XCTAssertTrue(AppFeature.favourites(in: "unknown").isEmpty)
+    XCTAssertEqual(AppFeature.favourites(in: "privateListening").map(\.title), ["Audio Sharing"])
+    XCTAssertTrue(AppFeature.isPinned(.audioSharing, in: "privateListening"))
     XCTAssertTrue(AppFeature.favourites(in: "typeToMac").isEmpty)
     XCTAssertEqual(AppFeature.files.toggled(in: "files,unknown,playback"), "playback")
     XCTAssertEqual(AppFeature.findDevice.toggled(in: "files,files"), "files,findDevice")
-    XCTAssertEqual(AppFeature.allCases.count, 6)
+    XCTAssertEqual(AppFeature.allCases.count, 7)
     for feature in AppFeature.allCases {
       XCTAssertEqual(AppFeature.favourites(in: feature.toggled(in: "")), [feature])
       XCTAssertEqual(feature.toggled(in: feature.toggled(in: "")), "")
@@ -1414,6 +1416,13 @@ final class BetaUpdatePreferenceTests: XCTestCase {
           findNotifier: nil,
           peers: [],
           edgeDrop: edgeDrop,
+          audioSharing: MacAudioSharingModel(preferences: nil),
+          phoneAudio: MacPhoneAudioModel(preferences: nil),
+          lan: MacLanSessionModel(identity: IdentityService(storage: PairingMemoryIdentity(),
+            deviceName: "Fixture Mac", tagPrefix: "test-nav"),
+            peers: SessionPeerReservation(), store: { throw SessionFailure.cancelled }),
+          selectedPhone: nil,
+          connectionPause: MacConnectionPauseModel(),
           navigation: featNav,
           favouritesOnly: favouritesOnly
         )

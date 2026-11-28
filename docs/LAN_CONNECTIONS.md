@@ -25,7 +25,7 @@ The Mac publishes its numeric IPv4 endpoint when its listener is ready, without 
 Automatic setup runs on connection events and feature demand:
 
 - A new secured BLE channel, restored eligibility, app return or usable Wi-Fi address restoration can start an attempt.
-- Eligible BLE feature traffic, file selection and companion-owned playback can request LAN.
+- Eligible BLE feature traffic, file selection, Audio Sharing views or actions, and companion-owned playback can request LAN.
 - A failed automatic attempt retries twice, after 2 and 5 seconds. Further work waits for a new event, explicit demand or manual connection.
 - Duplicate callbacks and an expired Allow window do not restart discovery.
 
@@ -47,7 +47,7 @@ Android's **background LAN timeout** defaults to **Never**. A saved finite timeo
 
 Bounded file pickers, approved transfer-service work and companion-owned playing/paused-grace media demand retain eligible LAN work. Up to 128 job-scoped leases can be active; releasing one cannot end a replacement job. An approved paused transfer keeps its service until it resumes, is cancelled or its 15-minute retention expires. Losing the native owner releases that work; a job tag alone grants no background execution.
 
-Settings identifies any transfer, picker or playback work retaining LAN. When that final work ends, one fresh idle interval starts. An approved Bluetooth transfer can also request/retain eligible LAN for an upgrade, without forcing a Bluetooth disconnect.
+Settings identifies any transfer, picker, listening or playback work retaining LAN. When that final work ends, one fresh idle interval starts. An approved Bluetooth transfer can also request/retain eligible LAN for an upgrade, without forcing a Bluetooth disconnect.
 
 Opening connection setup or another aniCe activity does not release an activity that is still started. Configuration recreation preserves the owner. Opening Bluetooth discovery leaves LAN unchanged; starting Scan affects only Bluetooth.
 

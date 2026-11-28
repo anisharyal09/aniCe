@@ -17,7 +17,8 @@ internal class PresentationFixture : AutoCloseable {
     private val requested = preferences.getBoolean("requested", false)
     init {
         assumeTrue("Only isolated emulator UI fixtures", Build.HARDWARE in setOf("ranchu", "goldfish"))
-        assumeTrue("Use the isolated UI preview", runner.targetContext.packageName == "io.github.anisharyal09.anice.preview")
+        assumeTrue("Use the isolated UI preview", runner.targetContext.packageName in setOf(
+            "io.github.anisharyal09.anice.preview", "io.github.anisharyal09.anice.preview.listening.ui.regression"))
         check(preferences.edit().putBoolean("requested", true).commit())
     }
     fun intent() = Intent(runner.targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -34,7 +35,8 @@ internal class EmulatorPresentationRule : ExternalResource() {
     override fun before() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         if (Build.HARDWARE in setOf("ranchu", "goldfish") &&
-            context.packageName == "io.github.anisharyal09.anice.preview") fixture = PresentationFixture()
+            context.packageName in setOf("io.github.anisharyal09.anice.preview",
+                "io.github.anisharyal09.anice.preview.listening.ui.regression")) fixture = PresentationFixture()
     }
     override fun after() { fixture?.close(); fixture = null }
 }

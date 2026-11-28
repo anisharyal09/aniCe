@@ -50,6 +50,11 @@ struct FeaturesView: View {
   let findNotifier: MacFindDeviceNotifier?
   let peers: [PeerTrustRecord]
   let edgeDrop: MacEdgeDropController
+  let audioSharing: MacAudioSharingModel
+  let phoneAudio: MacPhoneAudioModel
+  let lan: MacLanSessionModel
+  let selectedPhone: DeviceIdentity?
+  let connectionPause: MacConnectionPauseModel
   @Bindable var navigation: ConnectionNavigation
   var favouritesOnly = false
   @AppStorage("ui.favouriteFeatures") private var favouriteFeatures = AppFeature.defaultFavourites
@@ -96,6 +101,13 @@ struct FeaturesView: View {
           case .messages: SmsView(model: sms, peers: peers, preferences: smsPreferences)
           case .keyboardTrackpad: MacKeyboardTrackpadView(model: keyboardTrackpad, onOpenDevices: { navigation.show(.devices) })
           case .findDevice: FindDeviceView(model: findDevice, peers: peers, notifier: findNotifier)
+          case .audioSharing:
+            let phones = peers.filter { $0.active && $0.peer.platform == "android" }.map(\.peer)
+            let target = phones.first { $0.deviceId == selectedPhone?.deviceId &&
+              $0.publicKey == selectedPhone?.publicKey } ?? (phones.count == 1 ? phones.first : nil)
+            AudioSharingView(model: audioSharing, phoneAudio: phoneAudio, lan: lan,
+              targetPhone: target, peerPause: target.flatMap { connectionPause.status(for: $0) },
+              openDevices: { navigation.show(.devices) })
           }
         } else {
           Text(favouritesOnly ? "Favourites" : "Features").font(.system(size: 20 * fontScale, weight: .medium))
@@ -134,6 +146,11 @@ struct FeaturesView: View {
             .frame(width: 20).accessibilityHidden(true)
           VStack(alignment: .leading, spacing: 2) {
             Text(feature.title).font(.system(size: 14 * fontScale, weight: .medium)).foregroundStyle(AniCePalette.primaryText(colorScheme))
+            if feature == .audioSharing {
+              Text("Experimental", tableName: "AudioSharing")
+                .font(.system(size: 11 * fontScale, weight: .medium))
+                .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+            }
             Text(status(for: feature)).font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
               .lineLimit(1).truncationMode(.tail)
           }
@@ -215,6 +232,10 @@ struct FeaturesView: View {
       if findDevice.busy { return "Request in progress" }
       if peers.contains(where: { findDevice.canFind($0.peer) }) { return "Ready to alert your device" }
       return peers.contains(where: { findDevice.connected($0.peer) }) ? "Not available on this device" : "Device offline"
+    case .audioSharing:
+      if phoneAudio.busy { return phoneAudio.status }
+      if audioSharing.busy { return audioSharing.status }
+      return "Audio between your Mac and phone"
     }
   }
 

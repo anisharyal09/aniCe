@@ -18,6 +18,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
+import kotlinx.coroutines.cancel
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -51,6 +56,121 @@ class MockAndroidSecuredChannel(
 }
 
 class TransferControllerTests {
+    @Test fun workerChunkAdmissionSharesTheFifoBoundAndRetirementDropsOnlyUnconsumedWork() = runBlocking {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        val channel = MockAndroidSecuredChannel()
+        owner.available(channel)
+        try {
+            val batch = "01234567-89ab-4cde-8fab-0123456789ab"
+            val file = "01234567-89ab-4cde-8fab-0123456789ac"
+            val chunk = TransferMessage.chunk(batch, file, 0, ByteArray(65536)).encode(524288)
+            assertEquals(DataHandling.QUEUED, owner.handleOnWorker(channel.descriptor, chunk))
+            owner.retired(channel.descriptor)
+            assertEquals(DataHandling.DISCARDED, owner.handleOnWorker(channel.descriptor, chunk))
+            withTimeout(2000) { owner.ingress.drain() }
+        } finally { owner.dismiss() }
+    }
+
+    @Test fun boundedFifoSupportsConcurrentWorkerAdmissionAndPreservesAcceptedFileOrder() = runBlocking {
+        val dispatcher = java.util.concurrent.Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+        val scope = CoroutineScope(SupervisorJob() + dispatcher)
+        val consumed = java.util.concurrent.CopyOnWriteArrayList<Int>()
+        val descriptor = MockAndroidSecuredChannel().descriptor
+        val epoch = java.util.UUID.randomUUID()
+        val ingress = TransferIngress(scope) { _, _, bytes -> consumed.add(java.nio.ByteBuffer.wrap(bytes).int) }
+        try {
+            withContext(Dispatchers.Default) {
+                for (value in 0 until 2000) {
+                    val bytes = java.nio.ByteBuffer.allocate(4).putInt(value).array()
+                    while (!ingress.tryEnqueue(descriptor, epoch, bytes, 64, 16) { true }) yield()
+                }
+            }
+            withTimeout(3000) { ingress.drain() }
+            assertEquals((0 until 2000).toList(), consumed)
+        } finally { scope.cancel(); dispatcher.close() }
+    }
+
+    @Test fun fullWorkerAdmissionFallsBackToSuspendingCreditInsteadOfDiscardingAcceptedData() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val consumed = mutableListOf<Byte>()
+        val descriptor = MockAndroidSecuredChannel().descriptor
+        val epoch = UUID.randomUUID()
+        val ingress = TransferIngress(scope) { _, _, bytes -> gate.await(); consumed.add(bytes.single()) }
+        try {
+            assertTrue(ingress.tryEnqueue(descriptor, epoch, byteArrayOf(1), 2, 2) { true })
+            assertTrue(ingress.tryEnqueue(descriptor, epoch, byteArrayOf(2), 2, 2) { true })
+            assertFalse(ingress.tryEnqueue(descriptor, epoch, byteArrayOf(3), 2, 2) { true })
+            val pending = async { ingress.enqueue(descriptor, epoch, byteArrayOf(3), 2, 2) { true } }
+            delay(5)
+            assertFalse(pending.isCompleted)
+            gate.complete(Unit)
+            assertTrue(pending.await())
+            ingress.drain()
+            assertEquals(listOf<Byte>(1, 2, 3), consumed)
+        } finally { scope.cancel() }
+    }
+    @Test fun healthyListeningCanRecoverCreditWithoutExceedingTheNegotiatedChunkCount() {
+        var time = 0L
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined, clock = { time })
+        owner.activeChannel = MockAndroidSecuredChannel()
+        owner.peerMaxChunkBytes = 524288
+        owner.peerMaxWindow = 8
+        owner.setLowLatencyMediaActive(true)
+        for (second in 0L..30) {
+            time = second * 1000
+            owner.reportListeningHealth(true, second + 1, 0)
+            assertTrue(owner.sendCreditBytes <= owner.senderChunkBytes * owner.peerMaxWindow)
+        }
+        assertEquals(131072L, owner.senderChunkBytes)
+        assertEquals(1048576L, owner.sendCreditBytes)
+        owner.reportListeningHealth(false, 32, 1)
+        assertEquals(65536L, owner.senderChunkBytes)
+        assertEquals(131072L, owner.sendCreditBytes)
+        owner.setLowLatencyMediaActive(false)
+        owner.dismiss()
+    }
+    @Test fun listeningPacingBoundsFutureLanRecordsWithoutDiscardingOutstandingFileBytes() {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        owner.activeChannel = MockAndroidSecuredChannel()
+        owner.peerMaxChunkBytes = 524288
+        owner.peerMaxWindow = 8
+        owner.sendingFile = TransferFile(UUID.randomUUID().toString(), "fixture.bin", 1048576, ByteArray(32))
+        owner.sentBytes = 1048576
+        owner.acknowledgedBytes = 0
+        owner.setLowLatencyMediaActive(true)
+        assertEquals(65536L, owner.senderChunkBytes)
+        assertEquals(131072L, owner.sendCreditBytes)
+        assertFalse(owner.lowLatencyBacklogReady)
+        owner.acknowledgedBytes = 1048576 - 131072
+        assertTrue(owner.lowLatencyBacklogReady)
+        owner.activeChannel = MockAndroidSecuredChannel(transport = "ble")
+        assertEquals(524288L, owner.senderChunkBytes)
+        owner.activeChannel = MockAndroidSecuredChannel()
+        owner.setLowLatencyMediaActive(false)
+        assertEquals(524288L, owner.senderChunkBytes)
+        assertEquals(4194304L, owner.sendCreditBytes)
+        owner.dismiss()
+    }
+
+    @Test fun terminalTransferCountersCannotBlockANewListeningStartWithoutAnOwnedSender() {
+        val owner = TransferController(dispatcher = Dispatchers.Unconfined)
+        owner.activeChannel = MockAndroidSecuredChannel()
+        owner.sentBytes = 1048576
+        owner.acknowledgedBytes = 0
+        owner.sendingFile = TransferFile(UUID.randomUUID().toString(), "fixture.bin", 1048576, ByteArray(32))
+        assertFalse(owner.lowLatencyBacklogReady)
+        owner.dismiss()
+        owner.activeChannel = MockAndroidSecuredChannel()
+        assertNull(owner.sendingFile)
+        assertEquals("Do not falsify retained counter diagnostics", 1048576L, owner.sentBytes)
+        assertEquals(0L, owner.acknowledgedBytes)
+        assertTrue("Terminal counters do not own a live sending backlog", owner.lowLatencyBacklogReady)
+        owner.sendingFile = TransferFile(UUID.randomUUID().toString(), "next.bin", 1048576, ByteArray(32))
+        assertFalse("A currently owned sender still enforces the live drain limit", owner.lowLatencyBacklogReady)
+        owner.dismiss()
+    }
+
     @Test fun notificationCancelRejectsAnOldOperationAndRetainsTheCurrentBatch() {
         val owner = TransferController(dispatcher = Dispatchers.Unconfined)
         fun batch() = TransferBatch(UUID.randomUUID().toString(),

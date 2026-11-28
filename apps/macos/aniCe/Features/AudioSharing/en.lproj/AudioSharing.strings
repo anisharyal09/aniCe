@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Supplies macOS Audio Sharing preparation and privacy-control labels.
+"Experimental" = "Experimental";
+"listening_overview" = "Play Mac audio on your phone, or receive eligible phone audio on this Mac.";
+"listening_send_mac_audio" = "Send Mac audio to phone";
+"listening_lan_title" = "Local network";
+"listening_lan_auto" = "Use local network automatically";
+"listening_lan_auto_help" = "Turn on at both ends and connect Bluetooth to set up the local network automatically.";
+"listening_lan_connect" = "Allow local-network connections";
+"listening_lan_connecting" = "Waiting for your phone…";
+"listening_lan_help" = "Use the same local network. For manual setup, allow the connection here, then connect on your phone.";
+"listening_lan_choose_phone" = "Choose or pair a phone in Devices.";
+"listening_lan_paused" = "Connections are paused. Resume in Devices before connecting.";
+"listening_lan_checking" = "Checking local network…";
+"listening_open_devices" = "Open Devices";
+"listening_phone_setup" = "On your phone, allow Mac audio and connect headphones or allow speaker playback.";
+"listening_reverse_busy" = "Stop phone audio before sending Mac audio.";
+"listening_stop" = "Stop listening";
+"listening_prepare" = "Prepare system audio…";
+"listening_start" = "Start listening";
+"listening_stopping" = "Stopping audio…";
+"listening_also_mac" = "Also play through Mac speakers";
+"listening_restore_warning" = "Stopping restores Mac output. A playing source may become audible.";
+"listening_recording_settings" = "System audio recording settings";
+"listening_details" = "Playback details";
+"phone_audio_title" = "Receive phone audio";
+"phone_audio_allow" = "Allow audio from this phone";
+"phone_audio_forward_busy" = "Stop sending Mac audio before receiving phone audio.";
+"phone_audio_help" = "Start sharing on your phone to play eligible app audio on your Mac.";
+"phone_audio_stop" = "Stop phone audio";
+"phone_audio_diagnostics" = "Packets received %ld · sequence gaps %ld";
+"phone_audio_output_diagnostics" = "Local output backlog %ld frames · resyncs %ld (not measured latency)";

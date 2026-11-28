@@ -4,7 +4,7 @@ Swift 6 and SwiftUI provide persistent device identity, a main window and a menu
 
 ## Requirements and user setup
 
-Apple Silicon and macOS 14 or newer; Intel is unsupported. Swift 6, SwiftUI/AppKit and a native Rust pairing bridge.
+Apple Silicon and macOS 14.2 or newer; Intel is unsupported. Swift 6, SwiftUI/AppKit and a native Rust pairing bridge.
 
 Latest release: **0.9.0-beta.4 · build 90024**. See [installation and updates](../../docs/GETTING_STARTED.md), [feature guides](../../README.md#features) and [architecture](../../ARCHITECTURE.md).
 
@@ -16,6 +16,7 @@ Latest release: **0.9.0-beta.4 · build 90024**. See [installation and updates](
 - **Clipboard** offers manual sharing, separate automatic-sharing consent and optional local history. Option–Command–V opens the Quick Paste Tray even without a connected phone. Return copies selected history for normal paste; the tray does not type into another application.
 - **Send files** accepts local file drops and the native picker. Edge Drop is on by default at the right edge and can be moved or turned off. Choose a local save folder and configure automatic receiving per trusted sender. [File transfer](../../docs/features/FILE_TRANSFER.md) documents approval, recovery and unsupported inputs.
 - **Now Playing → Playback setup** configures supported playback controls for Android. Showing playback in Mac Overview/companion is separately optional and off by default. This controls local Mac players; it does not receive an audio stream from the phone.
+- **[Audio Sharing](../../docs/features/AUDIO_SHARING.md)** (Experimental) sends Mac system audio to Android or plays eligible phone audio on the Mac over the local network.
 - **Settings → Desk Deck** approves apps separately for each trusted phone. **Settings → Do Not Disturb** selects the phone-sync On/Off Shortcuts and the separate Desk Deck toggle. **Settings → Permissions** contains the input-access setup needed for Control Mac and supported lock requests.
 
 Notification mirroring presents selected Android alerts as native Mac notifications, including supported inline replies, source-app actions and synchronized dismissal. Incoming-call alerts can offer Answer/Decline and optional caller identity after phone permission setup; call audio stays on Android. Source icons use LAN, and Android/source-app restrictions still apply. See [notification setup and limits](../../docs/features/NOTIFICATION_MIRRORING.md).
@@ -154,7 +155,7 @@ Timing checks require an awake Mac. Keep the lid open; `caffeinate -i python3 sc
 
 The storage backend remains the development login Keychain, without hardware isolation. Local app builds default to ad-hoc signing; developers may use a stable Apple Development identity locally when testing macOS permission persistence. Automated tests remain ad-hoc signed. Existing identity loads validate metadata, public key and protection policy without a preliminary signature; creation/reset still sign a challenge before committing, and every requested signature is verified. Older keys with the incorrect export policy require confirmed reset; identity is never silently replaced. Removing the app may leave Keychain items behind.
 
-The separate data-protection/Secure Enclave backend requires certificate signing and authorized entitlements. Official builds, releases and updates support Apple Silicon (`arm64`) only; Intel Macs are not supported. macOS 14 is the deployment target.
+The separate data-protection/Secure Enclave backend requires certificate signing and authorized entitlements. Official builds, releases and updates support Apple Silicon (`arm64`) only; Intel Macs are not supported. The deployment target is macOS 14.2 for Core Audio process-tap support.
 
 [Design](../../docs/design/DESIGN.md) · [Changelog](CHANGELOG.md)
 

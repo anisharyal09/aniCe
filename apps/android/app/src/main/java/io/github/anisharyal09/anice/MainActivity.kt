@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
         mediaNavigation(intent)
         transferNavigation(intent)
         updateNavigation(intent)
+        listeningNavigation(intent)
         startupApp.startupMark("media_navigation")
         enableEdgeToEdge()
         startupApp.startupMark("edge_to_edge")
@@ -140,7 +141,7 @@ class MainActivity : ComponentActivity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val direction=when(keyCode) { KeyEvent.KEYCODE_VOLUME_UP->1;KeyEvent.KEYCODE_VOLUME_DOWN->-1;else->0 }
         val owner=(application as AniCeApplication).nowPlaying
-        if(direction!=0 && owner.foregroundVisible && owner.canControlOutputVolume) {
+        if(direction!=0 && !(application as AniCeApplication).listeningOwned && owner.foregroundVisible && owner.canControlOutputVolume) {
             remoteVolumeKeys.add(keyCode);owner.adjustOutputVolume(direction);return true
         }
         return super.onKeyDown(keyCode,event)
@@ -150,7 +151,15 @@ class MainActivity : ComponentActivity() {
         if(remoteVolumeKeys.remove(keyCode)) return true
         return super.onKeyUp(keyCode,event)
     }
-    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent);mediaNavigation(intent);transferNavigation(intent);updateNavigation(intent) }
+    private fun listeningNavigation(intent: Intent?) {
+        if (intent?.getBooleanExtra(io.github.anisharyal09.anice.features.privatelistening.PrivateListeningService.OPEN, false) == true) {
+            (application as AniCeApplication).audioSharing.openWorkspace()
+            intent.removeExtra(io.github.anisharyal09.anice.features.privatelistening.PrivateListeningService.OPEN)
+        }
+    }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent); mediaNavigation(intent); transferNavigation(intent); updateNavigation(intent); listeningNavigation(intent)
+    }
 
     override fun onStart() {
         super.onStart()

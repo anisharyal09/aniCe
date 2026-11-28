@@ -22,11 +22,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
+import io.github.anisharyal09.anice.AniCeApplication
 import io.github.anisharyal09.anice.R
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun MediaView(owner: MediaController, compact: Boolean=false, showPlayerSelector: Boolean=true, compactVolume: Boolean=false, overview: Boolean = false, open: (() -> Unit)? = null) {
+    val listening = (LocalContext.current.applicationContext as? AniCeApplication)?.audioSharing?.active == true
     val media=owner.displayedPlayback
     var showProcessing by remember { mutableStateOf(false) }
     LaunchedEffect(owner.busy, owner.feedback) {
@@ -52,6 +55,9 @@ import kotlinx.coroutines.delay
             outputDrag = null
             outputTarget = null
         }
+    }
+    LaunchedEffect(listening) {
+        if (listening) { outputCancelled = true; outputDrag = null; outputTarget = null }
     }
     val interactions=remember { MutableInteractionSource() }
     var options by remember { mutableStateOf(false) }
@@ -127,7 +133,7 @@ import kotlinx.coroutines.delay
                     }
                     if (showPlayerSelector || options) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        if (owner.canControlOutputVolume && owner.outputVolume != null && owner.displayedOutputVolume != null) {
+                        if (!listening && owner.canControlOutputVolume && owner.outputVolume != null && owner.displayedOutputVolume != null) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically) {
                                 Text("Mac output volume", style=MaterialTheme.typography.bodySmall, modifier=Modifier.weight(1f))
                                 Text("${outputDrag?.toInt() ?: owner.displayedOutputVolume!!}%", style=MaterialTheme.typography.bodySmall, fontFamily=FontFamily.Monospace)
@@ -138,7 +144,7 @@ import kotlinx.coroutines.delay
                                 onValueChange={ if (!outputCancelled) { if (outputTarget == null) { outputTarget = owner.outputVolume; outputCancelled = false }; outputDrag = it } },
                                 onValueChangeFinished={
                                     val value=outputDrag; val captured=outputTarget
-                                    if (!outputCancelled && value != null && captured != null) owner.commandOutputVolume(value.toInt(), captured)
+                                    if (!listening && !outputCancelled && value != null && captured != null) owner.commandOutputVolume(value.toInt(), captured)
                                     outputDrag=null; outputTarget=null; outputCancelled=false
                                 },
                                 thumb={ Box(Modifier.size(12.dp).background(MaterialTheme.colorScheme.onSurface, androidx.compose.foundation.shape.CircleShape)) },
@@ -171,7 +177,8 @@ import kotlinx.coroutines.delay
                             if (!overview) Text(media.player,style=MaterialTheme.typography.bodySmall)
                         }
                     }
-                    if(showPlayerSelector || options) Text(owner.displayedOutputVolume?.let { "Phone volume buttons · Mac output $it%" } ?: "Mac output volume unavailable for this audio output.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    if(showPlayerSelector || options) Text(if (listening) "Phone volume buttons · Headphone volume" else
+                        owner.displayedOutputVolume?.let { "Phone volume buttons · Mac output $it%" } ?: "Mac output volume unavailable for this audio output.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     if (overview && media.actions and 8L!=0L && media.duration>0) Row(
                     Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically,
                     horizontalArrangement=Arrangement.spacedBy(6.dp)) {

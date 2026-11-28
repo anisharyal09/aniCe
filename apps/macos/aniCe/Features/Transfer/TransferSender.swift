@@ -443,13 +443,45 @@ extension MacTransferModel {
           return
         }
 
-        let chunkSize = min(Int(senderChunkBytes), Int(file.size - fileBytesSent))
-        let encoded: Data
+        var chunkSize = min(Int(senderChunkBytes), Int(file.size - fileBytesSent))
+        var encoded: Data
         do {
           encoded = try await source.readChunk(chunkSize, batch: batch.idString, file: file.idString,
             offset: fileBytesSent, maximumChunk: chunkLimit(activeChannel?.descriptor))
         }
         catch { await source.close(); if operation == epoch { failTransfer(reason: "Source read failed") }; return }
+        guard operation == epoch, !Task.isCancelled else { await source.close(); return }
+        // Source is already advanced; split owned plaintext rather than re-reading later bytes.
+        let prepared = encoded
+        let preparedBytes = chunkSize
+        let splitForListening = chunkSize > senderChunkBytes
+        var preparedMessage: TransferMessage?
+        do {
+          preparedMessage = splitForListening
+            ? try TransferMessage.decode(prepared, maximumChunkBytes: chunkLimit(activeChannel?.descriptor)) : nil
+        } catch { await source.close(); if operation == epoch { failTransfer(reason: "Prepared chunk was invalid") }; return }
+        var preparedOffset = 0
+        while preparedOffset < preparedBytes {
+        let pacingRevision = mediaPacingRevision
+        chunkSize = min(preparedBytes - preparedOffset, Int(senderChunkBytes))
+        if preparedMessage == nil && chunkSize != preparedBytes {
+          do { preparedMessage = try TransferMessage.decode(prepared, maximumChunkBytes: chunkLimit(activeChannel?.descriptor)) }
+          catch { await source.close(); if operation == epoch { failTransfer(reason: "Prepared chunk was invalid") }; return }
+        }
+        if let preparedMessage {
+          let bytes = preparedMessage.bytes(3).subdata(in: preparedOffset..<(preparedOffset + chunkSize))
+          do {
+            encoded = try TransferMessage.chunk(batch: batch.idString, file: file.idString,
+              offset: fileBytesSent, data: bytes).encode(maximumChunkBytes: chunkLimit(activeChannel?.descriptor))
+          } catch { await source.close(); if operation == epoch { failTransfer(reason: "Prepared chunk was invalid") }; return }
+        }
+        while operation == epoch && sentBytes - acknowledgedBytes > sendCreditBytes - Int64(chunkSize) {
+          if mediaPacingRevision != pacingRevision { break }
+          await withCheckedContinuation { continuation in
+            creditResume = { continuation.resume() }
+          }
+        }
+        if pacingRevision != mediaPacingRevision || chunkSize > senderChunkBytes { continue }
         guard operation == epoch, !Task.isCancelled else { await source.close(); return }
 
         do {
@@ -458,6 +490,7 @@ extension MacTransferModel {
           try await sendWithBackpressure(encoded)
           guard operation == epoch else { await source.close(); return }
           fileBytesSent += Int64(chunkSize)
+          preparedOffset += chunkSize
           totalTransferred += Int64(chunkSize)
 
           let now = ProcessInfo.processInfo.systemUptime
@@ -484,6 +517,7 @@ extension MacTransferModel {
           await source.close()
           if !Task.isCancelled && operation == epoch { failTransfer(reason: "Failed sending chunk: \(error.localizedDescription)") }
           return
+        }
         }
       }
 
@@ -565,6 +599,32 @@ extension MacTransferModel {
 }
 
 // MARK: - Credit window
+
+struct ListeningTransferPacing {
+  private(set) var creditBytes: Int64 = 131072
+  private var healthySince: TimeInterval?
+  private var lastSequence: Int64 = 0
+  private var lastUnderruns: Int64?
+  private var lastReport: TimeInterval?
+
+  mutating func report(healthy: Bool, sequence: Int64, underruns: Int64, now: TimeInterval) {
+    let progressing = sequence > lastSequence
+    let starved = lastUnderruns.map { underruns > $0 } ?? false
+    let stale = lastReport.map { now - $0 > 2.5 } ?? false
+    lastSequence = max(lastSequence, sequence)
+    lastUnderruns = underruns
+    lastReport = now
+    guard healthy, progressing, !starved, !stale else {
+      creditBytes = 131072; healthySince = nil
+      return
+    }
+    guard let since = healthySince else { healthySince = now; return }
+    if now - since >= 4 {
+      creditBytes = min(1048576, creditBytes + 131072)
+      healthySince = now
+    }
+  }
+}
 
 // Reduced LAN chunks need immediate credit to keep the sender's smaller pipeline supplied.
 func transferAckThreshold(maximumChunk: Int64, maximumWindow: Int64, chunkBytes: Int64) -> Int64 {

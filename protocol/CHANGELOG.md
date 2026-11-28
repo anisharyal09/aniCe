@@ -4,6 +4,22 @@ Shared contract changes and compatibility implications, grouped by application v
 
 ## [Unreleased]
 
+### Added
+
+- Define [Audio Sharing v1](audio-sharing/README.md) for Mac-to-Android
+  playback with stream-bound Start/Ready/Stop, playback health reports, and
+  bounded PCM over authenticated LAN DATA.
+- Define [Phone Audio v1](audio-sharing/PHONE_AUDIO.md) for Android playback
+  capture, with a separate envelope, one-time consent, and one active
+  direction at a time.
+
+### Changed
+
+- Document verified Android speaker fallback, adaptive buffering, and
+  transfer pacing without changing wire bytes.
+- Document bounded background sending and Mac render queues. Retained LAN
+  renewal preserves the stream and clears stale audio.
+
 ## [v0.9.0-beta.4]
 
 Protocol updates for `0.9.0-beta.4`.

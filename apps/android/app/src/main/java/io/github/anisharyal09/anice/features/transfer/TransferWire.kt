@@ -119,6 +119,10 @@ data class TransferMessage(val kind: Long, val fields: List<Cbor>) {
     }
 
     companion object {
+        private val chunkPrefix = SessionCbor.encode(Cbor.Array(listOf(Cbor.Text("aniCe transfer"),
+            Cbor.Integer(1), Cbor.Integer(5), Cbor.Array(emptyList())))).dropLast(1).toByteArray()
+        internal fun hasChunkPrefix(bytes: ByteArray): Boolean =
+            bytes.size >= chunkPrefix.size && chunkPrefix.indices.all { bytes[it] == chunkPrefix[it] }
         private val header = byteArrayOf(0x84.toByte(), 0x6e) + "aniCe transfer".toByteArray(Charsets.UTF_8) + byteArrayOf(1)
         // Session CBOR rejects non-minimal lengths; classification never replaces full validation.
         internal fun peekKind(bytes: ByteArray): Int? =

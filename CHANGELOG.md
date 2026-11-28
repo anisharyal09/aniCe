@@ -8,10 +8,21 @@ Shared product changes, repository structure, documentation and development conv
 
 ## [Unreleased]
 
+### Added
+
+- Add [**Experimental** Audio Sharing](docs/features/AUDIO_SHARING.md) between
+  trusted Macs and Android phones over encrypted LAN, one direction at a time.
+- Add inline automatic and manual LAN setup, clear Start/Stop controls, and a
+  sharing notification with a Stop action.
+- Play Mac audio through Android headphones or the phone speaker, with local
+  volume and Balanced or Lower delay buffering. Share eligible phone playback
+  to the Mac with one-time Android capture consent.
+- Add opt-in Transfer Preview diagnostics for capture, sending and playback.
+
 ### Changed
 
 - Add a categorized offline Guide with contextual help, wrapping sticky filters and entry points in Features and Settings. Explain connection, permission and device limits for clipboard sharing, input, notifications and Find Device.
-- Optimize Android **Control Mac** text reconciliation (`PhoneInputTextSync`) to navigate middle edits with Left/Right arrow transitions (`0x50` / `0x4F`) instead of deleting and retyping trailing text, and add a **Clear** button in **Type on Mac** and fullscreen trackpad to reset the local phone buffer without altering text on the Mac.
+- Optimize Android **Control Mac** text reconciliation (`PhoneInputTextSync`) to navigate middle edits with Left/Right arrow transitions (`0x50` / `0x4F`) instead of deleting and retyping trailing text, and add a **Clear** button in **Type on Mac** and fullscreen trackpad to reset the local buffer without altering text on the Mac.
 - Refine Android **Mac Desk Deck** onto calm `surfaceContainer` sheets with soft catchlight highlights, grouped Output device and tabular volume readout, and inline **Ping Mac**.
 - Bound release-note Markdown parsing and native inline styling across Mac and Android, and prevent stale update reviews from resurrecting or duplicating.
 - Refine native notification attribution, quiet updates, and operation-bound actions for mirrored alerts, Messages, and file transfers.
@@ -21,10 +32,17 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Fixed
 
+- Keep more phone audio queued during short background stalls and resume Mac
+  playback after brief queue drains without another prefill.
+- Keep Mac-to-phone startup from waiting on completed or cancelled transfers.
+  Pace active transfers based on playback health.
 - Keep Guide filter and expansion choices through Android recreation, make Guide bulk actions apply to every topic, and keep obsolete update actions from clearing a newer release notice.
 - Explain why mirrored call alerts may appear outside the selected-app list and show actionable feedback when an alert tap expires, fails or goes unconfirmed.
 - Include failing Android test names in GitHub annotations and preserve JUnit results when Gradle reports test failures.
 - Prevent the Messages UI test from blocking while sending a synthetic click, and report when the hosted macOS runner cannot inspect a native switch.
+
+**Known limits:** Phone-to-Mac playback can stutter in the background.
+Bluetooth headphones can add delay when listening to Mac audio on Android.
 
 ## [v0.9.0-beta.4]
 

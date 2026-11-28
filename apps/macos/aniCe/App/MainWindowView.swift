@@ -12,6 +12,8 @@ struct MainWindowView: View {
   let pairing: MacPairingModel
   let session: MacSessionModel
   let lan: MacLanSessionModel
+  let audioSharing: MacAudioSharingModel
+  let phoneAudio: MacPhoneAudioModel
   let connectionPause: MacConnectionPauseModel
   let playback: MacPlaybackModel
   let transfer: MacTransferModel
@@ -328,7 +330,7 @@ struct MainWindowView: View {
       case .files: return .filesAndEdgeDrop
       case .clipboard: return .clipboardAndQuickSend
       case .findDevice: return .findDeviceAndPing
-      case .playback: return .nowPlayingAndAudio
+      case .playback, .audioSharing: return .nowPlayingAndAudio
       }
     }
     switch navigation.destination {
@@ -360,6 +362,11 @@ struct MainWindowView: View {
     FeaturesView(playback: playback, transfer: transfer, clipboard: clipboard, findDevice: findDevice,
       sms: sms, keyboardTrackpad: keyboardTrackpad, smsPreferences: smsPreferences,
       findNotifier: findNotifier, peers: pairing.peers, edgeDrop: edgeDrop,
+      audioSharing: audioSharing,
+      phoneAudio: phoneAudio,
+      lan: lan,
+      selectedPhone: session.authenticatedPeer ?? lan.selectedPeer ?? session.selectedPeer,
+      connectionPause: connectionPause,
       navigation: navigation, favouritesOnly: favouritesOnly)
   }
 

@@ -31,6 +31,65 @@ final class MockSecuredChannel: SecuredChannel {
 @MainActor
 final class TransferModelTests: XCTestCase {
   private var tempDir: URL!
+  func testListeningCreditRecoversOnlyWithAdvancingHealthyAudioAndShrinksOnUnderrun() {
+    var pacing = ListeningTransferPacing()
+    for second in 0...8 {
+      pacing.report(healthy: true, sequence: Int64(second + 1), underruns: 0, now: Double(second))
+    }
+    XCTAssertEqual(pacing.creditBytes, 393216)
+    pacing.report(healthy: true, sequence: 10, underruns: 1, now: 9)
+    XCTAssertEqual(pacing.creditBytes, 131072)
+    for second in 10...45 {
+      pacing.report(healthy: true, sequence: Int64(second + 1), underruns: 1, now: Double(second))
+    }
+    XCTAssertEqual(pacing.creditBytes, 1048576)
+    pacing.report(healthy: true, sequence: 46, underruns: 1, now: 46)
+    XCTAssertEqual(pacing.creditBytes, 131072, "Duplicate status cannot preserve an expanded window")
+  }
+
+  func testListeningPacingBoundsFutureLanRecordsButDoesNotPretendExistingBytesDrained() {
+    let model = MacTransferModel()
+    model.activeChannel = MockSecuredChannel()
+    model.peerMaxChunkBytes = 524288
+    model.peerMaxWindow = 8
+    model.sendingFile = TransferFile(id: UUID(), name: "fixture.bin", size: 1048576,
+      sha256: Data(repeating: 0, count: 32), localURL: nil)
+    model.sentBytes = 1048576
+    model.acknowledgedBytes = 0
+    model.setLowLatencyMediaActive(true)
+    XCTAssertEqual(model.senderChunkBytes, 65536)
+    XCTAssertEqual(model.sendCreditBytes, 131072)
+    XCTAssertFalse(model.lowLatencyBacklogReady)
+    model.acknowledgedBytes = 1048576 - 131072
+    XCTAssertTrue(model.lowLatencyBacklogReady)
+    model.activeChannel = MockSecuredChannel(transport: "ble")
+    XCTAssertEqual(model.senderChunkBytes, 524288)
+    model.setLowLatencyMediaActive(false)
+    model.activeChannel = MockSecuredChannel()
+    XCTAssertEqual(model.senderChunkBytes, 524288)
+    XCTAssertEqual(model.sendCreditBytes, 4194304)
+    model.invalidate()
+  }
+
+  func testTerminalTransferCountersCannotBlockNewListeningWithoutAnOwnedSender() {
+    let model = MacTransferModel()
+    model.activeChannel = MockSecuredChannel()
+    model.sentBytes = 1048576
+    model.acknowledgedBytes = 0
+    model.sendingFile = TransferFile(id: UUID(), name: "fixture.bin", size: 1048576,
+      sha256: Data(repeating: 0, count: 32), localURL: nil)
+    XCTAssertFalse(model.lowLatencyBacklogReady)
+    model.dismiss()
+    model.activeChannel = MockSecuredChannel()
+    XCTAssertNil(model.sendingFile)
+    XCTAssertEqual(model.sentBytes, 1048576, "Do not falsify retained counter diagnostics")
+    XCTAssertEqual(model.acknowledgedBytes, 0)
+    XCTAssertTrue(model.lowLatencyBacklogReady, "Terminal counters do not own a live sender")
+    model.sendingFile = TransferFile(id: UUID(), name: "next.bin", size: 1048576,
+      sha256: Data(repeating: 0, count: 32), localURL: nil)
+    XCTAssertFalse(model.lowLatencyBacklogReady, "A live sender still enforces the drain limit")
+    model.dismiss()
+  }
 
   func testSendConfirmationCentersAfterNativeLayout() throws {
     let screen = try XCTUnwrap(NSScreen.main)

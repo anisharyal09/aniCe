@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Supplies Audio Sharing setup, notification and stream-action labels. -->
+<resources>
+    <string name="listening_speaker_fallback">Use phone speaker when headphones are unavailable</string>
+    <string name="listening_speaker_help">Plays aloud if headphones are missing or disconnect.</string>
+    <string name="listening_speaker_confirm_title">Allow phone speaker playback?</string>
+    <string name="listening_speaker_confirm_help">Audio from this Mac can play aloud if headphones are missing or disconnect. This is not private. Turning this off during listening stops playback.</string>
+    <string name="listening_speaker_allow">Allow speaker fallback</string>
+    <string name="listening_speaker_active">Playing on phone speaker — not private</string>
+    <string name="listening_title">Audio Sharing</string>
+    <string name="listening_experimental">Experimental</string>
+    <string name="listening_overview">Play Mac audio on your phone, or send eligible phone audio to your Mac.</string>
+    <string name="listening_from_mac">Listen to Mac audio</string>
+    <string name="listening_stopping">Stopping audio…</string>
+    <string name="listening_stop">Stop listening</string>
+    <string name="listening_notification_peer">Audio from %1$s</string>
+    <string name="listening_receive">Allow audio from this Mac</string>
+    <string name="listening_setup">Start listening on your Mac after choosing an output below.</string>
+    <string name="listening_confirm_route">These are my headphones</string>
+    <string name="listening_confirmed">Headphones confirmed</string>
+    <string name="listening_cannot_confirm">Android can’t identify this output. Reconnect it or try wired headphones.</string>
+    <string name="listening_lan_title">Local network</string>
+    <string name="listening_lan_auto_label">Use local network automatically</string>
+    <string name="listening_lan_auto_help">Turn on at both ends and connect Bluetooth to set up the local network automatically.</string>
+    <string name="listening_lan_connect">Connect local network</string>
+    <string name="listening_lan_connecting">Connecting…</string>
+    <string name="listening_lan_help">Use the same local network. For manual setup, allow the connection on your Mac first.</string>
+    <string name="listening_lan_choose_mac">Choose or pair a Mac in Devices.</string>
+    <string name="listening_lan_paused">Connections are paused. Resume in Devices before connecting.</string>
+    <string name="listening_lan_checking">Checking local network…</string>
+    <string name="listening_open_devices">Open Devices</string>
+    <string name="listening_refresh_outputs">Refresh audio outputs</string>
+    <string name="listening_confirmation_failed">Headphone confirmation could not be saved.</string>
+    <string name="listening_renewing">Renewing secure LAN…</string>
+    <string name="listening_focus_paused">Phone audio focus interrupted</string>
+    <string name="listening_buffering">Buffering current Mac audio…</string>
+    <string name="listening_buffer_mode">Buffering</string>
+    <string name="listening_show_options">Show playback options</string>
+    <string name="listening_hide_options">Hide playback options</string>
+    <string name="listening_options_expanded">Expanded</string>
+    <string name="listening_options_collapsed">Collapsed</string>
+    <string name="listening_buffer_balanced">Balanced · fewer interruptions</string>
+    <string name="listening_buffer_lower">Lower delay · may stutter</string>
+    <string name="listening_buffer_help">Choose before starting. After dropouts, buffering may stay higher for a while. Bluetooth headphones can add delay.</string>
+    <string name="listening_buffer_diagnostics">App buffer %1$d ms · target %2$d ms · AudioTrack %3$d ms (included)\nSkipped packets %4$d · native underruns %5$d</string>
+    <string name="listening_bluetooth_delay">Bluetooth adds output delay beyond this app buffer. Wired or USB headphones usually reduce it.</string>
+    <string name="listening_native_diagnostics">Native write limit %1$d ms · effective buffer %2$d ms (not measured output delay)</string>
+    <string name="listening_headphone_hint">Connect headphones or allow the phone speaker. Wired headsets need no confirmation.</string>
+    <string name="listening_recovery_diagnostics">Gap recoveries %1$d · rebufferings %2$d · largest arrival gap %3$d ms</string>
+    <string name="phone_audio_title">Send phone audio to Mac</string>
+    <string name="phone_audio_start">Share phone audio</string>
+    <string name="phone_audio_stop">Stop phone audio</string>
+    <string name="phone_audio_forward_busy">Stop listening to Mac audio before sharing phone audio.</string>
+    <string name="phone_audio_help">Adjust media volume on your phone and output volume on your Mac.</string>
+    <string name="phone_audio_consent_note">Android asks for screen-capture permission each time. Only eligible app audio is shared; calls and the microphone stay on your phone.</string>
+    <string name="phone_audio_waiting_consent">Waiting for consent…</string>
+    <string name="phone_audio_preparing">Preparing phone audio…</string>
+    <string name="phone_audio_renewing">Renewing secure LAN…</string>
+    <string name="phone_audio_notification_title">Phone audio</string>
+    <string name="phone_audio_notification_active">Sharing with %1$s</string>
+    <string name="phone_audio_call_excluded">Call active — Android excludes call audio</string>
+    <string name="phone_audio_dropped">Unsent packets dropped %1$d (not measured latency)</string>
+</resources>

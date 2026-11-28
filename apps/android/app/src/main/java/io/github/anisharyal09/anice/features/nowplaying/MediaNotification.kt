@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Presents remote playback through native system media UI without audio playback or a service.
+// Presents Mac playback and local listening volume through one generation-fenced native media session.
 package io.github.anisharyal09.anice.features.nowplaying
 
 import io.github.anisharyal09.anice.features.media.MediaActionReceiver
@@ -24,6 +24,7 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
     private var notificationKey: List<Any?>?=null
     private var providerKey: List<Any?>?=null
     private var provider: VolumeProvider?=null
+    private var volumeGeneration = 0
     private var lastPlaybackState: List<Any?>?=null
     private val actions=mutableListOf<PendingIntent>()
     private val mainHandler=Handler(Looper.getMainLooper())
@@ -41,12 +42,21 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
         })
     }
     private fun clear() {
+        if (app.listeningOwned) {
+            session?.setPlaybackToLocal(mediaAttributes())
+            provider = null
+            providerKey = null
+            volumeGeneration++
+            manager.cancel(ID)
+            return
+        }
         mainHandler.removeCallbacks(retireRunnable)
         retirementScheduled=false
         mainHandler.removeCallbacks(updateRunnable)
         updateScheduled=false
         actions.forEach { it.cancel() };actions.clear()
         session?.isActive=false;session?.release();session=null;provider=null;providerKey=null;notificationKey=null
+        volumeGeneration++
         lastPlaybackState=null
         manager.cancel(ID)
     }
@@ -55,37 +65,74 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
         updateScheduled=true
         mainHandler.post(updateRunnable)
     }
+    internal fun listeningOwnershipChanged() {
+        volumeGeneration++
+        if (app.listeningOwned) {
+            val current = ensureSession()
+            provider = null
+            providerKey = listOf("local-listening", true)
+            current.setPlaybackToLocal(mediaAttributes())
+            current.isActive = true
+        }
+        update()
+    }
+    internal fun listeningToken(): MediaSession.Token {
+        val current = ensureSession()
+        volumeGeneration++
+        provider = null
+        providerKey = listOf("local-listening", true)
+        current.setPlaybackToLocal(mediaAttributes())
+        current.isActive = true
+        return current.sessionToken
+    }
     // MediaStyle notifications attached to a MediaSession are exempt from POST_NOTIFICATIONS.
     @android.annotation.SuppressLint("NotificationPermission")
     private fun performUpdate() {
         val target=owner.playback
+        val listening = app.listeningOwned
+        if (listening) {
+            val current = ensureSession()
+            if (provider != null || providerKey?.lastOrNull() != true) {
+                volumeGeneration++
+                provider = null
+                providerKey = listOf("local-listening", true)
+                current.setPlaybackToLocal(mediaAttributes())
+            }
+            current.isActive = true
+        }
         if(!owner.compactVisible || target==null || target.source.isEmpty() || target.state !in 1L..2L) {
+            if (listening) {
+                manager.cancel(ID)
+                actions.forEach { it.cancel() }; actions.clear()
+                session?.setMetadata(null)
+                val playing = app.audioSharing.state == 2L
+                session?.setPlaybackState(PlaybackState.Builder()
+                    .setState(if (playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
+                        PlaybackState.PLAYBACK_POSITION_UNKNOWN, if (playing) 1f else 0f).build())
+                return
+            }
             if(owner.connected && owner.awaitingSnapshot && session!=null) {
                 if(!retirementScheduled) { retirementScheduled=true;mainHandler.postDelayed(retireRunnable,6000) }
             } else clear()
             return
         }
         mainHandler.removeCallbacks(retireRunnable);retirementScheduled=false
-        val current=session ?: MediaSession(app,"aniCe Mac playback").also { newSession ->
-            session=newSession
-            newSession.setCallback(object : MediaSession.Callback() {
-                override fun onPlay() { if(owner.playback?.state!=1L) owner.command(1) }
-                override fun onPause() { if(owner.playback?.state==1L) owner.command(1) }
-                override fun onSkipToPrevious() { owner.command(2) }
-                override fun onSkipToNext() { owner.command(3) }
-                override fun onSeekTo(pos: Long) { owner.command(4,pos) }
-            },mainHandler)
-        }
+        val current=ensureSession()
         val output=owner.outputVolume
-        // Mac changes device and revision together (MacOutputVolume.swift:100); keyed on subscription/device/capability only.
-        val nextProviderKey=listOf(target.message.string(0),output?.device,owner.canControlOutputVolume)
+        // Listening ownership participates in the provider key even when Mac volume metadata is unchanged.
+        val nextProviderKey=listOf(target.message.string(0),output?.device,owner.canControlOutputVolume,listening)
         if(providerKey!=nextProviderKey) {
-            provider=if(owner.canControlOutputVolume) object : VolumeProvider(VOLUME_CONTROL_ABSOLUTE,20,((owner.displayedOutputVolume ?: 0)+2)/5) {
-                override fun onSetVolumeTo(volume: Int) { mainHandler.post { owner.commandOutputVolume(volume*5,owner.outputVolume) } }
-                override fun onAdjustVolume(direction: Int) { mainHandler.post { owner.adjustOutputVolume(direction,owner.outputVolume) } }
+            val generation = ++volumeGeneration
+            provider=if(!listening && owner.canControlOutputVolume) object : VolumeProvider(VOLUME_CONTROL_ABSOLUTE,20,((owner.displayedOutputVolume ?: 0)+2)/5) {
+                override fun onSetVolumeTo(volume: Int) { mainHandler.post {
+                    if (generation == volumeGeneration && !app.listeningOwned) owner.commandOutputVolume(volume*5,owner.outputVolume)
+                } }
+                override fun onAdjustVolume(direction: Int) { mainHandler.post {
+                    if (generation == volumeGeneration && !app.listeningOwned) owner.adjustOutputVolume(direction,owner.outputVolume)
+                } }
             }
             else null
-            provider?.let { current.setPlaybackToRemote(it) } ?: current.setPlaybackToLocal(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+            provider?.let { current.setPlaybackToRemote(it) } ?: current.setPlaybackToLocal(mediaAttributes())
             providerKey=nextProviderKey
         }
         provider?.setCurrentVolume(((owner.displayedOutputVolume ?: 0)+2)/5)
@@ -136,6 +183,20 @@ class MediaNotification(private val app: AniCeApplication, private val owner: Me
         builder.setStyle(Notification.MediaStyle().setMediaSession(current.sessionToken).setShowActionsInCompactView(*actions.indices.toList().take(3).toIntArray()))
         manager.notify(ID,builder.build())
     }
+
+    private fun ensureSession(): MediaSession =
+        session ?: MediaSession(app,"aniCe Mac playback").also { newSession ->
+            session=newSession
+            newSession.setCallback(object : MediaSession.Callback() {
+                override fun onPlay() { if(owner.playback?.state!=1L) owner.command(1) }
+                override fun onPause() { if(owner.playback?.state==1L) owner.command(1) }
+                override fun onSkipToPrevious() { owner.command(2) }
+                override fun onSkipToNext() { owner.command(3) }
+                override fun onSeekTo(pos: Long) { owner.command(4,pos) }
+            },mainHandler)
+        }
+    private fun mediaAttributes() = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build()
     companion object {
         const val OPEN="io.github.anisharyal09.anice.OPEN_NOW_PLAYING"
         const val ACTION="io.github.anisharyal09.anice.MEDIA_ACTION"

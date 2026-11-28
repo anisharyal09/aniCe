@@ -28,7 +28,7 @@ class DeskDeckFindMacTests {
         val notifier = Notifier()
         val find = FindDeviceController(notifier, Dispatchers.Unconfined, { time }, { awaitCancellation() })
         val deck = DeskDeckController(Dispatchers.Unconfined, clock = { time }, wait = { awaitCancellation() })
-        val dispatch = FeatureDispatch { time }.also { it.register(deck); it.register(find) }
+        val dispatch = FeatureDispatch(now = { time }).also { it.register(deck); it.register(find) }
         val bytes = mutableMapOf<String, MutableList<ByteArray>>()
         fun connect(transport: String = "lan", instance: String = "lan-a", target: DeviceIdentity = peer) {
             bytes.getOrPut(instance) { mutableListOf() }

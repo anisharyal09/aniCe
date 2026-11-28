@@ -6,6 +6,11 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Added
 
+- Send Mac system audio to Android with inline LAN setup, explicit capture
+  preparation and Start/Stop controls. **Also play through Mac speakers** is
+  off by default.
+- Play eligible phone audio with per-device receiving consent, off by default.
+- Add opt-in packet arrival and playback diagnostics in the Transfer Preview.
 - Add default-on combined keyboard/pointer control in armed native pads, with a saved exclusive-mode fallback, release on mode changes and Caps Lock transition tracking from each activation.
 - Protect pinned clips from ordinary deletion, add local history Undo/Redo that respects current capacity and preserves newer captures, and add a separate persistent history pause with custom duration.
 - Add independent sidebar feature pins, wrapping Overview/companion shortcuts and a quiet companion support link.
@@ -17,6 +22,7 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Changed
 
+- Raise the macOS deployment target to 14.2 for system audio capture.
 - Add a categorized offline Guide with contextual help, wrapping sticky filters and entry points in Features and Settings. Explain connection, permission and device limits for clipboard sharing, input, notifications and Find Device. The Help menu also provides aniCe Guide (⌘?) and Support aniCe.
 - Bound release-note Markdown blocks, lines and inline styling with linear-time source cleanup, pre-parse view blocks once and wrap update-review actions when narrow.
 - Clear Mac update review on window close and app termination, verify notification tags and cancel unlaunched update work at shutdown without resurrecting sheets.
@@ -32,6 +38,12 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 
 ### Fixed
 
+- Resume phone audio after brief render-queue drains without another prefill.
+  Keep up to eight packets waiting to render and fade in after packet gaps.
+- Stop receiving when the Mac output changes. Clear queued audio during LAN
+  renewal and resume with current audio.
+- Restore normal Mac output during cleanup and prevent finished transfers
+  from delaying a new stream.
 - Apply Guide bulk actions to every topic, including a manually collapsed contextual topic. Expose a single set of category filters when the filter bar is pinned.
 - Report expired, unavailable and unconfirmed mirrored actions in a single quiet native notice. Confirm call-action dispatch without implying that the call connected.
 - Keep the latest SMS conversation preview when an older message arrives out of order.
@@ -43,7 +55,6 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
 - Keep Shelf edge labels/helpers together, align intrinsic selector faces and Shortcut controls to the trailing edge, and reflow narrow rows without clipping.
 - Preserve vertical trackpad inertia while releasing sideways drags, and explain Event Posting, notification and pasteboard access in Permissions.
 - Keep Vibrant navigation on native window materials, hide the redundant keyboard area in combined control, remove duplicate tray overflow access and reflect live Edge Drop sending state.
-
 - Keep clipboard-tray history consent inside its non-activating panel, avoiding detached alerts and main-window focus handoffs.
 
 ## [v0.9.0-beta.4]

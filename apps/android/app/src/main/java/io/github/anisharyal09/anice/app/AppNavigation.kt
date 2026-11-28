@@ -60,19 +60,23 @@ internal fun showsAppBarBack(destination: AppDestination, route: DeviceRoute,
         (destination == AppDestination.Features && featurePanel != null)
 
 // Only local presentation identifiers are persisted; feature support remains with its owner.
-enum class AppFeature(val label: String) {
+enum class AppFeature(val label: String, private val savedName: String? = null) {
     PhoneInput("Control Mac"), DeskDeck("Mac Desk Deck"), Files("Send files"), Clipboard("Clipboard"),
-    Playback("Now Playing"), Sms("Messages");
+    Playback("Now Playing"), Sms("Messages"), AudioSharing("Audio Sharing", "PrivateListening");
+    internal val storageKey: String get() = savedName ?: name
     fun toggled(value: String): String {
         val saved = favourites(value).toMutableList()
         if (!saved.remove(this)) saved.add(this)
-        return saved.joinToString(",") { it.name }
+        return saved.joinToString(",") { it.storageKey }
     }
     companion object {
         const val DEFAULT_FAVOURITES = "PhoneInput,DeskDeck,Clipboard"
         // The former launcher is a local route alias, not a new Find Device protocol action.
-        fun stored(name: String?): AppFeature? =
-            if (name == "FindDevice") DeskDeck else entries.firstOrNull { it.name == name }
+        fun stored(name: String?): AppFeature? = when {
+            name.isNullOrEmpty() -> null
+            name == "FindDevice" -> DeskDeck
+            else -> entries.firstOrNull { it.name == name || it.savedName == name }
+        }
         fun favourites(value: String): List<AppFeature> {
             return value.split(',').mapNotNull(::stored).distinct()
         }
@@ -87,10 +91,10 @@ enum class AppFeature(val label: String) {
         fun moved(feature: AppFeature, rows: List<AppFeature>, offset: Int): String {
             val reordered = rows.toMutableList()
             val from = reordered.indexOf(feature)
-            if (from < 0 || reordered.size < 2) return reordered.joinToString(",") { it.name }
+            if (from < 0 || reordered.size < 2) return reordered.joinToString(",") { it.storageKey }
             val to = (from + offset).coerceIn(0, reordered.lastIndex)
             reordered.add(to, reordered.removeAt(from))
-            return reordered.joinToString(",") { it.name }
+            return reordered.joinToString(",") { it.storageKey }
         }
     }
 }
@@ -172,9 +176,9 @@ class AppNavigation(destination: AppDestination = AppDestination.Home,
                 listOf(
                     it.destination.name, it.route.name, it.focusedPeer.orEmpty(), it.settingsRoute.name,
                     it.mediaDetails.toString(), "false", AppFeature.migrateStored(it.favouriteFeatures),
-                    it.featurePanel?.name.orEmpty(), it.featureOrigin.name, AppFeature.migrateStored(it.featureOrder),
+                    it.featurePanel?.storageKey.orEmpty(), it.featureOrigin.name, AppFeature.migrateStored(it.featureOrder),
                     it.guideTopic?.name.orEmpty(), it.guideOrigin.name, it.guideOriginRoute.name,
-                    it.guideOriginSettingsRoute.name, it.guideOriginFeature?.name.orEmpty(),
+                    it.guideOriginSettingsRoute.name, it.guideOriginFeature?.storageKey.orEmpty(),
                     it.settingsSection.orEmpty(), it.settingsCategory.orEmpty()
                 )
             },

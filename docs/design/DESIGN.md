@@ -137,6 +137,29 @@ Connection, trust, support, permission, and enabled states are separate facts. N
 - Remote playback control scoped to the connected peer. See [Now Playing](../features/NOW_PLAYING.md).
 - Centered track metadata (title, artist, album), fixed-dimension artwork placeholder to prevent layout shifts, transport controls (play/pause/skip), and volume slider.
 
+### Audio Sharing
+- Mark Audio Sharing **Experimental** in the feature list with a quiet text label.
+- Before LAN is secured, show one local-network setup section with the shared automatic preference and the native manual action. Use Devices for peer selection or pause recovery. Opening the panel can request enabled automatic LAN; it does not start audio.
+- Use the shared compact rectangular action style for preparation, Start, Stop,
+  route confirmation and output refresh. Keep native Android 48 dp interaction
+  targets; Mac actions reflow vertically when their scaled labels do not fit.
+  Emphasize only the next primary preparation/Start action, not every button.
+- Present the active audio direction first with status and Stop before setup and
+  diagnostics. Receiving preferences are whole accessible checkbox rows, and
+  pending consent/cleanup is labelled rather than looking like a working Start.
+- Explain that Phone Audio sends audio only despite Android's native
+  screen-capture consent prompt, and that the phone is not muted. Do not add an
+  unimplemented local-output toggle or imply private Mac speaker output.
+- On Android, receiving and phone-speaker fallback are separate credential-scoped
+  checkboxes that default on and respect saved choices. Keep fallback below Stop
+  and above diagnostics. Confirm audible playback when re-enabling fallback.
+  Revoking fallback during playback stops it. Label actual phone speaker output
+  in the feature and notification.
+- Keep explicit capture preparation and Start/Stop on Mac; Android receiving consent remains credential-scoped and headphone confirmation is local.
+- Keep buffering and playback diagnostics behind compact disclosures. Android buffering choices form one accessible radio group: Balanced by default and opt-in Lower delay, disabled while listening.
+- Label app/native buffer diagnostics as local backlog, with native writes included once. Never label a target or platform buffer as measured video/headphone latency. Explain Bluetooth's additional output delay without promising lip-sync. See [Audio Sharing](../features/AUDIO_SHARING.md).
+- Distinguish gap recovery/rebuffer counts from configured buffer targets; source packet gaps are not evidence of route permission loss. Mac Stop reports audio restoration in progress until native cleanup finishes rather than claiming immediate completion.
+
 ### File transfer
 - Compact entry progressing through file selection, recipient confirmation, transfer progress, and persistent result.
 - Supports native macOS drag-and-drop and Android share sheets. Light Mac file-drop haptics supplement visible target and result feedback; an accepted drop and verified completion are separate states. See [File Transfer](../features/FILE_TRANSFER.md).

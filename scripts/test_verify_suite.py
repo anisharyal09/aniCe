@@ -67,6 +67,31 @@ class JunitGateTests(unittest.TestCase):
             with self.assertRaises(suite.GateError):
                 suite.validate_results(results, "fake", minimum=1)
 
+    def test_audio_sharing_device_checks_have_only_explicit_visible_skips(self):
+        names = {
+            "installedListeningServiceIsPrivateAndMediaPlaybackScoped",
+            "audioWorkerUsesOneNativeAudioPriorityThreadAndReleasesIt",
+            "platformPcmBufferQueryFitsTheBudgetWithoutOpeningAnAudioTrack",
+            "credentialConsentAndStopFenceWorkerAdmissionWithoutNativePlayback",
+        }
+        prefix = "AudioSharingDeviceRegressionTests#"
+        declared = {item for item in suite.DOCUMENTED_ANDROID_SKIPS if item.startswith(prefix)}
+        self.assertEqual(declared, {prefix + name for name in names})
+        results = [suite.TestResult("pkg.OrdinaryTest", "runs", "passed", "")]
+        results += [suite.TestResult("pkg.AudioSharingDeviceRegressionTests", name, "skipped",
+                                    "Requires the isolated Transfer Preview") for name in sorted(names)]
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            report = suite.validate_results(results, "fixture", minimum=1,
+                                            documented=suite.DOCUMENTED_ANDROID_SKIPS)
+        self.assertEqual(report, (1, 4))
+        for name in names:
+            self.assertIn("documented skip: pkg." + prefix + name, output.getvalue())
+        with self.assertRaises(suite.GateError):
+            suite.validate_results(results + [
+                suite.TestResult("pkg.AudioSharingDeviceRegressionTests", "unexpected", "skipped", "")
+            ], "fixture", minimum=1, documented=suite.DOCUMENTED_ANDROID_SKIPS)
+
     def test_crash_error_and_ignored_test_are_rejected(self):
         cases = {
             "error": '<testcase classname="pkg.Test" name="crash"><error message="Process crashed"/></testcase>',
@@ -1017,8 +1042,11 @@ class VectorGateTests(unittest.TestCase):
         generators = {path.resolve() for path in vectors.rglob("generate*.py")}
         selected = {vectors / path for _, path, _ in suite.VECTOR_CHECKS}
         self.assertEqual(generators, {path.resolve() for path in selected})
-        self.assertEqual(len(suite.VECTOR_CHECKS), 19)
+        self.assertEqual(len(suite.VECTOR_CHECKS), 21)
         self.assertIn(("SAS pairing vectors", "generate_sas_vectors.py", ()), suite.VECTOR_CHECKS)
+        self.assertIn(("Audio Sharing vectors",
+                       "audio-sharing/generate_audio_sharing_vectors.py", ()), suite.VECTOR_CHECKS)
+        self.assertIn(("Phone Audio vectors", "phone-audio/generate.py", ()), suite.VECTOR_CHECKS)
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
             with patch.object(suite, 'run_step', return_value=artifacts / 'oracle.log') as command, \
@@ -1035,13 +1063,14 @@ class VectorGateTests(unittest.TestCase):
         self.assertIn('test_*oracle.py', calls[-1].args[1])
         self.assertIn('-u', calls[-1].args[1])
         parse.assert_called_once_with(artifacts / 'oracle.log', minimum=5, label='Session crypto oracle')
-        self.assertEqual(result, {'checks': 19, 'oracle_tests': 5})
+        self.assertEqual(result, {'checks': 21, 'oracle_tests': 5})
 
     def test_fixture_checks_reject_drift_under_optimized_python_without_rewriting(self):
         root = suite.ROOT / "protocol/test-vectors"
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
             for relative, fixture in (
+                ("audio-sharing/generate_audio_sharing_vectors.py", "vectors.json"),
                 ("notifications/generate_notification_vectors.py", "notification-vectors.json"),
                 ("phone-input/generate.py", "phone-input-vectors.json"),
                 ("session/generate_control_vectors.py", "control-vectors.json"),

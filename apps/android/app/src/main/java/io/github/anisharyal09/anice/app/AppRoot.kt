@@ -76,6 +76,12 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     LaunchedEffect(session.media.openWorkspaceRequest) {
         if(session.media.openWorkspaceRequest) { navigation.openFeature(AppFeature.Playback);session.media.workspaceOpened() }
     }
+    LaunchedEffect(session.audioSharing.openWorkspaceRequest) {
+        if (session.audioSharing.openWorkspaceRequest) {
+            navigation.openFeature(AppFeature.AudioSharing)
+            session.audioSharing.workspaceOpened()
+        }
+    }
     LaunchedEffect(session.transfer.openWorkspaceRequest) {
         if (session.transfer.workspaceOpened()) navigation.openFeature(AppFeature.Files)
     }
@@ -362,7 +368,7 @@ private fun currentGuideTopic(navigation: AppNavigation): GuideTopic? {
             AppFeature.DeskDeck -> GuideTopic.MacDeskDeck
             AppFeature.Files -> GuideTopic.FilesAndEdgeDrop
             AppFeature.Clipboard -> GuideTopic.ClipboardAndQuickSend
-            AppFeature.Playback -> GuideTopic.NowPlayingAndAudio
+            AppFeature.Playback, AppFeature.AudioSharing -> GuideTopic.NowPlayingAndAudio
             AppFeature.Sms -> GuideTopic.MessagesAndSms
             null -> null
         }

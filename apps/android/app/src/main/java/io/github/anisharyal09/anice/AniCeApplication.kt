@@ -23,17 +23,19 @@ class AniCeApplication : Application() {
     }
 
     private val mediaNotification by lazy { io.github.anisharyal09.anice.features.nowplaying.MediaNotification(this,nowPlaying) }
+    private var startedActivities = 0
+    private var resumedActivities = 0
     override fun onCreate() {
         startupMark("application_on_create")
         super.onCreate()
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
-            override fun onActivityStarted(activity: android.app.Activity) { updates.foregroundStarted() }
-            override fun onActivityStopped(activity: android.app.Activity) { updates.foregroundStopped() }
+            override fun onActivityStarted(activity: android.app.Activity) { startedActivities++; updates.foregroundStarted() }
+            override fun onActivityStopped(activity: android.app.Activity) { startedActivities = maxOf(0, startedActivities - 1); updates.foregroundStopped() }
             // Transport owners update foreground eligibility inside the activity callbacks.
             override fun onActivityPostStarted(activity: android.app.Activity) { transferNotification.updateOffer() }
             override fun onActivityCreated(activity: android.app.Activity, state: android.os.Bundle?) = Unit
-            override fun onActivityResumed(activity: android.app.Activity) = Unit
-            override fun onActivityPaused(activity: android.app.Activity) = Unit
+            override fun onActivityResumed(activity: android.app.Activity) { updateResumedActivities(1) }
+            override fun onActivityPaused(activity: android.app.Activity) { updateResumedActivities(-1) }
             override fun onActivitySaveInstanceState(activity: android.app.Activity, state: android.os.Bundle) = Unit
             override fun onActivityDestroyed(activity: android.app.Activity) = Unit
         })
@@ -111,6 +113,15 @@ class AniCeApplication : Application() {
             }
         }
     }
+    private fun updateResumedActivities(change: Int) {
+        val wasForeground = resumedActivities > 0
+        resumedActivities = maxOf(0, resumedActivities + change)
+        val foreground = resumedActivities > 0
+        if (foreground != wasForeground && phoneAudioOwner.isInitialized()) {
+            phoneAudioOwner.value.foregroundChanged(foreground)
+        }
+    }
+
     private fun updateTransferOwnership() {
         val transport = transfer.activeChannel?.descriptor?.transport
         val connecting = transfer.state is io.github.anisharyal09.anice.features.transfer.TransferState.Connecting
@@ -161,6 +172,110 @@ class AniCeApplication : Application() {
     val notificationMirror get() = notificationMirrorOwner.value
     private val phoneInputOwner = lazy { io.github.anisharyal09.anice.features.phoneinput.PhoneInputController() }
     val phoneInput get() = phoneInputOwner.value
+    private val listeningOwner = lazy {
+        io.github.anisharyal09.anice.features.audiosharing.AudioSharingController(
+            preferences = io.github.anisharyal09.anice.features.audiosharing.AudioSharingPreferences(
+                getSharedPreferences("private_listening", MODE_PRIVATE))
+        ).also { listening ->
+            listening.loadLocalFingerprint = {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    identityService.getOrCreateIdentity().identity.fingerprint
+                }
+            }
+            listening.startupAllowed = { peer ->
+                startedActivities > 0 || (bleOwner.isInitialized() && bleOwner.value.hasCompanionOwner &&
+                    bleOwner.value.selected?.deviceId == peer.deviceId &&
+                    bleOwner.value.selected?.fingerprint == peer.fingerprint)
+            }
+            listening.startService = { request ->
+                androidx.core.content.ContextCompat.startForegroundService(this,
+                    android.content.Intent(this,
+                        io.github.anisharyal09.anice.features.privatelistening.PrivateListeningService::class.java)
+                        .putExtra(io.github.anisharyal09.anice.features.privatelistening.PrivateListeningService.STREAM, request.id)
+                        .putExtra(io.github.anisharyal09.anice.features.privatelistening.PrivateListeningService.INSTANCE, request.descriptor.instance))
+            }
+            listening.stopService = {
+                stopService(android.content.Intent(this,
+                    io.github.anisharyal09.anice.features.privatelistening.PrivateListeningService::class.java))
+            }
+            listening.serviceOwnershipChanged = { _, owner, eligible ->
+                lanSessionController.updateWorkOwner(owner, eligible)
+                if (eligible) {
+                    if (!listeningWorkLeases.containsKey(owner)) {
+                        listeningWorkLeases[owner] = lanSessionController.acquireWorkLease("audio-sharing", owner)
+                    }
+                } else {
+                    listeningWorkLeases.remove(owner)?.close()
+                }
+            }
+            listening.ownershipChanged = { active ->
+                transfer.setLowLatencyMediaActive(active)
+                mediaNotification.listeningOwnershipChanged()
+            }
+            listening.transferReady = ::listeningTransferReady
+            listening.transferHealth = transfer::reportListeningHealth
+            listening.reverseActive = {
+                phoneAudioOwner.isInitialized() && phoneAudioOwner.value.busy
+            }
+            listening.onLanRequired = { lanSessionController.requestAutomaticConnection() }
+        }
+    }
+    private val listeningWorkLeases = java.util.IdentityHashMap<Any, AutoCloseable>()
+    val audioSharing get() = listeningOwner.value
+    private val phoneAudioOwner: Lazy<io.github.anisharyal09.anice.features.audiosharing.PhoneAudioController> = lazy {
+        io.github.anisharyal09.anice.features.audiosharing.PhoneAudioController().also { reverse ->
+            reverse.foregroundChanged(resumedActivities > 0)
+            val probe = io.github.anisharyal09.anice.features.audiosharing.PhoneAudioDiagnostics
+            reverse.diagnosticsEnabled = probe.allowed(
+                applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0,
+                packageName, android.util.Log.isLoggable(probe.TAG, android.util.Log.DEBUG))
+            reverse.diagnosticActivity = {
+                Triple(startedActivities > 0, resumedActivities > 0,
+                    getSystemService(android.os.PowerManager::class.java).isInteractive)
+            }
+            reverse.diagnosticSink = { report ->
+                android.util.Log.d(probe.TAG, probe.PREFIX + org.json.JSONObject(report.fields).toString())
+            }
+            reverse.forwardActive = {
+                listeningOwner.isInitialized() && listeningOwner.value.busy
+            }
+            reverse.onLanRequired = { lanSessionController.requestAutomaticConnection() }
+            reverse.startService = { request, authorization ->
+                val projection = authorization.consume() as? android.content.Intent
+                    ?: throw SecurityException("Projection grant was already consumed")
+                androidx.core.content.ContextCompat.startForegroundService(this,
+                    android.content.Intent(this,
+                        io.github.anisharyal09.anice.features.privatelistening.PhoneAudioService::class.java)
+                        .putExtra(io.github.anisharyal09.anice.features.privatelistening.PhoneAudioService.STREAM, request.id)
+                        .putExtra(io.github.anisharyal09.anice.features.privatelistening.PhoneAudioService.INSTANCE, request.descriptor.instance)
+                        .putExtra(io.github.anisharyal09.anice.features.privatelistening.PhoneAudioService.RESULT_CODE, authorization.resultCode)
+                        .putExtra(io.github.anisharyal09.anice.features.privatelistening.PhoneAudioService.RESULT_DATA, projection))
+            }
+            reverse.stopService = {
+                stopService(android.content.Intent(this,
+                    io.github.anisharyal09.anice.features.privatelistening.PhoneAudioService::class.java))
+            }
+            reverse.serviceOwnershipChanged = { _, owner, eligible ->
+                lanSessionController.updateWorkOwner(owner, eligible)
+                if (eligible) {
+                    if (!phoneAudioWorkLeases.containsKey(owner)) {
+                        phoneAudioWorkLeases[owner] = lanSessionController.acquireWorkLease("phone-audio", owner)
+                    }
+                } else {
+                    phoneAudioWorkLeases.remove(owner)?.close()
+                }
+            }
+        }
+    }
+    private val phoneAudioWorkLeases = java.util.IdentityHashMap<Any, AutoCloseable>()
+    val phoneAudio get() = phoneAudioOwner.value
+    internal val listeningOwned get() = listeningOwner.isInitialized() && listeningOwner.value.active
+    internal fun listeningMediaStateChanged() = mediaNotification.update()
+    internal fun listeningMediaToken() = mediaNotification.listeningToken()
+    internal fun listeningTransferReady() = transfer.lowLatencyBacklogReady
+    internal fun listeningConfirmedRoutes(): Set<String> =
+        getSharedPreferences("private_listening_routes", MODE_PRIVATE).getStringSet("headphones", emptySet())
+            ?.toSet().orEmpty()
     private val dndSyncOwner = lazy { io.github.anisharyal09.anice.features.dndsync.DndSyncController(this) }
     val dndSync get() = dndSyncOwner.value
     private val connectionPauseOwner = lazy {
@@ -190,15 +305,19 @@ class AniCeApplication : Application() {
     val features by lazy {
         io.github.anisharyal09.anice.infrastructure.connections.FeatureDispatch().also {
             it.applicationActivity = { descriptor, bytes ->
-                val pauseNotice = try {
-                    io.github.anisharyal09.anice.features.connectionpause.ConnectionPauseMessage.decode(bytes) != null
-                } catch (_: io.github.anisharyal09.anice.features.connectionpause.ConnectionPauseWireException) { false }
-                if (!pauseNotice) lanSessionController.onApplicationActivity(descriptor, bytes)
+                if (descriptor.transport == "ble") {
+                    val pauseNotice = try {
+                        io.github.anisharyal09.anice.features.connectionpause.ConnectionPauseMessage.decode(bytes) != null
+                    } catch (_: io.github.anisharyal09.anice.features.connectionpause.ConnectionPauseWireException) { false }
+                    if (!pauseNotice) lanSessionController.onApplicationActivity(descriptor, bytes)
+                }
             }
             it.register(lanSessionController.rendezvous)
             it.register(companionSetup)
             it.register(peerNames)
             it.register(nowPlaying)
+            it.register(phoneAudio)
+            it.register(audioSharing)
             it.register(transfer)
             it.register(findDevice)
             it.register(clipboard)
@@ -221,6 +340,12 @@ class AniCeApplication : Application() {
 
     val sessionController get() = bleOwner.value
     private fun invalidateSessions() {
+        if (listeningOwner.isInitialized()) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post { audioSharing.invalidate() }
+        }
+        if (phoneAudioOwner.isInitialized()) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post { phoneAudio.invalidate() }
+        }
         android.os.Handler(android.os.Looper.getMainLooper()).post { peerNames.invalidate() }
         if (connectionPauseOwner.isInitialized()) {
             android.os.Handler(android.os.Looper.getMainLooper()).post { connectionPause.clear() }

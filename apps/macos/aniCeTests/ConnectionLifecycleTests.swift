@@ -319,7 +319,7 @@ import Network
         for scheme: ColorScheme in [.light, .dark] {
           for showPlayback in [true, false] where showPlayback || (index == 0 && !incoming) {
           let view = CompanionView(identity: IdentityViewModel(service: service), discovery: discovery,
-            pairing: pairing, session: session, lan: lan, connectionPause: MacConnectionPauseModel(), playback: showPlayback ? playback : quietPlayback, transfer: transfer, clipboard: MacClipboardModel(native: ClipboardNativeFake()),
+            pairing: pairing, session: session, lan: lan, audioSharing: MacAudioSharingModel(preferences: nil), connectionPause: MacConnectionPauseModel(), playback: showPlayback ? playback : quietPlayback, transfer: transfer, clipboard: MacClipboardModel(native: ClipboardNativeFake()),
             keyboardTrackpad: keyboardTrackpad, floatingKeyboard: floatingKeyboard, phonePower: MacPhonePowerModel(), navigation: ConnectionNavigation(),
             openMainWindow: { XCTFail("Rendering opened the main window") })
             .environment(\.colorScheme, scheme)
@@ -444,7 +444,7 @@ import Network
           navigation.show(destination, route: scenario?.hasPrefix("pairing") == true ? .pairing : .overview)
           if let feature { navigation.openFeature(feature) }
           let view = MainWindowView(delegate: AppDelegate(), identity: IdentityViewModel(service: service),
-            discovery: discovery, pairing: pairing, session: session, lan: lan, connectionPause: MacConnectionPauseModel(), playback: playback,
+            discovery: discovery, pairing: pairing, session: session, lan: lan, audioSharing: MacAudioSharingModel(preferences: nil), phoneAudio: MacPhoneAudioModel(preferences: nil), connectionPause: MacConnectionPauseModel(), playback: playback,
             transfer: transfer, edgeDrop: edgeDrop,
             clipboard: clipboard, findDevice: find, findNotifier: nil,
             sms: sms, keyboardTrackpad: keyboardTrackpad,

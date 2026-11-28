@@ -4,6 +4,17 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ## [Unreleased]
 
+### Added
+
+- Play Mac audio with local media volume, verified headphone or speaker
+  output, and adaptive Balanced and Lower delay modes. Receiving and speaker
+  fallback default on for trusted Macs without saved choices.
+- Share eligible phone playback with one-time Android capture consent.
+  Sharing stops if consent is revoked. The notification shows the destination
+  or explains that call audio is excluded, and offers Stop.
+- Add inline LAN setup, a playback buffer readout, and opt-in Transfer Preview
+  timing diagnostics for capture and sending.
+
 ### Changed
 
 - Add a categorized offline Guide with contextual help, wrapping sticky filters and entry points in Features and Settings. Explain connection, permission and device limits for clipboard sharing, input, notifications and Find Device.
@@ -24,6 +35,16 @@ Changes to the aniCe Android app. Repository-wide changes are recorded in the [r
 
 ### Fixed
 
+- Run capture on an audio-priority thread and sending off the UI thread.
+  Keep up to six unsent packets in the background and only the newest three
+  when returning. Refresh the wake lock off the UI thread.
+- Use only the `mediaProjection` foreground service type for phone capture
+  and retain the previous AudioRecord buffer request.
+- Verify the output silently before playback, including after route changes.
+  Account for Android's native startup buffer, recover from packet gaps
+  without repeating route setup, and trim older audio as the target falls.
+- Ignore finished transfer counters during startup and adjust active transfer
+  limits based on playback health.
 - Verify the bytes Android storage saved before publishing a receive. Publish known file types, including JPEGs, with the correct type in Downloads.
 - Resume pending Downloads files even when Android normalizes their temporary names.
 - Retain the Guide category, scroll position and expanded topics when the activity is recreated. Expand all and Collapse all use the same state as individual topics.

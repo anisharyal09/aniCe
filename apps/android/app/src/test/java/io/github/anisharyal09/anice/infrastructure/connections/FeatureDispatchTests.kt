@@ -85,8 +85,57 @@ class FeatureDispatchTests {
         val entered=CompletableDeferred<Unit>(); val release=CompletableDeferred<Unit>(); var sends=0
         dispatch.available(descriptor("first")) { sends++; entered.complete(Unit); release.await() }
         val old=handler.channel
-        val work=async { try { old.sendData(byteArrayOf(1)); false } catch(error: SessionException) { error.reason==SessionFailure.CANCELLED } }
+        val work=async(Dispatchers.IO) { try { old.sendData(byteArrayOf(1)); false } catch(error: SessionException) { error.reason==SessionFailure.CANCELLED } }
         entered.await(); dispatch.available(descriptor("second")) { sends++ }; release.complete(Unit)
         assertTrue(work.await()); assertEquals(1,sends); assertEquals(0,activities)
+    }
+
+    @Test fun workerAdmissionDoesNotWaitForPresentationAndIsFencedByChannelRetirement() = runBlocking {
+        val presentation = java.util.concurrent.Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+        val block = java.util.concurrent.CountDownLatch(1)
+        try {
+            val entered = CompletableDeferred<Unit>()
+            val task = launch(presentation) { entered.complete(Unit); block.await() }
+            entered.await()
+            val dispatch = FeatureDispatch(now = { 1000 }, presentation = presentation)
+            var workerCalls = 0
+            var uiCalls = 0
+            val handler = object : WorkerFeatureHandler {
+                override fun available(channel: SecuredChannel) {}
+                override fun retired(descriptor: ChannelDescriptor) {}
+                override fun capacityAvailable(descriptor: ChannelDescriptor) {}
+                override fun handleOnWorker(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling {
+                    workerCalls++
+                    return if (bytes.single() == 1.toByte()) DataHandling.HANDLED else DataHandling.UNRECOGNIZED
+                }
+                override suspend fun handle(descriptor: ChannelDescriptor, bytes: ByteArray): DataHandling {
+                    uiCalls++
+                    return DataHandling.HANDLED
+                }
+            }
+            dispatch.register(handler)
+            dispatch.available(descriptor("live")) {}
+            assertEquals(DataHandling.HANDLED, dispatch.handleOnWorker("ble", "live", byteArrayOf(1)))
+            assertEquals(1, workerCalls)
+            assertEquals(0, uiCalls)
+            assertEquals(DataHandling.UNRECOGNIZED, dispatch.handleOnWorker("ble", "live", byteArrayOf(2)))
+            dispatch.retired("ble")
+            assertEquals(DataHandling.UNRECOGNIZED, dispatch.handleOnWorker("ble", "live", byteArrayOf(1)))
+            block.countDown(); task.join()
+        } finally { block.countDown(); presentation.close() }
+    }
+
+    @Test fun workerMaintenanceReachesThePublishedGateBeforePresentationRuns() = runBlocking {
+        val dispatch = FeatureDispatch(now = { 1000 }, presentation = Dispatchers.Unconfined)
+        val handler = Handler()
+        dispatch.register(handler)
+        dispatch.available(descriptor("active")) {}
+        dispatch.maintenanceOnWorker("ble", "active", SessionMaintenanceSnapshot(sinceMillis = 900, revision = 1))
+        assertTrue(handler.channel.maintenance!!.active)
+        dispatch.maintenanceOnWorker("ble", "retired", SessionMaintenanceSnapshot(elapsedMillis = 100, revision = 2))
+        assertTrue(handler.channel.maintenance!!.active)
+        dispatch.maintenance("ble", "active", SessionMaintenanceSnapshot(elapsedMillis = 100, revision = 2))
+        assertFalse(handler.channel.maintenance!!.active)
+        dispatch.retired("ble")
     }
 }
