@@ -55,6 +55,7 @@ struct FeaturesView: View {
   let edgeDrop: MacEdgeDropController
   let privateListening: MacPrivateListeningModel
   let phoneAudio: MacPhoneAudioModel
+  var lan: MacLanSessionModel? = nil
   @Bindable var navigation: ConnectionNavigation
   var favouritesOnly = false
   @AppStorage("ui.favouriteFeatures") private var favouriteFeatures = AppFeature.defaultFavourites
@@ -93,7 +94,7 @@ struct FeaturesView: View {
           case .messages: SmsView(model: sms, peers: peers, preferences: smsPreferences)
           case .keyboardTrackpad: MacKeyboardTrackpadView(model: keyboardTrackpad, onOpenDevices: { navigation.show(.devices) })
           case .findDevice: FindDeviceView(model: findDevice, peers: peers, notifier: findNotifier)
-          case .privateListening: PrivateListeningView(model: privateListening, phoneAudio: phoneAudio)
+          case .privateListening: PrivateListeningView(model: privateListening, phoneAudio: phoneAudio, lan: lan, peers: peers)
           }
         } else {
           Text(favouritesOnly ? "Favourites" : "Features").font(.system(size: 20 * fontScale, weight: .medium))

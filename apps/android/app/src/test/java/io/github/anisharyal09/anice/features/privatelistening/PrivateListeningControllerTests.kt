@@ -8,6 +8,7 @@ import io.github.anisharyal09.anice.infrastructure.connections.DataHandling
 import io.github.anisharyal09.anice.infrastructure.connections.SecuredChannel
 import io.github.anisharyal09.anice.infrastructure.identity.DeviceIdentity
 import io.github.anisharyal09.anice.infrastructure.session.Cbor
+import io.github.anisharyal09.anice.infrastructure.session.SessionBackpressure
 import io.github.anisharyal09.anice.infrastructure.session.SessionMaintenanceSnapshot
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.snapshots.SnapshotStateObserver
@@ -146,7 +147,11 @@ class PrivateListeningControllerTests {
             "01234567-89ab-4cde-8fab-0123456789ab", "Fixture Mac", "macos", "fixture-key", "a".repeat(64)))
         override val maintenance = ChannelMaintenance { clock.now }
         val sent = mutableListOf<PrivateListeningMessage>()
+        var backpressured = false
+        var attempts = 0
         override suspend fun sendData(bytes: ByteArray) {
+            attempts++
+            if (backpressured) throw SessionBackpressure()
             sent.add(requireNotNull(PrivateListeningMessage.decode(bytes)))
         }
     }
@@ -395,6 +400,54 @@ class PrivateListeningControllerTests {
         h.start(fresh)
         assertTrue(h.owner.active)
         h.owner.stop()
+    }
+
+    @Test fun backpressuredTicksWaitForCapacityWithoutSpinning() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.start()
+        val ticket = requireNotNull(h.request)
+        h.attach()
+        h.owner.ready(ticket)
+        val before = h.channel.attempts
+        h.channel.backpressured = true
+        h.clock.now = 1000
+        h.owner.tick()
+        assertEquals(before + 1, h.channel.attempts)
+        h.clock.now = 2000
+        h.owner.tick()
+        h.clock.now = 3000
+        h.owner.tick()
+        repeat(10) { h.owner.tick() }
+        assertEquals(before + 1, h.channel.attempts)
+        h.channel.backpressured = false
+        h.owner.capacityAvailable(h.channel.descriptor)
+        assertEquals(before + 2, h.channel.attempts)
+        assertEquals(5L, h.channel.sent.last().kind)
+        h.owner.stop()
+    }
+
+    @Test fun postReadyTimeoutSendsPreparationExpiredStopReason() = runBlocking {
+        val h = Harness()
+        h.owner.setConsent(true)
+        h.start()
+        val ticket = requireNotNull(h.request)
+        h.attach()
+        h.owner.ready(ticket)
+        h.owner.failed(ticket, 9, "Timed out.")
+        assertFalse(h.owner.active)
+        assertEquals(4L, h.channel.sent.last().kind)
+        assertEquals(7L, h.channel.sent.last().number(1))
+    }
+
+    @Test fun offlineActionsTriggerLanRequired() {
+        val owner = PrivateListeningController(dispatcher = Dispatchers.Unconfined, automaticTicks = false)
+        var requests = 0
+        owner.onLanRequired = { requests++ }
+        owner.setConsent(true)
+        owner.setSpeakerFallback(true)
+        owner.setBufferProfile(ListeningBufferProfile.LOWER_DELAY)
+        assertEquals(3, requests)
     }
 
     companion object {

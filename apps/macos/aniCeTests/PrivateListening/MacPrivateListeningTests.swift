@@ -44,11 +44,17 @@ private actor ListeningCaptureFake: PrivateListeningCapturing {
   let descriptor: ChannelDescriptor
   let maintenance: ChannelMaintenance?
   var sent = [PrivateListeningMessage]()
+  var backpressured = false
+  var attempts = 0
   init(_ peer: DeviceIdentity, clock: ListeningModelClock, instance: String = "listening-channel") {
     descriptor = ChannelDescriptor(instance: instance, transport: "lan", peer: peer)
     maintenance = ChannelMaintenance(now: { clock.time })
   }
-  func sendData(_ bytes: Data) async throws { sent.append(try XCTUnwrap(PrivateListeningMessage.decode(bytes))) }
+  func sendData(_ bytes: Data) async throws {
+    attempts += 1
+    if backpressured { throw SessionBackpressure() }
+    sent.append(try XCTUnwrap(PrivateListeningMessage.decode(bytes)))
+  }
 }
 
 @MainActor final class MacPrivateListeningTests: XCTestCase {
@@ -343,6 +349,28 @@ private actor ListeningCaptureFake: PrivateListeningCapturing {
     XCTAssertEqual(activated, 0)
   }
 
+  func testReverseActiveDuringTransferWaitUnwedgesStartWithoutLosingCapture() async throws {
+    let (model, _, _, channel) = try await preparedModel()
+    var paced = [Bool]()
+    model.pacingChanged = { paced.append($0) }
+    var drained = false
+    model.transferReady = { drained }
+    model.start()
+    try await Task.sleep(for: .milliseconds(5))
+    XCTAssertTrue(model.busy)
+    XCTAssertEqual(model.state, 1)
+    XCTAssertEqual(paced, [true])
+    model.setReverseActive(true)
+    drained = true
+    try await settle { !model.busy }
+    XCTAssertEqual(model.state, 0)
+    XCTAssertEqual(paced, [true, false])
+    XCTAssertTrue(model.capturePrepared)
+    XCTAssertFalse(channel.sent.contains { $0.kind == 1 })
+    model.setReverseActive(false)
+    XCTAssertTrue(model.canStart)
+  }
+
   func testCoalescedMaintenanceClearsCaptureWithoutAnotherStart() async throws {
     let (model, capture, clock, channel) = try await preparedModel()
     model.start()
@@ -396,6 +424,34 @@ private actor ListeningCaptureFake: PrivateListeningCapturing {
     XCTAssertFalse(model.capturePrepared)
     let stops = await capture.stopped
     XCTAssertGreaterThanOrEqual(stops, 1)
+  }
+
+  func testPrepareAndStartTriggerLanRequiredWhenOffline() async throws {
+    let model = MacPrivateListeningModel(capture: ListeningCaptureFake(), preferences: nil,
+      automaticallyPump: false)
+    defer { model.shutdown() }
+    var lanRequests = 0
+    model.onLanRequired = { lanRequests += 1; return false }
+    model.start()
+    XCTAssertEqual(lanRequests, 1)
+    model.prepareCapture()
+    XCTAssertEqual(lanRequests, 2)
+    try await settle { !model.busy }
+  }
+
+  func testBackpressuredOperationWaitsForCapacityWithoutSpinning() async throws {
+    let (model, _, _, channel) = try await preparedModel()
+    defer { model.shutdown() }
+    channel.backpressured = true
+    model.start()
+    try await settle { channel.attempts >= 1 }
+    let attemptsAtBackpressure = channel.attempts
+    for _ in 0..<10 { await model.tick() }
+    XCTAssertEqual(channel.attempts, attemptsAtBackpressure)
+
+    channel.backpressured = false
+    model.capacityAvailable(channel.descriptor)
+    try await settle { channel.sent.contains { $0.kind == 1 } }
   }
 }
 

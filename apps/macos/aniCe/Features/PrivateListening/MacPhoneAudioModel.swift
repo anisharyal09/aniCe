@@ -65,6 +65,8 @@ import Observation
   private(set) var queuedOutputFrames = 0
   var forwardActive: () -> Bool = { false }
   var onActiveChanged: (Bool) -> Void = { _ in }
+  var onLanRequired: () -> Bool = { false }
+  private var waitingForCapacity = false
 
   init(receiver: PhoneAudioReceiver = PhoneAudioReceiver(),
     preferences: UserDefaults? = .standard,
@@ -82,7 +84,6 @@ import Observation
   var active: Bool { operation != nil }
   var busy: Bool { active || cleanup != nil }
   var canToggle: Bool { channel != nil && localReady }
-  var canReceive: Bool { canToggle && !forwardActive() }
 
   func installLifecycle() {
     guard sleepObserver == nil else { return }
@@ -107,6 +108,7 @@ import Observation
     queuedOutputFrames = 0
     retiredIDs.removeAll()
     exhaustedIDs = false
+    waitingForCapacity = false
     status = "Checking receiving consent…"
     let descriptor = channel.descriptor
     linkGeneration += 1
@@ -145,17 +147,19 @@ import Observation
     loadTask?.cancel(); loadTask = nil
     outgoing.removeAll()
     terminal = nil
+    waitingForCapacity = false
   }
 
   func capacityAvailable(_ descriptor: ChannelDescriptor) {
     guard matches(descriptor) else { return }
+    waitingForCapacity = false
     reflectMaintenance()
     pump()
   }
 
   /// Consent is default-off, bound to this Mac identity and the full phone credential, and never implied by Start.
   func setReceiving(_ enabled: Bool) {
-    guard let channel, localReady, let local = localValue else { return }
+    guard let channel, localReady, let local = localValue else { _ = onLanRequired(); return }
     if enabled && forwardActive() {
       status = "Stop listening to this phone before receiving its audio."
       return
@@ -252,6 +256,7 @@ import Observation
     linkGeneration += 1
     loadTask?.cancel(); loadTask = nil
     stop(reason: 7, message: "Device trust or local identity changed.", notify: false)
+    waitingForCapacity = false
     receivingEnabled = false
     localReady = false
     localValue = nil
@@ -397,6 +402,7 @@ import Observation
     current.diagnostics?.resetArrivalBaseline()
     current.maintenanceActive = active
     current.maintenanceTotal = total
+    if !active { waitingForCapacity = false }
     state = active ? 4 : (current.ready ? 2 : 1)
     status = active ? "Renewing secure LAN…" : (current.ready
       ? "Receiving phone audio on this Mac — output may not be private."
@@ -445,7 +451,7 @@ import Observation
   }
 
   private func pump() {
-    guard sendTask == nil, let channel, channel.maintenance?.active != true,
+    guard sendTask == nil, !waitingForCapacity, let channel, channel.maintenance?.active != true,
       terminal != nil || !outgoing.isEmpty else { return }
     let token = generation
     sendTask = Task { [weak self] in
@@ -461,6 +467,7 @@ import Observation
           try await channel.sendData(message.encode())
         } catch is SessionBackpressure {
           if token == self.generation {
+            self.waitingForCapacity = true
             self.retain(message)
           }
           return

@@ -17,22 +17,73 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import io.github.anisharyal09.anice.AniCeApplication
 import io.github.anisharyal09.anice.R
+import io.github.anisharyal09.anice.infrastructure.connections.ConnectionState
+import io.github.anisharyal09.anice.infrastructure.connections.LanSessionController
 import io.github.anisharyal09.anice.ui.AniCeActionButton
 import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
 
 @Composable
-fun PrivateListeningView(controller: PrivateListeningController, phoneAudio: PhoneAudioController? = null) {
+fun PrivateListeningView(
+    controller: PrivateListeningController,
+    phoneAudio: PhoneAudioController? = null,
+    lan: LanSessionController? = null,
+    connectLan: (() -> Unit)? = null,
+) {
     val app = LocalContext.current.applicationContext as AniCeApplication
     val reverse = phoneAudio ?: app.phoneAudio
+    LaunchedEffect(lan, controller.peer, reverse.peer) {
+        if (lan != null && controller.peer == null && reverse.peer == null &&
+            lan.state == ConnectionState.DISCONNECTED) {
+            lan.requestAutomaticConnection()
+        }
+    }
     // Keep the current operation and its Stop above the inactive direction's setup.
     val directions = if (reverse.busy) listOf(true, false) else listOf(false, true)
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (lan != null && controller.peer == null && reverse.peer == null) {
+            ListeningLanSetupSection(lan) {
+                if (connectLan != null) connectLan()
+                else if (!lan.requestAutomaticConnection()) lan.connectPreferred()
+            }
+            HorizontalDivider()
+        }
         directions.forEachIndexed { index, sendingPhone ->
             if (index > 0) HorizontalDivider()
             key(sendingPhone) {
                 if (sendingPhone) PhoneAudioView(reverse, controller.busy)
                 else MacAudioReceivingView(controller, app)
             }
+        }
+    }
+}
+
+@Composable
+private fun ListeningLanSetupSection(lan: LanSessionController, onConnectLan: () -> Unit) {
+    val connecting = lan.state == ConnectionState.CONNECTING
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(R.string.listening_lan_title), style = MaterialTheme.typography.titleSmall)
+        Text(
+            stringResource(when {
+                connecting -> R.string.listening_lan_status_connecting
+                lan.automatic -> R.string.listening_lan_status_auto_on
+                else -> R.string.listening_lan_status_auto_off
+            }),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        AutomaticConnectionToggle(
+            checked = lan.automatic,
+            enabled = true,
+            onCheckedChange = { enabled ->
+                lan.setAutomaticEnabled(enabled)
+                if (enabled) lan.requestAutomaticConnection()
+            },
+            label = stringResource(R.string.listening_lan_auto_label),
+            description = stringResource(R.string.listening_lan_auto_help),
+            compact = true,
+        )
+        AniCeActionButton(onClick = onConnectLan, enabled = !connecting) {
+            Text(stringResource(if (connecting) R.string.listening_lan_connecting else R.string.listening_lan_connect))
         }
     }
 }

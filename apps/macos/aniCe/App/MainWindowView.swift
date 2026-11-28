@@ -235,6 +235,7 @@ struct MainWindowView: View {
       findNotifier: findNotifier, peers: pairing.peers, edgeDrop: edgeDrop,
       privateListening: privateListening,
       phoneAudio: phoneAudio,
+      lan: lan,
       navigation: navigation, favouritesOnly: favouritesOnly)
   }
 

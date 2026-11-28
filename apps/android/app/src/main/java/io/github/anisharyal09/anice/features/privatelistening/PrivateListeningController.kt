@@ -73,6 +73,7 @@ class PrivateListeningController internal constructor(
     private var stoppingService by mutableStateOf<PrivateListeningRequest?>(null)
     private var tickJob: Job? = null
     private var sending: Job? = null
+    private var waitingForCapacity = false
     private val outgoing = ArrayDeque<PrivateListeningMessage>()
     private var terminal: PrivateListeningMessage? = null
     private val retiredIDs = mutableSetOf<String>()
@@ -108,12 +109,17 @@ class PrivateListeningController internal constructor(
     internal var transferReady: () -> Boolean = { true }
     internal var transferHealth: (Boolean, Long, Long) -> Unit = { _, _, _ -> }
     internal var reverseActive: () -> Boolean = { false }
+    internal var onLanRequired: () -> Unit = {}
+
+    internal fun requestLan() {
+        if (channel == null) onLanRequired()
+    }
 
     fun openWorkspace() { openWorkspaceRequest = true }
     fun workspaceOpened() { openWorkspaceRequest = false }
 
     internal fun setSpeakerFallback(enabled: Boolean) {
-        val peer = channel?.descriptor?.peer ?: return
+        val peer = channel?.descriptor?.peer ?: run { requestLan(); return }
         val local = localFingerprint ?: return
         if (enabled && (active || stoppingService != null)) return
         // Revocation closes output immediately, including an in-flight routing recovery.
@@ -133,6 +139,7 @@ class PrivateListeningController internal constructor(
     }
 
     internal fun setBufferProfile(profile: ListeningBufferProfile) {
+        if (channel == null) requestLan()
         if (active || stoppingService != null) return
         try { preferences.setBufferProfile(profile) }
         catch (error: IllegalStateException) { status = error.message.orEmpty(); return }
@@ -140,7 +147,7 @@ class PrivateListeningController internal constructor(
     }
 
     fun setConsent(enabled: Boolean) {
-        val channel = channel ?: return
+        val channel = channel ?: run { requestLan(); return }
         val local = localFingerprint ?: return
         try { preferences.set(local, channel.descriptor.peer, enabled) }
         catch (error: IllegalStateException) { status = error.message.orEmpty(); return }
@@ -161,6 +168,7 @@ class PrivateListeningController internal constructor(
         speakerFallbackEnabled = false
         retiredIDs.clear()
         exhaustedIDs = false
+        waitingForCapacity = false
         val token = generation
         localLookup = scope.launch {
             try {
@@ -188,10 +196,12 @@ class PrivateListeningController internal constructor(
         speakerFallbackEnabled = false
         outgoing.clear()
         terminal = null
+        waitingForCapacity = false
     }
 
     override fun capacityAvailable(descriptor: ChannelDescriptor) {
         if (channel?.descriptor != descriptor) return
+        waitingForCapacity = false
         reflectMaintenance()
         pump()
     }
@@ -326,8 +336,14 @@ class PrivateListeningController internal constructor(
     internal fun failed(request: PrivateListeningRequest, result: Long, message: String) {
         if (current !== request) return
         val wasReady = request.ready
-        stop(reason = if (result == 6L) 2 else 6, message = message, notify = wasReady)
+        stop(reason = stopReasonForResult(result), message = message, notify = wasReady)
         if (!wasReady) reply(request.id, result)
+    }
+
+    private fun stopReasonForResult(result: Long): Long = when (result) {
+        4L, 9L -> 7L
+        6L -> 2L
+        else -> 6L
     }
 
     internal fun serviceDestroyed(request: PrivateListeningRequest, owner: Any) {
@@ -441,8 +457,9 @@ class PrivateListeningController internal constructor(
             state = 4
             status = "Renewing secure LAN…"
             outgoing.removeAll { it.kind == 5L }
-        } else if (request.ready && !request.focusPaused && (wasActive || completed)) {
-            resumeOutput(request)
+        } else {
+            waitingForCapacity = false
+            if (request.ready && !request.focusPaused && (wasActive || completed)) resumeOutput(request)
         }
     }
 
@@ -531,6 +548,7 @@ class PrivateListeningController internal constructor(
         speakerFallbackEnabled = false
         outgoing.clear()
         terminal = null
+        waitingForCapacity = false
     }
 
     override suspend fun drain(descriptor: ChannelDescriptor) {
@@ -549,7 +567,8 @@ class PrivateListeningController internal constructor(
 
     private fun pump() {
         val channel = channel ?: return
-        if (sending != null || channel.maintenance?.active == true || (outgoing.isEmpty() && terminal == null)) return
+        if (sending != null || waitingForCapacity || channel.maintenance?.active == true ||
+            (outgoing.isEmpty() && terminal == null)) return
         val token = generation
         val work = scope.launch(start = CoroutineStart.LAZY) {
             try {
@@ -559,6 +578,7 @@ class PrivateListeningController internal constructor(
                     try { channel.sendData(message.encode()) }
                     catch (_: SessionBackpressure) {
                         if (token == generation) {
+                            waitingForCapacity = true
                             if (message.kind == 4L) terminal = message
                             else {
                                 if (outgoing.size == 8) outgoing.removeLast()

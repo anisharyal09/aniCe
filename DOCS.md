@@ -18,6 +18,7 @@
 - [Notifications and call alerts](docs/features/NOTIFICATION_MIRRORING.md)
 - [Messages](docs/features/SMS.md) — SMS relay, history, replies and SIM selection.
 - [Now Playing](docs/features/NOW_PLAYING.md) — Playback, artwork and player/output volume.
+- [Private Listening and Phone Audio](docs/features/PRIVATE_LISTENING.md) — Bidirectional Mac/phone audio over LAN, routing privacy and OS boundaries.
 - [Do Not Disturb](docs/features/DND_SYNC.md) — Android-to-Mac sync through selected Shortcuts.
 - [Find Device](docs/features/FIND_DEVICE.md) — Native peer alerts and Android ringing.
 

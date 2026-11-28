@@ -6,7 +6,9 @@ Private Listening sends Mac system audio to headphones connected to Android thro
 
 ## Setup and start
 
-1. Connect the trusted Mac and Android over LAN using Devices.
+Private Listening requires an authenticated LAN session. Opening **Features → Private Listening** or tapping an offline audio control nudges **Use local network automatically** over an active Bluetooth connection; while LAN is disconnected, the panel shows the current **Use local network automatically** status, an inline toggle and a **Connect LAN** action so both ends can connect on the same Wi-Fi without leaving the screen.
+
+1. Connect the trusted Mac and Android over LAN (automatically via Bluetooth + **Use local network automatically** on both devices, or via **Connect LAN**).
 2. On Android, open **Features → Private Listening** and enable **Allow audio from this Mac**. Consent defaults off and is bound to both current device identities.
 3. Connect headphones. Bluetooth A2DP and generic USB outputs require explicit **These are my headphones** confirmation when a usable route address is available; a name alone does not establish a private output.
 4. On Mac, open **Features → Private Listening** and choose **Prepare system audio…**. macOS may request system-audio recording access. Preparation does not suppress Mac output.
@@ -75,6 +77,23 @@ Already-submitted TCP bytes remain ordered; receiver trimming cannot retract the
 Negotiated LAN renewal uses the existing channel maintenance interval. TCP, the feature-channel descriptor and listening stream remain intact while fresh EDHOC/readiness replace cryptographic keys. Mac keeps reading/discarding; Android keeps native service ownership and rechecks focus/routing afterward. **Renewing secure LAN…** distinguishes that bounded interruption from normal playback. Native phase/security deadlines are not extended.
 
 Channel retirement, Disconnect, trust/identity changes, service destruction, Mac sleep or Quit invalidate listening. A new connection does not restart it automatically or replay audio. CPU/Wi-Fi locks are native playback resources, not permission to reconnect or proof of screen-off radio latency; Android 34+ low-latency Wi-Fi locks retain platform restrictions.
+
+## Phone Audio (Android → Mac)
+
+Phone Audio streams eligible Android media and game playback to your Mac speakers or Mac-connected headphones over secured LAN, and is mutually exclusive with Mac → Android listening to prevent feedback capture loops.
+
+### Setup and start (Android → Mac)
+
+1. Connect the trusted Mac and Android over LAN (enabled automatically via Bluetooth + **Use local network automatically**, or using the inline **Connect LAN** controls in **Features → Private Listening**).
+2. On the Mac, enable **Allow audio from this phone**. This receiving choice is off by default and scoped to both current device identities.
+3. On Android, choose **Share this phone's audio** and approve Android's single-use audio-capture (`MediaProjection`) consent prompt. No screen pixels or video are captured, and the grant is never saved across sessions or auto-restarted on reconnect.
+
+### Speaker output, volume and call limits on Android
+
+- **Why the phone keeps playing:** Android's public `AudioPlaybackCapture` API copies the media mix without muting the phone loudspeaker. Lowering phone media volume (`STREAM_MUSIC`) to zero also attenuates or silences the captured audio sent to the Mac, so `aniCe` never lowers phone volume behind your back.
+- **How to hear audio only on the Mac:** Keep Android media volume up and connect wired/USB-C earphones or a quiet Bluetooth output to the phone so Android moves sound off the phone's loudspeaker while still feeding full PCM to capture.
+- **Why phone and VoIP calls do not route:** Android restricts playback capture to `USAGE_MEDIA`, `USAGE_GAME` and `USAGE_UNKNOWN`, blocking cellular (`VOICE_CALL`), VoIP (`USAGE_VOICE_COMMUNICATION`) and microphone streams, as well as apps that opt out of playback capture (`ALLOW_CAPTURE_BY_NONE`). While Android reports an active call mode (`MODE_IN_CALL` or `MODE_IN_COMMUNICATION`), `aniCe` updates its sharing status and notification so call exclusion is explicit and normal media resumes automatically after the call.
+- **Scheduling and output smoothing:** Android runs capture reads on a dedicated `THREAD_PRIORITY_AUDIO` worker and encodes/submits packets on a serialized off-Main dispatcher (`Dispatchers.IO.limitedParallelism(1)`) so UI rendering and Recents transitions do not block delivery. Mac buffers a small prefill cushion within its six-packet (120 ms) output ceiling and applies 5 ms boundary ramps on startup and recovery.
 
 ## Implementation boundaries
 

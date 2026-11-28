@@ -6,13 +6,15 @@ import android.os.Process
 import kotlinx.coroutines.asCoroutineDispatcher
 import java.util.concurrent.ScheduledThreadPoolExecutor
 
-internal class PrivateListeningAudioWorker : AutoCloseable {
+internal class PrivateListeningAudioWorker(
+    threadName: String = "aniCe headphone playback",
+) : AutoCloseable {
     private val executor = ScheduledThreadPoolExecutor(1) { task ->
         Thread({
             try { Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO) }
-            catch (_: SecurityException) { /* A denied scheduling hint must not authorize or abort playback. */ }
+            catch (_: SecurityException) { /* A denied scheduling hint must not authorize or abort audio. */ }
             task.run()
-        }, "aniCe headphone playback")
+        }, threadName)
     }.apply { removeOnCancelPolicy = true }
     val dispatcher = executor.asCoroutineDispatcher()
     override fun close() { dispatcher.close() }

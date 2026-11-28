@@ -49,7 +49,19 @@ fun FeaturesScreen(
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(panel.label, style = MaterialTheme.typography.titleMedium)
-            io.github.anisharyal09.anice.features.privatelistening.PrivateListeningView(session.privateListening)
+            val targetMac = peers.singleOrNull { it.peer.platform == "macos" }?.peer
+                ?: session.selected?.takeIf { it.platform == "macos" }
+            io.github.anisharyal09.anice.features.privatelistening.PrivateListeningView(
+                session.privateListening,
+                lan = session.lan,
+                connectLan = {
+                    if (session.nearby.pauseStatus == null &&
+                        !io.github.anisharyal09.anice.infrastructure.connections.CompanionProbe.connectionPauseActive &&
+                        !session.lan.requestAutomaticConnection() && !session.lan.connectPreferred()) {
+                        if (targetMac != null) session.lan.connectAlongside(targetMac)
+                    }
+                },
+            )
         }
     } else if (!favouritesOnly && panel == AppFeature.PhoneInput) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

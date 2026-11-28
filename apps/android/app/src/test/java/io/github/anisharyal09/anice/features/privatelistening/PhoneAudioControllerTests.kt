@@ -167,7 +167,7 @@ class PhoneAudioControllerTests {
         h.owner.captureStopped(ticket, PhoneAudioStopCause.REVOKED)
         assertFalse(h.owner.active)
         assertEquals(4L, h.channel.sent.last().kind)
-        assertEquals(4L, h.channel.sent.last().number(1))
+        assertEquals(0L, h.channel.sent.last().number(1))
     }
 
     @Test fun stopDuringAnInFlightSendLetsTheNextStartReachTheMac() = runBlocking {
@@ -417,6 +417,90 @@ class PhoneAudioControllerTests {
         assertEquals(DataHandling.UNRECOGNIZED, dispatch.handle("lan", descriptor.instance,
             SessionCbor.encode(Cbor.Array(listOf(Cbor.Text("unrelated"), Cbor.Integer(1))))))
         dispatch.retired("lan")
+    }
+
+    @Test fun startServiceExceptionStopsWithoutSendingUnsolicitedStop() = runBlocking {
+        val h = Harness()
+        h.enable()
+        h.owner.startService = { _, _ -> throw IllegalStateException("background restricted") }
+        h.begin()
+        assertFalse(h.owner.active)
+        assertEquals(0L, h.owner.state)
+        assertTrue(h.channel.sent.isEmpty())
+    }
+
+    @Test fun timeoutAndPreReadyCaptureFailureSendPreparationExpiredStopReason() = runBlocking {
+        val h = Harness()
+        h.enable()
+        h.begin()
+        h.clock.now = 5000
+        h.owner.tick()
+        assertFalse(h.owner.active)
+        assertEquals(listOf(1L, 4L), h.channel.sent.map { it.kind })
+        assertEquals(7L, h.channel.sent.last().number(1))
+
+        h.begin()
+        val ticket = requireNotNull(h.request)
+        h.owner.captureFailed(ticket, "Capture setup rejected.")
+        assertFalse(h.owner.active)
+        assertEquals(listOf(1L, 4L, 1L, 4L), h.channel.sent.map { it.kind })
+        assertEquals(7L, h.channel.sent.last().number(1))
+    }
+
+    @Test fun offMainSendDispatcherQueuesAudioWithoutWaitingOnMainDispatcher() = runBlocking {
+        val main = QueuedDispatcher()
+        val send = QueuedDispatcher()
+        val clock = Clock()
+        val channel = Channel(clock)
+        val owner = PhoneAudioController(now = { clock.now }, dispatcher = main,
+            automaticTicks = false, sendDispatcher = send)
+        owner.startService = { _, grant -> checkNotNull(grant.consume()) }
+        owner.available(channel)
+        owner.handle(channel.descriptor, PhoneAudioMessage.from(PrivateListeningMessage.capability(true)).encode())
+        send.drain()
+        owner.begin(PhoneAudioGrant(-1, Any()))
+        main.drain()
+        send.drain()
+        val ticket = requireNotNull(owner.request(channel.sent.single().text(0), channel.descriptor.instance))
+        owner.serviceAttached(ticket, this, Control())
+        owner.handle(channel.descriptor, result(ticket.id, 0))
+        val pendingMainBefore = main.pending
+        owner.capturePacket(ticket, 1L, ByteArray(3840))
+        assertEquals(pendingMainBefore, main.pending)
+        assertEquals(1, send.pending)
+        send.drain()
+        assertEquals(listOf(1L), channel.sent.filter { it.kind == 3L }.map { it.number(1) })
+        owner.stop()
+        main.drain()
+        send.drain()
+    }
+
+    @Test fun callActiveStateUpdatesStatusAndRestoresWhenCallEnds() = runBlocking {
+        val h = Harness()
+        h.enable()
+        h.begin()
+        val ticket = requireNotNull(h.request)
+        h.owner.serviceAttached(ticket, h, Control())
+        h.owner.handle(h.channel.descriptor, result(ticket.id, 0))
+        h.owner.capturePrepared(ticket)
+        h.owner.callActiveChanged(ticket, true)
+        assertTrue(h.owner.callActive)
+        assertTrue(h.owner.status.contains("call", ignoreCase = true))
+        h.owner.callActiveChanged(ticket, false)
+        assertFalse(h.owner.callActive)
+        assertTrue(h.owner.status.startsWith("Sending this phone's audio"))
+        h.owner.stop()
+        assertFalse(h.owner.callActive)
+    }
+
+    @Test fun requestConsentWhenOfflineTriggersLanRequired() {
+        val clock = Clock()
+        val owner = PhoneAudioController(now = { clock.now }, dispatcher = Dispatchers.Unconfined,
+            automaticTicks = false)
+        var requests = 0
+        owner.onLanRequired = { requests++ }
+        assertNull(owner.requestConsent())
+        assertEquals(1, requests)
     }
 
     private class Clock(var now: Long = 0)

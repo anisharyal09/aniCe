@@ -11,6 +11,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.AudioManager
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
@@ -33,12 +34,15 @@ class PhoneAudioService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val app get() = application as AniCeApplication
     private val controller get() = app.phoneAudio
+    private val audio by lazy { getSystemService(AudioManager::class.java) }
     private val handler = Handler(Looper.getMainLooper())
     private var request: PhoneAudioRequest? = null
     private var capture: PhoneAudioCapture? = null
+    private var captureWorker: PrivateListeningAudioWorker? = null
     private var job: Job? = null
     private var powerJob: Job? = null
     private var wake: PowerManager.WakeLock? = null
+    private var modeListener: Any? = null
     private var powerRefreshAt = 0L
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -61,6 +65,7 @@ class PhoneAudioService : Service() {
             return rejectStart(startId)
         }
         request = ticket
+        var attached = false
         try {
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(NotificationChannel(CHANNEL,
@@ -84,23 +89,41 @@ class PhoneAudioService : Service() {
                 throw error
             }
             capture = native
+            val worker = PrivateListeningAudioWorker("aniCe phone audio capture")
+            captureWorker = worker
             val control = object : PhoneAudioCaptureControl {
-                override fun start() = startCapture(ticket, native)
+                override fun start() = startCapture(ticket, native, worker)
                 override fun close() { native.close() }
                 override val available get() = native.available
             }
             if (!controller.serviceAttached(ticket, this, control)) {
+                request = null
                 native.close()
                 capture = null
+                worker.close()
+                captureWorker = null
                 stopSelfResult(startId)
                 return START_NOT_STICKY
+            }
+            attached = true
+            controller.callActiveChanged(ticket, inCallMode(audio.mode))
+            if (Build.VERSION.SDK_INT >= 31) {
+                val listener = AudioManager.OnModeChangedListener { mode ->
+                    handler.post { if (request === ticket) controller.callActiveChanged(ticket, inCallMode(mode)) }
+                }
+                modeListener = listener
+                audio.addOnModeChangedListener(mainExecutor, listener)
             }
             acquireWake()
             powerJob = scope.launch {
                 var displayedState = 1L
+                var displayedCall = controller.callActive
                 while (request === ticket && controller.request(id, instance) === ticket) {
-                    if (displayedState != controller.state) {
+                    val inCall = inCallMode(audio.mode)
+                    if (inCall != controller.callActive) controller.callActiveChanged(ticket, inCall)
+                    if (displayedState != controller.state || displayedCall != controller.callActive) {
                         displayedState = controller.state
+                        displayedCall = controller.callActive
                         manager.notify(ID, notification(ticket))
                     }
                     if (android.os.SystemClock.elapsedRealtime() - powerRefreshAt >= 30000) acquireWake()
@@ -108,18 +131,33 @@ class PhoneAudioService : Service() {
                 }
             }
         } catch (_: SecurityException) {
-            controller.captureFailed(ticket, "Phone audio service was not authorized.")
+            failStart(ticket, startId, attached, "Phone audio service was not authorized.")
         } catch (_: IllegalStateException) {
-            controller.captureFailed(ticket, "Phone audio service could not start.")
+            failStart(ticket, startId, attached, "Phone audio service could not start.")
         } catch (_: IllegalArgumentException) {
-            controller.captureFailed(ticket, "Phone audio capture setup was rejected.")
+            failStart(ticket, startId, attached, "Phone audio capture setup was rejected.")
         }
         return START_NOT_STICKY
     }
 
-    private fun startCapture(ticket: PhoneAudioRequest, native: PhoneAudioCapture) {
+    private fun inCallMode(mode: Int): Boolean =
+        mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION
+
+    private fun failStart(ticket: PhoneAudioRequest, startId: Int, attached: Boolean, message: String) {
+        if (!attached && request === ticket) {
+            request = null
+            capture?.close()
+            capture = null
+            captureWorker?.close()
+            captureWorker = null
+        }
+        controller.captureFailed(ticket, message)
+        stopSelfResult(startId)
+    }
+
+    private fun startCapture(ticket: PhoneAudioRequest, native: PhoneAudioCapture, worker: PrivateListeningAudioWorker) {
         if (job != null || request !== ticket) return
-        job = scope.launch(Dispatchers.IO) {
+        job = scope.launch(worker.dispatcher) {
             try {
                 native.prepare()
                 scope.launch { controller.capturePrepared(ticket) }
@@ -150,7 +188,8 @@ class PhoneAudioService : Service() {
         return Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_notification_small)
             .setContentTitle(getString(R.string.phone_audio_title))
             .setContentText(when (controller.state) {
-                2L -> getString(R.string.phone_audio_notification_active, ticket.descriptor.peer.deviceName)
+                2L -> if (controller.callActive) getString(R.string.phone_audio_call_excluded)
+                    else getString(R.string.phone_audio_notification_active, ticket.descriptor.peer.deviceName)
                 4L -> getString(R.string.phone_audio_renewing)
                 else -> getString(R.string.phone_audio_preparing)
             })
@@ -180,9 +219,17 @@ class PhoneAudioService : Service() {
         request = null
         job?.cancel(); job = null
         powerJob?.cancel(); powerJob = null
-        try { capture?.close() }
+        try {
+            if (Build.VERSION.SDK_INT >= 31) {
+                (modeListener as? AudioManager.OnModeChangedListener)?.let {
+                    audio.removeOnModeChangedListener(it)
+                }
+            }
+            modeListener = null
+            capture?.close()
+        }
         finally {
-            try { capture = null }
+            try { capture = null; captureWorker?.close(); captureWorker = null }
             finally {
                 try { releaseWake() }
                 finally {

@@ -87,8 +87,15 @@ class PhoneAudioController internal constructor(
     private val now: () -> Long = { android.os.SystemClock.elapsedRealtime() },
     dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
     private val automaticTicks: Boolean = true,
+    sendDispatcher: CoroutineDispatcher = if (dispatcher === Dispatchers.Main.immediate) {
+        Dispatchers.IO.limitedParallelism(1)
+    } else {
+        dispatcher
+    },
 ) : FeatureHandler {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
+    private val sendScope = CoroutineScope(SupervisorJob() + sendDispatcher)
+    private val sameDispatcher = dispatcher === sendDispatcher
     @Volatile private var channel: SecuredChannel? = null
     @Volatile private var current: PhoneAudioRequest? = null
     private var stoppingService: PhoneAudioRequest? = null
@@ -100,7 +107,8 @@ class PhoneAudioController internal constructor(
     private var sending = false
     private var inFlightKind: Long? = null
     private var waitingForCapacity = false
-    private var packetWakeScheduled = false
+    private var queueWakeAt: Long? = null
+    private var uiSyncScheduled = false
     private var sendJob: Job? = null
     private var tickJob: Job? = null
     private var generation = 0
@@ -120,6 +128,8 @@ class PhoneAudioController internal constructor(
         private set
     var active by mutableStateOf(false)
         private set
+    var callActive by mutableStateOf(false)
+        private set
     var droppedPackets by mutableStateOf(0L)
         private set
     var consentPending by mutableStateOf(false)
@@ -133,6 +143,7 @@ class PhoneAudioController internal constructor(
         !controlPending && !forwardActive() && channel?.maintenance?.active != true
 
     internal var forwardActive: () -> Boolean = { false }
+    internal var onLanRequired: () -> Unit = {}
     internal var startService: (PhoneAudioRequest, PhoneAudioGrant) -> Unit = { _, _ ->
         throw IllegalStateException("Phone audio service is unavailable")
     }
@@ -174,13 +185,14 @@ class PhoneAudioController internal constructor(
                 if (diagnosticsEnabled) PhoneAudioDiagnostics(++diagnosticRun, diagnosticNanoTime) else null)
             synchronized(lock) { current = request }
             active = true
+            callActive = false
             state = 1
             droppedPackets = 0
             status = "Preparing to send this phone's audio…"
             startTicks()
             try { startService(request, authorization) }
-            catch (_: SecurityException) { failed(request, 4, "Phone audio background service was blocked."); return }
-            catch (_: IllegalStateException) { failed(request, 4, "Open aniCe on the phone, then retry."); return }
+            catch (_: SecurityException) { failed(request, 4, "Phone audio background service was blocked.", notify = false); return }
+            catch (_: IllegalStateException) { failed(request, 4, "Open aniCe on the phone, then retry.", notify = false); return }
             if (current === request) sendControl(PrivateListeningMessage.start(request.id))
         } finally { authorization.discard() }
     }
@@ -188,7 +200,11 @@ class PhoneAudioController internal constructor(
     private fun admitStart(): Boolean {
         if (current != null) return false
         if (stopping || controlPending) { status = "Finishing the previous phone audio operation…"; return false }
-        if (channel == null) { status = "Connect your trusted Mac over LAN first."; return false }
+        if (channel == null) {
+            onLanRequired()
+            status = "Connect your trusted Mac over LAN first."
+            return false
+        }
         if (!macReceiving) { status = "Allow phone audio on your Mac first."; return false }
         if (forwardActive()) { status = "Stop listening to this Mac before sending phone audio."; return false }
         if (channel?.maintenance?.active == true) { status = "Wait for secure LAN renewal, then retry."; return false }
@@ -196,26 +212,29 @@ class PhoneAudioController internal constructor(
     }
 
     fun stop(reason: Long = 0, message: String = "Phone audio stopped.", notify: Boolean = true) {
-        val request = current
-        generation += 1
-        synchronized(lock) { current = null }
+        val request: PhoneAudioRequest?
+        val staleSend: Job?
+        synchronized(lock) {
+            request = current
+            generation += 1
+            current = null
+            staleSend = sendJob
+            sendJob = null
+            sending = false
+            inFlightKind = null
+            queueWakeAt = null
+            window.clear()
+            outgoing.clear()
+            terminal = null
+        }
+        staleSend?.cancel()
         active = false
+        callActive = false
         consentRequest = null
         consentPending = false
         tickJob?.cancel(); tickJob = null
-        // A cancelled pump must not leave the sender latched, or the next Start would never leave.
-        sendJob?.cancel(); sendJob = null
-        synchronized(lock) {
-            sending = false
-            inFlightKind = null
-        }
         state = 0
         status = message
-        synchronized(lock) {
-            window.clear()
-            outgoing.clear()
-        }
-        terminal = null
         if (request != null) {
             val owner = request.serviceOwner
             if (owner != null) { stoppingService = request; stopping = true }
@@ -227,7 +246,9 @@ class PhoneAudioController internal constructor(
             }
         }
         if (notify && request != null && channel?.descriptor == request.descriptor) {
-            terminal = reverse(PrivateListeningMessage(4, listOf(Cbor.Text(request.id), Cbor.Integer(reason))))
+            synchronized(lock) {
+                terminal = reverse(PrivateListeningMessage(4, listOf(Cbor.Text(request.id), Cbor.Integer(reason))))
+            }
             pump()
         }
         if (request != null) reportDiagnostics(request, terminal = true)
@@ -248,38 +269,40 @@ class PhoneAudioController internal constructor(
         if (descriptor.transport != "lan" || descriptor.peer.platform != "macos") return
         if (this.channel?.descriptor == descriptor) return
         this.channel?.let { retired(it.descriptor) }
-        this.channel = channel
+        synchronized(lock) {
+            this.channel = channel
+            window.clear()
+            outgoing.clear()
+            terminal = null
+            waitingForCapacity = false
+            queueWakeAt = null
+        }
         peer = descriptor.peer
         macReceiving = false
         state = 0
         status = "Waiting for this Mac to allow phone audio."
-        synchronized(lock) {
-            window.clear()
-            outgoing.clear()
-        }
-        terminal = null
-        waitingForCapacity = false
         reflectControlPending()
     }
 
     override fun retired(descriptor: ChannelDescriptor) {
         if (channel?.descriptor != descriptor) return
         stop(reason = 3, message = "LAN ended. Start phone audio again after reconnecting.", notify = false)
-        channel = null
-        peer = null
-        macReceiving = false
         synchronized(lock) {
+            channel = null
             window.clear()
             outgoing.clear()
+            terminal = null
+            waitingForCapacity = false
+            queueWakeAt = null
         }
-        terminal = null
-        waitingForCapacity = false
+        peer = null
+        macReceiving = false
         reflectControlPending()
     }
 
     override fun capacityAvailable(descriptor: ChannelDescriptor) {
         if (channel?.descriptor != descriptor) return
-        waitingForCapacity = false
+        synchronized(lock) { waitingForCapacity = false }
         reflectMaintenance()
         pump()
     }
@@ -349,45 +372,52 @@ class PhoneAudioController internal constructor(
         }
     }
 
-    /** Called from the capture worker; never blocks on LAN and never touches presentation state. */
+    /** Called from the capture worker; never blocks on LAN or Main UI rendering. */
     internal fun capturePacket(request: PhoneAudioRequest, sequence: Long, pcm: ByteArray) {
-        var wakeScheduledAt: Long? = null
+        var droppedNow = false
         synchronized(lock) {
             if (current !== request || !request.ready || pcm.size != PrivateListeningMessage.PCM_BYTES) return
             if (sequence <= request.lastCapturedSequence) return
             request.lastCapturedSequence = sequence
             val capturedAt = request.diagnostics?.captured()
+            val before = request.droppedPackets
             if (channel?.maintenance?.active == true) {
                 request.droppedPackets += 1
                 request.diagnostics?.maintenanceDiscarded(1)
             } else {
-                val before = window.dropped
+                val droppedBefore = window.dropped
                 window.offer(PhoneAudioPacket(sequence, pcm, capturedAt))
-                request.droppedPackets += window.dropped - before
-                request.diagnostics?.queued(window.size, window.dropped - before)
+                request.droppedPackets += window.dropped - droppedBefore
+                request.diagnostics?.queued(window.size, window.dropped - droppedBefore)
             }
-            // At most one Main wake-up is outstanding, even when the capture worker keeps running.
-            if (packetWakeScheduled) return
-            packetWakeScheduled = true
-            wakeScheduledAt = request.diagnostics?.timestamp()
+            droppedNow = request.droppedPackets != before
+            if (queueWakeAt == null) queueWakeAt = request.diagnostics?.timestamp()
         }
-        scope.launch {
-            if (current === request) request.diagnostics?.presentationReady(wakeScheduledAt)
-            synchronized(lock) {
-                packetWakeScheduled = false
-                current?.let { droppedPackets = it.droppedPackets }
-            }
-            reflectMaintenance()
-            pump()
+        pump()
+        if (droppedNow) {
+            if (sameDispatcher) droppedPackets = request.droppedPackets
+            else scheduleUiSync()
         }
     }
+
+    internal fun callActiveChanged(request: PhoneAudioRequest, activeCall: Boolean) {
+        if (current !== request || callActive == activeCall) return
+        callActive = activeCall
+        if (request.capturePrepared && !request.maintenanceActive) {
+            status = sendingStatus(request)
+        }
+    }
+
+    private fun sendingStatus(request: PhoneAudioRequest): String =
+        if (callActive) "Phone or voice call active — Android excludes call audio while sharing."
+        else "Sending this phone's audio to ${request.descriptor.peer.deviceName}."
 
     internal fun captureStopped(request: PhoneAudioRequest, cause: PhoneAudioStopCause) {
         if (current !== request) return
         when (cause) {
             PhoneAudioStopCause.LOCAL -> stop(reason = 0, message = "Phone audio capture ended.")
             PhoneAudioStopCause.REVOKED ->
-                stop(reason = 4, message = "Screen capture consent ended. Start again to send audio.")
+                stop(reason = 0, message = "Screen capture consent ended. Start again to send audio.")
             PhoneAudioStopCause.FAILURE -> stop(reason = 6, message = "Phone audio capture failed.")
         }
     }
@@ -399,15 +429,16 @@ class PhoneAudioController internal constructor(
 
     fun invalidate() {
         stop(reason = 7, message = "Device trust or local identity changed.", notify = false)
-        channel = null
-        peer = null
-        macReceiving = false
         synchronized(lock) {
+            channel = null
             window.clear()
             outgoing.clear()
+            terminal = null
+            waitingForCapacity = false
+            queueWakeAt = null
         }
-        terminal = null
-        waitingForCapacity = false
+        peer = null
+        macReceiving = false
         reflectControlPending()
     }
 
@@ -424,7 +455,7 @@ class PhoneAudioController internal constructor(
             return
         }
         if (result != 0L) {
-            stop(reason = if (result == 2L) 2 else 6, message = resultMessage(result), notify = false)
+            stop(reason = stopReasonForResult(result), message = resultMessage(result), notify = false)
             return
         }
         request.ready = true
@@ -454,13 +485,18 @@ class PhoneAudioController internal constructor(
         }
         request.capturePrepared = true
         state = if (channel?.maintenance?.active == true) 4 else 2
-        status = if (state == 4L) "Renewing secure LAN…"
-            else "Sending this phone's audio to ${request.descriptor.peer.deviceName}."
+        status = if (state == 4L) "Renewing secure LAN…" else sendingStatus(request)
     }
 
-    private fun failed(request: PhoneAudioRequest, result: Long, message: String) {
+    private fun failed(request: PhoneAudioRequest, result: Long, message: String, notify: Boolean = true) {
         if (current !== request) return
-        stop(reason = if (result == 2L || result == 4L) 4 else 6, message = message)
+        stop(reason = stopReasonForResult(result), message = message, notify = notify)
+    }
+
+    private fun stopReasonForResult(result: Long): Long = when (result) {
+        1L -> 0L
+        4L, 9L -> 7L
+        else -> 6L
     }
 
     private fun reflectMaintenance() {
@@ -471,15 +507,19 @@ class PhoneAudioController internal constructor(
         if (active == request.maintenanceActive && !completed) return
         request.maintenanceActive = active
         request.maintenanceTotal = total
+        val currentSendJob: Job?
+        val currentInFlight: Long?
         synchronized(lock) {
             request.droppedPackets += window.size
             request.diagnostics?.maintenanceDiscarded(window.size)
             window.clear()
             droppedPackets = request.droppedPackets
+            currentInFlight = inFlightKind
+            currentSendJob = sendJob
+            if (!active) waitingForCapacity = false
         }
         // Cancellation applies only before sealing; the session still owns sealed ordered records.
-        if (inFlightKind == 3L) sendJob?.cancel()
-        if (!active) waitingForCapacity = false
+        if (currentInFlight == 3L) currentSendJob?.cancel()
         if (!active && request.captureStarted && request.control?.available != true) {
             failed(request, 6, "Phone audio capture ended during LAN renewal.")
         } else if (active) {
@@ -487,7 +527,7 @@ class PhoneAudioController internal constructor(
             status = "Renewing secure LAN…"
         } else if (request.capturePrepared) {
             state = 2
-            status = "Sending this phone's audio to ${request.descriptor.peer.deviceName}."
+            status = sendingStatus(request)
         } else {
             state = 1
             status = "Preparing to send this phone's audio…"
@@ -527,32 +567,46 @@ class PhoneAudioController internal constructor(
     }
 
     private fun pump() {
-        val channel = channel ?: return
+        val channel: SecuredChannel
+        val token: Int
+        val wakeAt: Long?
         synchronized(lock) {
-            if (sending || waitingForCapacity || channel.maintenance?.active == true) return
+            val activeChannel = this.channel ?: return
+            if (sending || waitingForCapacity || activeChannel.maintenance?.active == true) return
             if (terminal == null && outgoing.isEmpty() && window.size == 0) return
+            channel = activeChannel
+            token = generation
+            wakeAt = queueWakeAt
+            queueWakeAt = null
             sending = true
         }
-        val token = generation
-        val work = scope.launch(start = CoroutineStart.LAZY) {
+        val work = sendScope.launch(start = CoroutineStart.LAZY) {
             try {
-                while (token == generation && this@PhoneAudioController.channel === channel) {
+                if (wakeAt != null) {
+                    val activeRequest = current
+                    if (activeRequest != null) activeRequest.diagnostics?.presentationReady(wakeAt)
+                }
+                while (true) {
                     if (channel.maintenance?.active == true) break
-                    val request = current
                     var capturedAt: Long? = null
-                    val message = synchronized(lock) {
+                    var activeRequest: PhoneAudioRequest? = null
+                    val message: PhoneAudioMessage = synchronized(lock) {
+                        if (token != generation || this@PhoneAudioController.channel !== channel) return@synchronized null
+                        activeRequest = current
                         val boundary = terminal
                         if (boundary != null) { terminal = null; boundary }
                         else outgoing.removeFirstOrNull()
                             ?: window.take()?.let { packet ->
-                                if (request?.ready == true) {
+                                activeRequest?.takeIf { it.ready }?.let { active ->
                                     capturedAt = packet.capturedAtNanos
-                                    reverse(PrivateListeningMessage.audio(request.id, packet.sequence, packet.pcm))
-                                } else null
+                                    reverse(PrivateListeningMessage.audio(active.id, packet.sequence, packet.pcm))
+                                }
                             }
+                    }?.also {
+                        synchronized(lock) { inFlightKind = it.kind }
+                        syncPresentation()
                     } ?: break
-                    inFlightKind = message.kind
-                    reflectControlPending()
+                    val request = activeRequest
                     val diagnostics = if (message.kind == 3L) request?.diagnostics else null
                     diagnostics?.dequeued(capturedAt)
                     val encodeStarted = diagnostics?.timestamp()
@@ -566,60 +620,98 @@ class PhoneAudioController internal constructor(
                     } catch (_: SessionBackpressure) {
                         diagnostics?.submitted(submissionStarted, succeeded = false)
                         diagnostics?.backpressured()
-                        if (token == generation) {
-                            retainControlOrDropAudio(message, request)
-                            waitingForCapacity = true
+                        synchronized(lock) {
+                            if (token == generation) {
+                                retainControlOrDropAudioLocked(message, request)
+                                waitingForCapacity = true
+                            }
                         }
+                        syncPresentation()
                         break
                     } catch (error: CancellationException) {
                         diagnostics?.submitted(submissionStarted, succeeded = false)
                         diagnostics?.sendCancelled()
-                        if (token == generation) retainControlOrDropAudio(message, request)
+                        synchronized(lock) {
+                            if (token == generation) retainControlOrDropAudioLocked(message, request)
+                        }
+                        syncPresentation()
                         throw error
                     } finally {
-                        if (token == generation) { inFlightKind = null; reflectControlPending() }
+                        synchronized(lock) {
+                            if (token == generation) inFlightKind = null
+                        }
+                        syncPresentation()
                     }
                 }
             } catch (_: CancellationException) {
             } catch (_: Exception) {
-                if (token == generation) stop(reason = 3, message = "Phone audio DATA could not be sent.", notify = false)
+                scope.launch {
+                    val valid = synchronized(lock) { token == generation }
+                    if (valid) stop(reason = 3, message = "Phone audio DATA could not be sent.", notify = false)
+                }
             } finally {
-                if (token == generation) {
-                    val pending = synchronized(lock) {
+                val pending = synchronized(lock) {
+                    if (token != generation) false
+                    else {
                         sending = false
                         sendJob = null
                         inFlightKind = null
-                        terminal != null || outgoing.isNotEmpty() || window.size > 0
+                        !waitingForCapacity && channel.maintenance?.active != true &&
+                            (terminal != null || outgoing.isNotEmpty() || window.size > 0)
                     }
-                    reflectControlPending()
-                    if (pending && !waitingForCapacity && channel.maintenance?.active != true) scope.launch { pump() }
                 }
+                syncPresentation()
+                if (pending) sendScope.launch { pump() }
             }
         }
-        sendJob = work
+        synchronized(lock) {
+            if (token == generation && sending) sendJob = work
+        }
         work.start()
     }
 
-    private fun retainControlOrDropAudio(message: PhoneAudioMessage, request: PhoneAudioRequest?) {
-        synchronized(lock) {
-            when (message.kind) {
-                4L -> terminal = message
-                3L -> if (current === request && request != null) {
-                    request.droppedPackets += 1
-                    droppedPackets = request.droppedPackets
-                }
-                else -> {
-                    if (outgoing.size == 8) outgoing.removeLast()
-                    outgoing.addFirst(message)
-                }
+    private fun retainControlOrDropAudioLocked(message: PhoneAudioMessage, request: PhoneAudioRequest?) {
+        when (message.kind) {
+            4L -> terminal = message
+            3L -> if (current === request && request != null) {
+                request.droppedPackets += 1
+            }
+            else -> {
+                if (outgoing.size == 8) outgoing.removeLast()
+                outgoing.addFirst(message)
             }
         }
-        reflectControlPending()
+    }
+
+    private fun syncPresentation() {
+        if (sameDispatcher) {
+            reflectControlPending()
+            val dropped = synchronized(lock) { current?.droppedPackets }
+            dropped?.let { droppedPackets = it }
+        } else {
+            scheduleUiSync()
+        }
+    }
+
+    private fun scheduleUiSync() {
+        synchronized(lock) {
+            if (uiSyncScheduled) return
+            uiSyncScheduled = true
+        }
+        scope.launch {
+            val dropped = synchronized(lock) {
+                uiSyncScheduled = false
+                current?.droppedPackets
+            }
+            reflectControlPending()
+            dropped?.let { droppedPackets = it }
+        }
     }
 
     private fun reflectControlPending() {
-        controlPending = terminal != null || outgoing.isNotEmpty() ||
-            (inFlightKind != null && inFlightKind != 3L)
+        controlPending = synchronized(lock) {
+            terminal != null || outgoing.isNotEmpty() || (inFlightKind != null && inFlightKind != 3L)
+        }
     }
 
     private fun reportDiagnostics(request: PhoneAudioRequest, terminal: Boolean = false) {

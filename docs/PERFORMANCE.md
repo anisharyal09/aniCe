@@ -161,13 +161,7 @@ and existing delayed-path qualification remain authoritative.
 
 ## Phone Audio sender and receiver
 
-Android playback capture reads 960-frame PCM16 packets on an audio-priority
-service thread and offers them to a three-packet unsent window plus at most one
-submission. Coalesced presentation wake-ups and the send loop currently share
-`Dispatchers.Main.immediate`, so UI-thread delay can replace queued packets; the
-capture worker itself never blocks on LAN. Mac admits newest-audio packets and
-keeps the newest 60 ms after a receiver stall, bounded by callback capacity.
-Neither path persists PCM.
+Android playback capture reads 960-frame PCM16 packets on a dedicated `THREAD_PRIORITY_AUDIO` capture worker (`PrivateListeningAudioWorker`) and offers them to a three-packet unsent window plus at most one in-flight send. `PhoneAudioController` wakes its serialized off-Main `Dispatchers.IO.limitedParallelism(1)` send queue directly from the capture worker so UI rendering and Recents transitions do not block encoding, encryption or socket submission. On the Mac, `MacPhoneAudioOutput` tracks buffer completion synchronously with `OSAllocatedUnfairLock`, primes a bounded prefill cushion before starting playback and applies a 5 ms boundary fade on startup and recovery while staying within the 6-packet (120 ms) output ceiling. Neither path persists PCM.
 
 The preview's opt-in counters separate capture read time, capture interval,
 main-thread presentation wait, queue age at dequeue, encoding and submission on

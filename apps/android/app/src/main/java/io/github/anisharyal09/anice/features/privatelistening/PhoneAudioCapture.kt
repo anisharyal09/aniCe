@@ -52,6 +52,7 @@ internal class PhoneAudioCapture(
     private val main = Handler(Looper.getMainLooper())
     private var cause: PhoneAudioStopCause? = null
     private var record: AudioRecord? = null
+    private var capturing = false
     private val callback = object : MediaProjection.Callback() {
         override fun onStop() {
             finish(PhoneAudioStopCause.REVOKED)
@@ -108,7 +109,12 @@ internal class PhoneAudioCapture(
 
     /** Owned capture worker. Stop/close unblocks reads and is reported as a normal end, not a crash. */
     fun run(emit: (Long, ByteArray) -> Unit): PhoneAudioCaptureResult {
-        val native = synchronized(this) { checkNotNull(record) { "Capture is not prepared" } }
+        val native = synchronized(this) {
+            check(!stopped.get()) { "Capture is already stopped" }
+            val active = checkNotNull(record) { "Capture is not prepared" }
+            capturing = true
+            active
+        }
         val scratch = ByteArray(PrivateListeningMessage.PCM_BYTES)
         val packetizer = PhoneAudioPacketizer()
         var packets = 0L
@@ -149,6 +155,9 @@ internal class PhoneAudioCapture(
                             readErrors++
                             break
                         }
+                        try { Thread.sleep(5) }
+                        catch (_: InterruptedException) { break }
+                        if (stopped.get()) break
                     }
                     PhoneAudioReadDecision.FAIL -> {
                         readErrors++
@@ -159,11 +168,14 @@ internal class PhoneAudioCapture(
         } finally {
             scratch.fill(0)
             packetizer.discardPartial()
-            finish(if (readErrors > 0 && synchronizeCause() == null) {
-                PhoneAudioStopCause.FAILURE
-            } else {
-                PhoneAudioStopCause.LOCAL
-            })
+            synchronized(this) {
+                capturing = false
+                finishLocked(if (readErrors > 0 && cause == null) {
+                    PhoneAudioStopCause.FAILURE
+                } else {
+                    PhoneAudioStopCause.LOCAL
+                })
+            }
         }
         return PhoneAudioCaptureResult(packets, emissionFailures, readErrors,
             packetizer.discardedPartialBytes, synchronizeCause() ?: PhoneAudioStopCause.LOCAL)
@@ -188,15 +200,18 @@ internal class PhoneAudioCapture(
     }
 
     private fun releaseLocked() {
-        val native = record
-        record = null
         try {
-            try {
-                native?.stop()
-            } finally {
-                native?.release()
-            }
+            record?.stop()
         } catch (_: Exception) {
+        }
+        // Defer native release until an active READ_BLOCKING call has unwound in run()'s finally block.
+        if (!capturing) {
+            val native = record
+            record = null
+            try {
+                native?.release()
+            } catch (_: Exception) {
+            }
         }
         try {
             projection.unregisterCallback(callback)

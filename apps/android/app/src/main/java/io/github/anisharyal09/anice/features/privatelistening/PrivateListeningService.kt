@@ -90,6 +90,7 @@ class PrivateListeningService : Service() {
         if (request === ticket) return START_NOT_STICKY
         if (request != null) return START_NOT_STICKY
         request = ticket
+        var attached = false
         try {
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(NotificationChannel(CHANNEL,
@@ -120,9 +121,15 @@ class PrivateListeningService : Service() {
                 override fun close() = output.close()
             }
             if (!controller.serviceAttached(ticket, this, binding)) {
+                request = null
+                player = null
+                audioWorker = null
+                output.close()
+                worker.close()
                 stopSelfResult(startId)
                 return START_NOT_STICKY
             }
+            attached = true
             focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(PrivateListeningPlayer.ATTRIBUTES)
                 .setAcceptsDelayedFocusGain(false).setWillPauseWhenDucked(true)
@@ -146,6 +153,7 @@ class PrivateListeningService : Service() {
                 }, handler).build()
             if (audio.requestAudioFocus(requireNotNull(focus)) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
                 controller.failed(ticket, 5, "Phone audio focus was denied.")
+                stopSelfResult(startId)
                 return START_NOT_STICKY
             }
             focusGranted = true
@@ -172,8 +180,8 @@ class PrivateListeningService : Service() {
             job = scope.launch {
                 try {
                     withTimeout(4000) {
-                        withContext(worker.dispatcher) { output.prepare() }
                         while (!app.listeningTransferReady()) delay(20)
+                        withContext(worker.dispatcher) { output.prepare() }
                     }
                     if (request !== ticket || controller.request(id, instance) !== ticket) return@launch
                     if (!focusGranted || ticket.focusPaused) {
@@ -196,13 +204,25 @@ class PrivateListeningService : Service() {
                 }
             }
         } catch (_: SecurityException) {
-            controller.failed(ticket, 4, "Phone audio service was not authorized.")
+            failStart(ticket, startId, attached, 4, "Phone audio service was not authorized.")
         } catch (_: IllegalStateException) {
-            controller.failed(ticket, 8, "Phone audio service could not start.")
+            failStart(ticket, startId, attached, 8, "Phone audio service could not start.")
         } catch (_: IllegalArgumentException) {
-            controller.failed(ticket, 8, "Phone audio setup was rejected.")
+            failStart(ticket, startId, attached, 8, "Phone audio setup was rejected.")
         }
         return START_NOT_STICKY
+    }
+
+    private fun failStart(ticket: PrivateListeningRequest, startId: Int, attached: Boolean, result: Long, message: String) {
+        if (!attached && request === ticket) {
+            request = null
+            try { player?.close() } catch (_: Exception) {}
+            player = null
+            audioWorker?.close()
+            audioWorker = null
+        }
+        controller.failed(ticket, result, message)
+        stopSelfResult(startId)
     }
 
     private fun rejectStart(startId: Int): Int {

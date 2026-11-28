@@ -63,6 +63,7 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
   private var terminal: PrivateListeningMessage?
   private var audio = [PrivateListeningCapturedPacket]()
   private var generation = 0
+  private var waitingForCapacity = false
   private var sleepObserver: NSObjectProtocol?
   private(set) var receivingEnabled = false
   private(set) var hasCapability = false
@@ -74,6 +75,7 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
   var pacingChanged: (Bool) -> Void = { _ in }
   var transferReady: () -> Bool = { true }
   var transferHealth: (Bool, Int64, Int64) -> Void = { _, _, _ in }
+  var onLanRequired: () -> Bool = { false }
 
   init(capture: any PrivateListeningCapturing = MacAudioTapEngine(),
     preferences: UserDefaults? = .standard,
@@ -104,6 +106,7 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
   }
 
   func prepareCapture() {
+    if channel == nil { _ = onLanRequired() }
     guard canPrepare else { return }
     generation += 1
     let token = generation
@@ -131,6 +134,7 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
   }
 
   func start() {
+    if channel == nil { _ = onLanRequired() }
     guard canStart, let channel else { return }
     generation += 1
     let token = generation
@@ -142,13 +146,21 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
       let deadline = now() + 10000
       do {
         while !transferReady() {
+          guard token == generation else { return }
+          if self.channel?.descriptor != channel.descriptor || !receivingEnabled || reverseBusy {
+            cancelTransferWait(channelChanged: self.channel?.descriptor != channel.descriptor)
+            return
+          }
           guard now() < deadline else { throw SessionFailure.expired }
           try await Task.sleep(for: .milliseconds(50))
-          guard token == generation, self.channel?.descriptor == channel.descriptor else { return }
+          guard token == generation else { return }
         }
         try Task.checkCancellation()
-        guard token == generation, self.channel?.descriptor == channel.descriptor,
-          receivingEnabled, !reverseBusy else { return }
+        guard token == generation else { return }
+        guard self.channel?.descriptor == channel.descriptor, receivingEnabled, !reverseBusy else {
+          cancelTransferWait(channelChanged: self.channel?.descriptor != channel.descriptor)
+          return
+        }
         let current = Operation(channel.descriptor, now: now(),
           maintenance: channel.maintenance?.elapsedMillis ?? 0)
         operation = current
@@ -159,6 +171,21 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
       } catch {
         if token == generation { stop(reason: 7, message: "Preparation timed out or was cancelled.") }
       }
+    }
+  }
+
+  private func cancelTransferWait(channelChanged: Bool) {
+    preparation = nil
+    state = 0
+    pacingChanged(false)
+    if channelChanged {
+      status = "Connect LAN and enable receiving on your phone."
+    } else if reverseBusy {
+      status = capturePrepared ? "Capture prepared. Start listening when your phone is ready." :
+        "Phone audio is active."
+    } else {
+      status = capturePrepared ? "Capture prepared. Start listening when your phone is ready." :
+        "Connect LAN and enable receiving on your phone."
     }
   }
 
@@ -186,6 +213,7 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
     self.channel = channel
     receivingEnabled = false
     hasCapability = false
+    waitingForCapacity = false
   }
 
   func retired(_ descriptor: ChannelDescriptor) {
@@ -194,12 +222,14 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
     channel = nil
     receivingEnabled = false
     hasCapability = false
+    waitingForCapacity = false
     outgoing.removeAll()
     terminal = nil
   }
 
   func capacityAvailable(_ descriptor: ChannelDescriptor) {
     guard channel?.descriptor == descriptor else { return }
+    waitingForCapacity = false
     reflectMaintenance()
     pump()
   }
@@ -361,6 +391,7 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
       outgoing.removeAll { $0.kind == 5 }
       current.maintenanceTotal = total
       current.maintenanceActive = maintenance
+      if !maintenance { waitingForCapacity = false }
     }
     if current.ready {
       state = maintenance ? 4 : current.receiverState == 3 ? 3 : current.receiverState == 5 ? 5 : 2
@@ -460,7 +491,7 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
   }
 
   private func pump() {
-    guard sendTask == nil, let channel, channel.maintenance?.active != true,
+    guard sendTask == nil, !waitingForCapacity, let channel, channel.maintenance?.active != true,
       terminal != nil || !outgoing.isEmpty || !audio.isEmpty else { return }
     let token = generation
     sendTask = Task { [weak self] in
@@ -482,6 +513,7 @@ extension MacAudioTapEngine: PrivateListeningCapturing {}
           if message.kind == 3 { operation?.lastSequence = message.number(1) }
         } catch is SessionBackpressure {
           if token == generation {
+            waitingForCapacity = true
             if message.kind == 4 { terminal = message }
             else if message.kind != 3 {
               if outgoing.count == 8 { outgoing.removeLast() }

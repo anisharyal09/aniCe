@@ -135,6 +135,8 @@ struct AniCeApp: App {
     privateListening.transferHealth = { [weak transfer] healthy, sequence, underruns in
       transfer?.reportListeningHealth(healthy, sequence: sequence, underruns: underruns)
     }
+    privateListening.onLanRequired = { [weak lan] in lan?.requestAutomaticConnection() ?? false }
+    phoneAudio.onLanRequired = { [weak lan] in lan?.requestAutomaticConnection() ?? false }
     clipboard.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
     transfer.onLanRequired = { [weak lan] in lan?.requestAutomaticConnection() ?? false }
     transfer.onDemandLanConnection = { [weak lan] in lan?.requestTransferConnection() ?? false }

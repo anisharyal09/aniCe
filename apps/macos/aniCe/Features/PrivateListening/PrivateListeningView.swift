@@ -6,12 +6,18 @@ import SwiftUI
 struct PrivateListeningView: View {
   let model: MacPrivateListeningModel
   let phoneAudio: MacPhoneAudioModel
+  var lan: MacLanSessionModel? = nil
+  var peers: [PeerTrustRecord] = []
   @AppStorage("ui.fontScale") private var fontScale = 1.0
   @Environment(\.colorScheme) private var colorScheme
   private func text(_ key: String) -> String { NSLocalizedString(key, tableName: "PrivateListening", comment: "") }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
+      if let lan, model.peer == nil && phoneAudio.peer == nil {
+        lanConnectionSection(lan)
+        Divider()
+      }
       if phoneAudio.busy {
         phoneAudioSection
         Divider()
@@ -25,6 +31,42 @@ struct PrivateListeningView: View {
     .font(.system(size: 13 * fontScale))
     .foregroundStyle(AniCePalette.primaryText(colorScheme))
     .frame(maxWidth: .infinity, alignment: .leading)
+    .onAppear {
+      if model.peer == nil && phoneAudio.peer == nil {
+        _ = lan?.requestAutomaticConnection()
+      }
+    }
+  }
+
+  private func lanConnectionSection(_ lan: MacLanSessionModel) -> some View {
+    let connecting = lan.state == "Connecting" || lan.allowing
+    return VStack(alignment: .leading, spacing: 8) {
+      Text(text("listening_lan_title")).font(.system(size: 14 * fontScale, weight: .medium))
+      Text(text(connecting ? "listening_lan_status_connecting" :
+        lan.automatic ? "listening_lan_status_auto_on" : "listening_lan_status_auto_off"))
+        .font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        .fixedSize(horizontal: false, vertical: true)
+      Toggle(text("listening_lan_auto"), isOn: Binding(
+        get: { lan.automatic },
+        set: { enabled in
+          lan.setAutomatic(enabled)
+          if enabled { _ = lan.requestAutomaticConnection() }
+        }))
+        .toggleStyle(.checkbox).aniCeControlFeedback()
+        .fixedSize(horizontal: false, vertical: true)
+      Text(text("listening_lan_auto_help"))
+        .font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        .fixedSize(horizontal: false, vertical: true)
+      Button(text(connecting ? "listening_lan_connecting" : "listening_lan_connect")) {
+        if !lan.isConnectionPaused(), !lan.requestAutomaticConnection() {
+          let phones = peers.filter { $0.active && $0.peer.platform == "android" }
+          let target = lan.selectedPeer ?? (phones.count == 1 ? phones[0].peer : nil)
+          lan.connectAlongside(target)
+        }
+      }
+      .buttonStyle(AniCeButtonStyle(compact: true))
+      .disabled(connecting || lan.isConnectionPaused())
+    }
   }
 
   private var macAudioSection: some View {

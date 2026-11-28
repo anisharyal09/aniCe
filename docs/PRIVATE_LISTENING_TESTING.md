@@ -200,10 +200,7 @@ own notes for foreground, Recents, Home and screen-off.
 These are local observations, not a diagnosis. Phone and Mac clocks are not
 synchronized, so arrival intervals cannot be subtracted from capture intervals.
 Submission completion is not authenticated remote delivery, and Mac empty-queue
-transitions and resyncs are not directly measured audible gaps. Capture can be
-starved by platform scheduling, the sender can be delayed by main-thread work, and
-the output can underrun on its own; only the combination plus a listening report
-identifies the bottleneck. Diagnostics themselves can perturb scheduling, and
+transitions and resyncs are not directly measured audible gaps. Reverse capture/output scheduling improvements (`THREAD_PRIORITY_AUDIO` capture worker, off-Main `Dispatchers.IO.limitedParallelism(1)` send queue, synchronous Mac buffer completion accounting, 3-packet prefill cushion and 5 ms boundary ramps) keep the existing counters intact and still require physical listening checks for acceptance. Diagnostics themselves can perturb scheduling, and
 these counters never establish acceptance or measured source-to-ear delay.
 
 ## Non-playback device regressions

@@ -206,6 +206,7 @@ class AniCeApplication : Application() {
             listening.reverseActive = {
                 phoneAudioOwner.isInitialized() && phoneAudioOwner.value.busy
             }
+            listening.onLanRequired = { lanSessionController.requestAutomaticConnection() }
         }
     }
     private val listeningWorkLeases = java.util.IdentityHashMap<Any, AutoCloseable>()
@@ -226,6 +227,7 @@ class AniCeApplication : Application() {
             reverse.forwardActive = {
                 listeningOwner.isInitialized() && listeningOwner.value.busy
             }
+            reverse.onLanRequired = { lanSessionController.requestAutomaticConnection() }
             reverse.startService = { request, authorization ->
                 val projection = authorization.consume() as? android.content.Intent
                     ?: throw SecurityException("Projection grant was already consumed")

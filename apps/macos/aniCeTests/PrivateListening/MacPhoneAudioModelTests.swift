@@ -394,6 +394,58 @@ private actor PhoneModelOutput: PhoneAudioOutput {
     XCTAssertEqual(late, DataHandling.discarded)
   }
 
+  func testOfflineSetReceivingTriggersLanRequiredAndBackpressuredStopWaitsForCapacity() async throws {
+    let clock = PhoneModelClock()
+    let offline = MacPhoneAudioModel(receiver: PhoneAudioReceiver(output: PhoneModelOutput()),
+      now: { clock.time }, automaticTicks: false)
+    defer { offline.shutdown() }
+    var lanRequests = 0
+    offline.onLanRequired = { lanRequests += 1; return false }
+    offline.setReceiving(true)
+    XCTAssertEqual(lanRequests, 1)
+
+    let (model, _, channel) = try await harness()
+    defer { model.shutdown() }
+    model.setReceiving(true)
+    channel.backpressured = true
+    _ = await model.handle(try start().encode(), on: channel.descriptor)
+    try await settle { channel.attempts >= 1 }
+    let attemptsAtBackpressure = channel.attempts
+    for _ in 0..<10 { model.tick() }
+    XCTAssertEqual(channel.attempts, attemptsAtBackpressure)
+
+    channel.backpressured = false
+    model.capacityAvailable(channel.descriptor)
+    try await settle { channel.sent.contains { $0.kind == 2 && $0.fields[1] == .integer(0) } }
+  }
+
+  func testPlaybackCounterTracksSynchronousCompletionsAndEpochResets() {
+    let counter = PhoneAudioPlaybackCounter()
+    let epoch = counter.enqueue(recordDiagnostics: true)
+    _ = counter.enqueue(recordDiagnostics: true)
+    XCTAssertEqual(counter.pending, 2)
+    counter.complete(epoch: epoch, scheduledAt: 100)
+    XCTAssertEqual(counter.pending, 1)
+    XCTAssertFalse(counter.consumeUnderrun().underrun)
+    counter.complete(epoch: epoch, scheduledAt: 200)
+    XCTAssertEqual(counter.pending, 0)
+    let underrun = counter.consumeUnderrun()
+    XCTAssertTrue(underrun.underrun)
+    XCTAssertEqual(underrun.pending, 0)
+    XCTAssertFalse(counter.consumeUnderrun().underrun)
+    _ = counter.enqueue(recordDiagnostics: true)
+    let nextEpoch = counter.resetQueue()
+    XCTAssertEqual(counter.pending, 0)
+    counter.complete(epoch: epoch, scheduledAt: 300) // Stale completion from old epoch is ignored.
+    XCTAssertEqual(counter.pending, 0)
+    _ = counter.enqueue(recordDiagnostics: true)
+    counter.complete(epoch: nextEpoch, scheduledAt: 400)
+    let snapshot = counter.snapshot(diagnosticsEnabled: true, unavailableDrops: 0, resyncs: 1)
+    XCTAssertEqual(snapshot.resyncs, 1)
+    XCTAssertEqual(snapshot.emptyPendingTransitions, 2)
+    XCTAssertEqual(snapshot.playedBackCallbacks, 3)
+  }
+
   private func harness(preferences: UserDefaults? = nil, local: String = "local-identity",
     peer replacement: DeviceIdentity? = nil) async throws -> (MacPhoneAudioModel, PhoneModelOutput, PhoneModelChannel) {
     let helper = SessionFixtures()
