@@ -265,6 +265,13 @@ enum ClipboardTypingValidationError: Error, Equatable {
   var reverseVerticalPointer = false {
     didSet { preferences.set(reverseVerticalPointer, forKey: "keyboardTrackpad.reverseVerticalPointer") }
   }
+  var combinedInput = true {
+    didSet {
+      guard combinedInput != oldValue else { return }
+      stopControlling()
+      preferences.set(combinedInput, forKey: "keyboardTrackpad.combinedInput")
+    }
+  }
   var pointerSpeed: KeyboardTrackpadSpeed = .standard {
     didSet { preferences.set(pointerSpeed.rawValue, forKey: "keyboardTrackpad.pointerSpeed") }
   }
@@ -291,6 +298,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
   private var outputQueue: [Output] = []
   private enum ScrollAxis { case undecided, horizontal, vertical }
   private var scrollAxis: ScrollAxis?
+  private var verticalMomentumAllowed = false
   private var scrollX = 0.0
   private var scrollY = 0.0
   private var scrollDragging = false
@@ -303,6 +311,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
     self.transport = transport
     self.preferences = preferences
     self.lifecycleCenter = lifecycleCenter
+    combinedInput = preferences.object(forKey: "keyboardTrackpad.combinedInput") as? Bool ?? true
     associations = KeyboardTrackpadAssociations(storage: preferences)
     if let raw = preferences.string(forKey: "keyboardTrackpad.scrollSpeed"),
        let stored = KeyboardTrackpadSpeed(rawValue: raw) {
@@ -632,7 +641,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
   }
 
   func keyDown(usage: UInt8, modifiers: UInt8, owner: KeyboardTrackpadCaptureOwner? = nil) {
-    guard phase == .controlling, activeSurface == .keyboard, owner == nil || activeOwner == owner,
+    guard phase == .controlling, activeSurface == .keyboard || combinedInput && activeSurface == .pad, owner == nil || activeOwner == owner,
           usage > 0, typingJob == nil else { return }
     heldModifiers = modifiers
     if heldUsages.contains(usage) { return }
@@ -645,7 +654,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
   }
 
   func keyUp(usage: UInt8, modifiers: UInt8, owner: KeyboardTrackpadCaptureOwner? = nil) {
-    guard phase == .controlling, activeSurface == .keyboard, owner == nil || activeOwner == owner,
+    guard phase == .controlling, activeSurface == .keyboard || combinedInput && activeSurface == .pad, owner == nil || activeOwner == owner,
           typingJob == nil else { return }
     heldModifiers = modifiers
     heldUsages.removeAll { $0 == usage }
@@ -653,7 +662,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
   }
 
   func modifiersChanged(_ modifiers: UInt8, owner: KeyboardTrackpadCaptureOwner? = nil) {
-    guard phase == .controlling, activeSurface == .keyboard, owner == nil || activeOwner == owner,
+    guard phase == .controlling, activeSurface == .keyboard || combinedInput && activeSurface == .pad, owner == nil || activeOwner == owner,
           typingJob == nil,
           heldModifiers != modifiers else { return }
     heldModifiers = modifiers
@@ -663,6 +672,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
   func pointerButtonDown(secondary: Bool = false, owner: KeyboardTrackpadCaptureOwner? = nil) {
     guard phase == .controlling, activeSurface == .pad, owner == nil || activeOwner == owner,
           typingJob == nil else { return }
+    verticalMomentumAllowed = false
     heldButtons = secondary ? 2 : 1
     enqueue(.mouse(heldButtons, 0, 0, 0))
   }
@@ -693,7 +703,12 @@ enum ClipboardTypingValidationError: Error, Equatable {
     owner: KeyboardTrackpadCaptureOwner? = nil) {
     guard isControlling, activeSurface == .pad, owner == nil || activeOwner == owner,
           deltaX.isFinite, deltaY.isFinite, heldButtons == 0 || scrollDragging else { return }
-    if momentum { cancelScrollGesture(owner: owner); return }
+    if momentum {
+      if verticalMomentumAllowed && heldButtons == 0 {
+        scroll(deltaY: deltaY, precise: precise, owner: owner)
+      } else { cancelScrollGesture(owner: owner) }
+      return
+    }
     if phase.contains(.cancelled) { cancelScrollGesture(owner: owner); return }
     if phase.isEmpty {
       if scrollAxis == nil { scroll(deltaY: deltaY, precise: precise, owner: owner) }
@@ -711,6 +726,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
       x = scrollX; y = scrollY
     }
     if scrollAxis == .vertical {
+      verticalMomentumAllowed = true
       scroll(deltaY: y, precise: precise, owner: owner)
     } else if scrollAxis == .horizontal {
       if !scrollDragging, abs(scrollX) >= 12 {
@@ -720,7 +736,11 @@ enum ClipboardTypingValidationError: Error, Equatable {
       }
       if scrollDragging { pointerMoved(deltaX: x, deltaY: 0, owner: owner) }
     }
-    if phase.contains(.ended) { cancelScrollGesture(owner: owner) }
+    if phase.contains(.ended) {
+      let allowMomentum = scrollAxis == .vertical
+      cancelScrollGesture(owner: owner)
+      verticalMomentumAllowed = allowMomentum
+    }
   }
 
   func cancelScrollGesture(owner: KeyboardTrackpadCaptureOwner? = nil) {
@@ -728,6 +748,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
     if scrollDragging { pointerButtonUp(owner: owner) }
     scrollDragging = false
     scrollAxis = nil
+    verticalMomentumAllowed = false
     scrollX = 0; scrollY = 0
   }
 
@@ -975,7 +996,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
     let needsKeyboardRelease = endedSurface == .keyboard || !heldUsages.isEmpty || heldModifiers != 0 || typeKeyDown
     let needsMouseRelease = endedSurface == .pad || heldButtons != 0
     heldUsages.removeAll(keepingCapacity: true)
-    scrollDragging = false; scrollAxis = nil; scrollX = 0; scrollY = 0
+    scrollDragging = false; scrollAxis = nil; scrollX = 0; scrollY = 0; verticalMomentumAllowed = false
     heldModifiers = 0
     heldButtons = 0
     outputQueue.removeAll { !$0.release }
@@ -1287,7 +1308,7 @@ enum ClipboardTypingValidationError: Error, Equatable {
     activeOwner = nil
     pendingOwner = nil
     heldUsages.removeAll(); heldModifiers = 0; heldButtons = 0; typeKeyDown = false
-    scrollDragging = false; scrollAxis = nil; scrollX = 0; scrollY = 0
+    scrollDragging = false; scrollAxis = nil; scrollX = 0; scrollY = 0; verticalMomentumAllowed = false
   }
 
   private func transportChanged(_ event: KeyboardTrackpadTransportEvent) {

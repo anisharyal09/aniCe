@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -94,6 +96,7 @@ fun PhoneInputView(
     var fullTrackpad by remember { mutableStateOf(false) }
     var openKeyboardAfterStart by remember { mutableStateOf(false) }
     var previouslyActive by remember { mutableStateOf(false) }
+    var hasEditorText by remember { mutableStateOf(false) }
 
     val connectedPeer = session.selected?.takeIf {
         session.state == ConnectionState.SECURED && it.platform == "macos" && owner.connected(it)
@@ -101,6 +104,23 @@ fun PhoneInputView(
     val pairedMac = connectedPeer ?: session.selected?.takeIf { it.platform == "macos" }
         ?: peers.firstOrNull { it.peer.platform == "macos" }?.peer
     val compatible = connectedPeer?.let(owner::compatible) == true
+
+    fun setEditorTextSilently(field: PhoneInputEditor, value: String, selectionEnd: Boolean = true) {
+        val callback = field.onRawTextChanged
+        field.onRawTextChanged = null
+        field.setText(value)
+        field.setSelection(if (selectionEnd) field.text.length else 0)
+        field.onRawTextChanged = callback
+    }
+
+    fun clearTypedBuffer() {
+        listOfNotNull(editor, fullScreenEditor).distinct().forEach { field ->
+            field.resetForwardedKeys()
+            setEditorTextSilently(field, "", selectionEnd = false)
+        }
+        hasEditorText = false
+        textSync.reset()
+    }
 
     fun clearEditor() {
         listOfNotNull(editor, fullScreenEditor).distinct().forEach { field ->
@@ -111,20 +131,14 @@ fun PhoneInputView(
             field.text.clear()
             field.clearFocus()
         }
+        hasEditorText = false
         textSync.reset()
     }
 
     LaunchedEffect(owner.state, connectedPeer?.deviceId, connectedPeer?.fingerprint) {
         if (owner.active && connectedPeer != null) {
             localStatus = ""
-            textSync.reset()
-            listOfNotNull(editor, fullScreenEditor).distinct().forEach { field ->
-                val rawTextCallback = field.onRawTextChanged
-                field.onRawTextChanged = null
-                field.setText("")
-                field.setSelection(field.text.length)
-                field.onRawTextChanged = rawTextCallback
-            }
+            clearTypedBuffer()
             (if (fullTrackpad) fullScreenEditor else editor)?.let { field ->
                 if (openKeyboardAfterStart) {
                     openKeyboardAfterStart = false
@@ -184,14 +198,11 @@ fun PhoneInputView(
     }
 
     fun syncEditorText(source: PhoneInputEditor, value: String) {
+        hasEditorText = value.isNotEmpty()
         // Mirror text while leaving IME composition metadata with the focused editor.
         val target = if (source === editor) fullScreenEditor else editor
         if (target == null || target.text.toString() == value) return
-        val callback = target.onRawTextChanged
-        target.onRawTextChanged = null
-        target.setText(value)
-        target.setSelection(target.text.length)
-        target.onRawTextChanged = callback
+        setEditorTextSilently(target, value)
     }
 
     fun handleEditorSnapshot(snapshot: String) {
@@ -296,6 +307,19 @@ fun PhoneInputView(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        if (connectedPeer != null && owner.macInputSetupNeeded && !owner.active) {
+            Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Allow control on your Mac", style = MaterialTheme.typography.titleSmall)
+                    Text("On the Mac: aniCe → Settings → Permissions → Request Events access. Allow this aniCe copy in macOS Privacy & Security, then return and tap Start control.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Already allowed? Restart aniCe on the Mac once. If still blocked, use Show this app in Finder in Mac Permissions and re-add that copy.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
         val visibleStatus = localStatus.ifEmpty { owner.status }
         if (visibleStatus.isNotBlank()) {
             Text(visibleStatus, style = MaterialTheme.typography.bodySmall,
@@ -319,7 +343,21 @@ fun PhoneInputView(
             color = MaterialTheme.colorScheme.surfaceContainerLow,
         ) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Type on Mac", style = MaterialTheme.typography.titleSmall)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Type on Mac", style = MaterialTheme.typography.titleSmall)
+                    TextButton(
+                        onClick = ::clearTypedBuffer,
+                        enabled = owner.active && hasEditorText,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.heightIn(min = 32.dp),
+                    ) {
+                        Text("Clear", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
                 AutomaticConnectionToggle(
                     checked = liveTyping,
                     enabled = true,
@@ -360,7 +398,7 @@ fun PhoneInputView(
         onDismissRequest = { keyboard?.hide(); fullTrackpad = false },
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Surface(Modifier.fillMaxSize()) {
+        Surface(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             PhoneInputTrackpad(
                 owner = owner,
                 enabled = owner.active && connectedPeer?.let(owner::supportsPointer) == true,
@@ -378,28 +416,42 @@ fun PhoneInputView(
                                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp)),
                             contentAlignment = Alignment.CenterStart,
                         ) {
-                            AndroidView(
-                                modifier = Modifier.fillMaxSize().semantics {
-                                    contentDescription = "Tap to type on the connected Mac"
-                                },
-                                factory = { viewContext ->
-                                    PhoneInputEditor(viewContext).apply {
-                                        editor?.let { setText(it.text) }
-                                        configurePhoneEditor(this, "Type here on Mac")
-                                        fullScreenEditor = this
-                                        onFocusChangeListener = android.view.View.OnFocusChangeListener { view, focused ->
-                                            if (focused) view.post {
-                                                (context.getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager)
-                                                    ?.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)
+                            Row(
+                                Modifier.fillMaxSize(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                AndroidView(
+                                    modifier = Modifier.weight(1f).fillMaxSize().semantics {
+                                        contentDescription = "Tap to type on the connected Mac"
+                                    },
+                                    factory = { viewContext ->
+                                        PhoneInputEditor(viewContext).apply {
+                                            editor?.let { setText(it.text) }
+                                            configurePhoneEditor(this, "Type here on Mac")
+                                            fullScreenEditor = this
+                                            onFocusChangeListener = android.view.View.OnFocusChangeListener { view, focused ->
+                                                if (focused) view.post {
+                                                    (context.getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager)
+                                                        ?.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)
+                                                }
                                             }
                                         }
+                                    },
+                                    update = { field ->
+                                        fullScreenEditor = field
+                                        configurePhoneEditor(field, "Type here on Mac")
+                                    },
+                                )
+                                if (owner.active && hasEditorText) {
+                                    TextButton(
+                                        onClick = ::clearTypedBuffer,
+                                        contentPadding = PaddingValues(horizontal = 8.dp),
+                                        modifier = Modifier.heightIn(min = 40.dp),
+                                    ) {
+                                        Text("Clear", style = MaterialTheme.typography.labelMedium)
                                     }
-                                },
-                                update = { field ->
-                                    fullScreenEditor = field
-                                    configurePhoneEditor(field, "Type here on Mac")
-                                },
-                            )
+                                }
+                            }
                             if (!owner.active) {
                                 Surface(
                                     modifier = Modifier.fillMaxSize().clickable(

@@ -3,27 +3,41 @@
 import AppKit
 import SwiftUI
 
+// Layout anchors let hosted tests locate the inline controls without relying on screenshot OCR.
+enum SmsNotificationElement: Hashable {
+  case gear, notifications, sound, connectionDetails, connectionStatus(String)
+}
+
+struct SmsNotificationBounds: PreferenceKey {
+  static var defaultValue: [SmsNotificationElement: Anchor<CGRect>] { [:] }
+
+  static func reduce(value: inout [SmsNotificationElement: Anchor<CGRect>],
+    nextValue: () -> [SmsNotificationElement: Anchor<CGRect>]) {
+    value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+  }
+}
+
 /** The per-phone delivery controls, shared by the Settings section and the Messages panel's own popover. */
 struct SmsNotificationControls: View {
   let preferences: SmsPreferences
   let peer: DeviceIdentity
-  var controlSize: ControlSize = .small
-  @Environment(\.colorScheme) private var scheme
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       Toggle("Notifications", isOn: Binding(get: { preferences.notifications(peer) },
         set: { preferences.setNotifications(peer, $0) }))
-        .aniCeControlFeedback(feedbackPadding: 3)
+        .anchorPreference(key: SmsNotificationBounds.self, value: .bounds) { [.notifications: $0] }
       Toggle("Play sound", isOn: Binding(get: { preferences.sound(peer) },
         set: { preferences.setSound(peer, $0) }))
-        .aniCeControlFeedback(feedbackPadding: 3)
         .disabled(!preferences.notifications(peer))
+        .anchorPreference(key: SmsNotificationBounds.self, value: .bounds) { [.sound: $0] }
       Toggle("Show message text in notifications", isOn: Binding(get: { preferences.preview(peer) },
         set: { preferences.set(peer, $0) }))
-        .aniCeControlFeedback(feedbackPadding: 3)
         .disabled(!preferences.notifications(peer))
     }
-    .toggleStyle(.checkbox).controlSize(controlSize).tint(AniCePalette.accent(scheme))
+    .font(.system(size: 11 * fontScale))
+    .controlSize(.mini)
+    .toggleStyle(AniCePreferenceToggleStyle())
   }
 }
 
@@ -43,11 +57,11 @@ struct SmsSettingsView: View {
         // One collapsed row per phone keeps the section short; the label still carries the state that matters.
         ForEach(peers) { record in
           DisclosureGroup {
-            SmsNotificationControls(preferences: preferences, peer: record.peer, controlSize: .regular)
+            SmsNotificationControls(preferences: preferences, peer: record.peer)
           } label: {
             VStack(alignment: .leading, spacing: 2) {
-              Text(record.peer.displayName)
-              Text(summary(record.peer)).font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(scheme))
+              Text(record.peer.displayName).font(.system(size: 13 * fontScale, weight: .medium))
+              Text(summary(record.peer)).font(.system(size: 11.5 * fontScale)).foregroundStyle(AniCePalette.secondaryText(scheme))
             }
           }
         }
@@ -74,9 +88,66 @@ struct SmsView: View {
   @State private var expanded: Set<String> = []
   @State private var submittedDraft: String?
   @State private var controlsOpen = false
+  @State private var simRecoveryContext: String?
+  @State private var olderAnchorId: String?
   @FocusState private var composerFocused: Bool
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.colorScheme) private var scheme
+
+  @ViewBuilder private var phonePicker: some View {
+    // The phone picker exists only when more than one phone can serve this panel.
+    if selectable.count > 1 {
+      Picker("Phone", selection: Binding(get: { peerKey }, set: { key in selectPhone(key) })) {
+        ForEach(selectable) { record in
+          Text(record.peer.displayName).tag(record.peer.deviceId + ":" + record.peer.fingerprint)
+        }
+      }.labelsHidden().frame(maxWidth: 260)
+    }
+  }
+
+  @ViewBuilder private func peerContent(peer: DeviceIdentity, width: CGFloat) -> some View {
+    if !model.supports(peer) {
+      Text(model.connected(peer) ? "Waiting for your phone" : "Connect aniCe on your phone first")
+        .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
+    }
+    if width >= 620 {
+      splitLayout(peer: peer, width: width)
+    } else if address.isEmpty {
+      ScrollView { threads(peer).padding(.bottom, 12) }.frame(maxHeight: .infinity)
+    } else {
+      conversation(peer).frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    Color.clear.frame(height: 0).task(id: peerKey + (model.supports(peer) ? "+ready" : "")) {
+      model.requestSims(peer)
+      if model.supports(peer), !address.isEmpty {
+        if model.messages(peer, address: address).isEmpty {
+          model.requestMessages(peer, address: address)
+        } else {
+          model.refreshMessages(peer, address: address)
+        }
+      }
+    }
+  }
+
+  private func splitLayout(peer: DeviceIdentity, width: CGFloat) -> some View {
+    let listWidth = min(280, max(220, width * 0.28))
+    return HStack(spacing: 0) {
+      ScrollView { threads(peer).padding(12) }
+        .frame(width: listWidth)
+      AniCePalette.separator(scheme).frame(width: 1)
+      if address.isEmpty {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Messages").font(.subheadline.weight(.medium))
+          Text("Choose a conversation to read and reply.")
+            .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
+        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+      } else {
+        conversation(peer, showBack: false).padding(12)
+      }
+    }
+    .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(AniCePalette.separator(scheme)))
+  }
 
   private var peer: DeviceIdentity? {
     peers.first { $0.peer.deviceId + ":" + $0.peer.fingerprint == peerKey }?.peer
@@ -84,57 +155,74 @@ struct SmsView: View {
   /// A picker only helps when more than one phone can serve the panel; a single connected phone is used directly.
   private var selectable: [PeerTrustRecord] {
     let connected = peers.filter { model.connected($0.peer) }
-    return connected.count > 1 ? connected : (connected.isEmpty ? peers : connected)
+    if connected.isEmpty { return peers }
+    return peers.filter {
+      model.connected($0.peer) || $0.peer.deviceId + ":" + $0.peer.fingerprint == model.notificationPhoneKey
+    }
   }
 
   var body: some View {
+    rosterLifecycle
+      .onChange(of: model.notificationNavigationRevision) { _, _ in
+        selectPhone(model.selectedPhoneKey)
+        address = peer.map { model.selectedConversation($0) } ?? ""
+        draft = peer.map { model.draft($0, address: address) } ?? ""
+        query = ""
+        submittedDraft = nil
+        simRecoveryContext = nil
+        if let peer, !address.isEmpty, model.messages(peer, address: address).isEmpty {
+          model.requestMessages(peer, address: address)
+        }
+      }
+      .onChange(of: peer.map { model.draft($0, address: address) } ?? "") { _, value in
+        draft = value
+      }
+  }
+
+  // Lifecycle modifiers stay grouped in small view expressions so older SwiftUI compilers can type-check them.
+  private var rosterLifecycle: some View {
+    messageContentLifecycle
+      .onChange(of: scenePhase) { _, phase in
+        if phase == .active { Task { await model.refreshNotificationSettings() } }
+      }
+      .onChange(of: peer.map { model.sending($0) } ?? false) { wasSending, isSending in
+        if wasSending && !isSending, let peer, model.status(peer) == "Sent",
+           draft == submittedDraft {
+          model.saveDraft("", peer: peer, address: address)
+          draft = ""
+        }
+        if !isSending { submittedDraft = nil }
+      }
+      .onChange(of: peers.map { $0.peer.deviceId + ":" + $0.peer.fingerprint }) { _, _ in
+        model.retainDrafts(for: peers.map(\.peer)); select()
+      }
+      .onChange(of: peers.map { model.connected($0.peer) }) { _, _ in select() }
+  }
+
+  private var messageContentLifecycle: some View {
+    messagesContent
+      .onAppear { model.retainDrafts(for: peers.map(\.peer)); select() }
+      .task { await model.refreshNotificationSettings() }
+      // Opening a conversation is an invitation to type; the draft is one Return away.
+      .onChange(of: address) { _, next in
+        simRecoveryContext = nil
+        olderAnchorId = nil
+        composerFocused = !next.isEmpty
+        if let peer { model.selectConversation(peer, address: next) }
+        if let peer, !next.isEmpty { draft = model.draft(peer, address: next) }
+        else { draft = "" }
+      }
+  }
+
+  private var messagesContent: some View {
     GeometryReader { geometry in
       VStack(alignment: .leading, spacing: 10) {
-        // The phone picker exists only when more than one phone can serve this panel.
-        if selectable.count > 1 {
-          Picker("Phone", selection: Binding(get: { peerKey }, set: { key in selectPhone(key) })) {
-            ForEach(selectable) { record in
-              Text(record.peer.displayName).tag(record.peer.deviceId + ":" + record.peer.fingerprint)
-            }
-          }.labelsHidden().frame(maxWidth: 260)
-        }
+        phonePicker
         if !model.notificationStatus.isEmpty {
           Text(model.notificationStatus).font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
         }
         if let peer {
-          if !model.supports(peer) {
-            Text(model.connected(peer) ? "Waiting for your phone" : "Connect aniCe on your phone first")
-              .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
-          }
-          if geometry.size.width >= 620 {
-            let listWidth = min(280, max(220, geometry.size.width * 0.28))
-            HStack(spacing: 0) {
-              ScrollView { threads(peer).padding(12) }
-                .frame(width: listWidth)
-              AniCePalette.separator(scheme).frame(width: 1)
-              if address.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                  Text("Messages").font(.subheadline.weight(.medium))
-                  Text("Choose a conversation to read and reply.")
-                    .font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
-                }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-              } else {
-                conversation(peer, showBack: false).padding(12)
-              }
-            }
-            .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(AniCePalette.separator(scheme)))
-          } else if address.isEmpty {
-            ScrollView { threads(peer).padding(.bottom, 12) }.frame(maxHeight: .infinity)
-          } else {
-            conversation(peer).frame(maxWidth: .infinity, maxHeight: .infinity)
-          }
-          Color.clear.frame(height: 0).task(id: peerKey + (model.supports(peer) ? "+ready" : "")) {
-            model.requestSims(peer)
-            if model.supports(peer), !address.isEmpty, model.messages(peer, address: address).isEmpty {
-              model.requestMessages(peer, address: address)
-            }
-          }
+          peerContent(peer: peer, width: geometry.size.width)
         } else {
           Text("Pair a phone to relay messages.").foregroundStyle(AniCePalette.secondaryText(scheme))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -142,35 +230,11 @@ struct SmsView: View {
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
-    .onAppear { model.retainDrafts(for: peers.map(\.peer)); select() }
-    .task { await model.refreshNotificationSettings() }
-    .onChange(of: scenePhase) { _, phase in
-      if phase == .active { Task { await model.refreshNotificationSettings() } }
-    }
-    .onChange(of: peer.map { model.sending($0) } ?? false) { wasSending, isSending in
-      if wasSending && !isSending, let peer, model.status(peer) == "Sent",
-         draft == submittedDraft {
-        model.saveDraft("", peer: peer, address: address)
-        draft = ""
-      }
-      if !isSending { submittedDraft = nil }
-    }
-    .onChange(of: peers.map { $0.peer.deviceId + ":" + $0.peer.fingerprint }) { _, _ in
-      model.retainDrafts(for: peers.map(\.peer)); select()
-    }
-    .onChange(of: peers.map { model.connected($0.peer) }) { _, _ in select() }
-    // Opening a conversation is an invitation to type; the draft is one Return away.
-    .onChange(of: address) { _, next in
-      composerFocused = !next.isEmpty
-      if let peer { model.selectConversation(peer, address: next) }
-      if let peer, !next.isEmpty { draft = model.draft(peer, address: next) }
-      else { draft = "" }
-    }
   }
 
   private func select() {
     let options = selectable
-    let preferred = peerKey.isEmpty ? model.selectedPhoneKey : peerKey
+    let preferred = model.selectedPhoneKey.isEmpty ? peerKey : model.selectedPhoneKey
     let next = options.first { $0.peer.deviceId + ":" + $0.peer.fingerprint == preferred }
       ?? options.first { model.connected($0.peer) } ?? options.first
     let key = next.map { $0.peer.deviceId + ":" + $0.peer.fingerprint } ?? ""
@@ -178,7 +242,12 @@ struct SmsView: View {
   }
 
   private func selectPhone(_ key: String) {
-    guard key != peerKey else { return }
+    guard key != peerKey else {
+      address = peer.map { model.selectedConversation($0) } ?? ""
+      draft = peer.map { model.draft($0, address: address) } ?? ""
+      return
+    }
+    simRecoveryContext = nil
     if let peer, !address.isEmpty { model.saveDraft(draft, peer: peer, address: address) }
     peerKey = key
     address = peer.map { model.selectedConversation($0) } ?? ""
@@ -214,37 +283,39 @@ struct SmsView: View {
       if cards.isEmpty {
         Text("No conversations yet").foregroundStyle(AniCePalette.secondaryText(scheme))
       } else {
-        ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
-          Button {
-            address = card.key
-            draft = model.draft(peer, address: card.key)
-            model.refreshMessages(peer, address: card.address)
-          } label: {
-            HStack(spacing: 12) {
-              VStack(alignment: .leading, spacing: 4) {
-                Text(card.address).font(.body).lineLimit(1).truncationMode(.middle)
-                if !card.snippet.isEmpty {
-                  Text(card.snippet).font(.caption).lineLimit(1)
-                    .foregroundStyle(AniCePalette.secondaryText(scheme))
+        LazyVStack(alignment: .leading, spacing: 0) {
+          ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
+            Button {
+              address = card.key
+              draft = model.draft(peer, address: card.key)
+              model.refreshMessages(peer, address: card.address)
+            } label: {
+              HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                  Text(card.address).font(.body).lineLimit(1).truncationMode(.middle)
+                  if !card.snippet.isEmpty {
+                    Text(card.snippet).font(.caption).lineLimit(1)
+                      .foregroundStyle(AniCePalette.secondaryText(scheme))
+                  }
                 }
-              }
-              Spacer(minLength: 8)
-              VStack(alignment: .trailing, spacing: 4) {
-                if card.dateMillis > 0 {
-                  Text(date(card.dateMillis), format: .dateTime.month().day())
-                    .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+                Spacer(minLength: 8)
+                VStack(alignment: .trailing, spacing: 4) {
+                  if card.dateMillis > 0 {
+                    Text(date(card.dateMillis), format: .dateTime.month().day())
+                      .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+                  }
+                  if card.unreadCount > 0 {
+                    Text("\(card.unreadCount) unread").font(.caption).foregroundStyle(AniCePalette.accent(scheme))
+                  }
                 }
-                if card.unreadCount > 0 {
-                  Text("\(card.unreadCount) unread").font(.caption).foregroundStyle(AniCePalette.accent(scheme))
-                }
-              }
-              Image(systemName: "chevron.right").font(.caption)
-                .foregroundStyle(AniCePalette.accent(scheme)).accessibilityHidden(true)
-            }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
-          }.buttonStyle(AniCeHoverButtonStyle())
-          // Reaching the last card asks for the next page, so the list keeps filling without a manual step.
-          .onAppear { if index == cards.count - 1 { model.requestMoreThreads(peer) } }
-          Divider()
+                Image(systemName: "chevron.right").font(.caption)
+                  .foregroundStyle(AniCePalette.accent(scheme)).accessibilityHidden(true)
+              }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
+            }.buttonStyle(AniCeHoverButtonStyle())
+            // Reaching the last card asks for the next page, so the list keeps filling without a manual step.
+            .onAppear { if index == cards.count - 1 { model.requestMoreThreads(peer) } }
+            Divider()
+          }
         }
         if model.threadMore(peer) {
           // The automatic request can be dropped while another one is in flight; the button is the way out.
@@ -263,8 +334,8 @@ struct SmsView: View {
     } else {
       results(peer)
     }
-    Color.clear.frame(height: 0).task(id: peerKey) {
-      if !model.busy(peer) { model.requestThreads(peer) }
+    Color.clear.frame(height: 0).task(id: peerKey + (model.supports(peer) ? "+ready" : "")) {
+      if model.supports(peer), !model.busy(peer) { model.requestThreads(peer) }
     }
   }
 
@@ -323,7 +394,10 @@ struct SmsView: View {
         }
         Text(card?.address ?? address).font(.headline).lineLimit(1).truncationMode(.middle)
         Spacer(minLength: 4)
-        Button("Refresh") { model.refreshMessages(peer, address: address) }
+        Button("Refresh") {
+          model.refreshMessages(peer, address: address)
+          model.requestSims(peer)
+        }
           .buttonStyle(.bordered).aniCeControlFeedback().controlSize(.small).disabled(!model.supports(peer))
         if showBack { gear(peer) }
       }
@@ -333,8 +407,11 @@ struct SmsView: View {
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 12) {
             if model.more(peer, address: address) {
-              Button("Show older messages") { model.requestMessages(peer, address: address) }
-                .buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(scheme)).disabled(model.busy(peer))
+              Button("Show older messages") {
+                olderAnchorId = rows.first?.id
+                model.requestMessages(peer, address: address)
+              }
+              .buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(scheme)).disabled(model.busy(peer))
             }
             if rows.isEmpty {
               Text("No messages on this phone").font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
@@ -350,10 +427,8 @@ struct SmsView: View {
                 if row.direction == 1 { Spacer(minLength: 28) }
                 VStack(alignment: .leading, spacing: 4) {
                   Text(row.body).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
-                  ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) { metadata(row, peer: peer, mixed: mixed); Spacer(minLength: 0) }
-                    VStack(alignment: .leading, spacing: 2) { metadata(row, peer: peer, mixed: mixed) }
-                  }.font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
+                  HStack(spacing: 8) { metadata(row, peer: peer, mixed: mixed); Spacer(minLength: 0) }
+                    .font(.caption).foregroundStyle(AniCePalette.secondaryText(scheme))
                 }
                 .padding(.horizontal, 12).padding(.vertical, 9)
                 .frame(maxWidth: 500, alignment: .leading)
@@ -366,9 +441,16 @@ struct SmsView: View {
           }
           .padding(.vertical, 8)
         }
-        .onAppear { if let last = rows.last { proxy.scrollTo(last.id, anchor: .bottom) } }
-        .onChange(of: rows.last?.id) { _, last in
-          if let last { withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(last, anchor: .bottom) } }
+        .defaultScrollAnchor(.bottom)
+        .onChange(of: rows.first?.id) { _, _ in
+          if let anchor = olderAnchorId {
+            olderAnchorId = nil
+            proxy.scrollTo(anchor, anchor: .top)
+          }
+        }
+        .onChange(of: rows.last?.id) { old, last in
+          guard let last, old != nil else { return }
+          withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(last, anchor: .bottom) }
         }
         .frame(maxHeight: .infinity)
       }
@@ -423,6 +505,11 @@ struct SmsView: View {
     .padding(10)
     .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(AniCePalette.surface(scheme)))
     .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(AniCePalette.separator(scheme)))
+    if simRecoveryContext == peerKey + "|" + address, model.simSelectionNeedsRecovery(peer) {
+      SmsSimRecoveryView(status: model.simListingStatus(peer), enabled: model.supports(peer)) {
+        model.requestSims(peer)
+      }
+    }
     if currentDraft.count > 1000 {
       Text("Long messages may be rejected by the carrier; Unicode text reaches the limit sooner.")
         .font(.caption).foregroundStyle(AniCePalette.warning(scheme))
@@ -448,6 +535,12 @@ struct SmsView: View {
         }
       }.labelsHidden().controlSize(.small).frame(maxWidth: 180)
         .help("Send from").accessibilityLabel("Send from")
+    } else if model.supports(peer), model.simSelectionNeedsRecovery(peer) {
+      Button("Choose SIM…") {
+        simRecoveryContext = peerKey + "|" + address
+        model.requestSims(peer)
+      }
+      .buttonStyle(AniCeButtonStyle(quiet: true, compact: true))
     }
   }
 
@@ -459,17 +552,28 @@ struct SmsView: View {
       .help("Notification settings for \(peer.displayName)")
       .accessibilityLabel("Notification settings for \(peer.displayName)")
       .accessibilityValue(controlsOpen ? "Showing" : "Hidden")
+      .anchorPreference(key: SmsNotificationBounds.self, value: .bounds) { [.gear: $0] }
   }
 
   @ViewBuilder private func notificationPanel(_ peer: DeviceIdentity) -> some View {
     VStack(alignment: .leading, spacing: 8) {
       Text(peer.displayName).font(.subheadline.weight(.medium))
       SmsNotificationControls(preferences: preferences, peer: peer)
-      DisclosureGroup("Connection details") {
-        Text(model.status(peer)).font(.caption)
-        if !model.diagnostics(peer).isEmpty { Text(model.diagnostics(peer)).font(.caption).textSelection(.enabled) }
+      DisclosureGroup {
+        VStack(alignment: .leading, spacing: 4) {
+          let status = model.status(peer)
+          Text(status).font(.caption).fixedSize(horizontal: false, vertical: true)
+            .anchorPreference(key: SmsNotificationBounds.self, value: .bounds) { [.connectionStatus(status): $0] }
+          if !model.diagnostics(peer).isEmpty {
+            Text(model.diagnostics(peer)).font(.caption).textSelection(.enabled)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      } label: {
+        Text("Connection details")
+          .anchorPreference(key: SmsNotificationBounds.self, value: .bounds) { [.connectionDetails: $0] }
       }
-
     }
     .padding(10)
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -487,4 +591,40 @@ struct SmsView: View {
   }
 
   private func date(_ millis: Int64) -> Date { Date(timeIntervalSince1970: Double(millis) / 1000) }
+}
+
+struct SmsSimRecoveryView: View {
+  let status: SmsSimListingStatus
+  let enabled: Bool
+  let refresh: () -> Void
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
+  @Environment(\.colorScheme) private var scheme
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      if let guidance {
+        Text(guidance).font(.system(size: 12 * fontScale))
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Button(status == .checking ? "Checking SIMs…" : "Refresh SIMs", action: refresh)
+        .buttonStyle(AniCeButtonStyle(quiet: true, compact: true))
+        .disabled(!enabled || status == .checking)
+        .help("Read SIM choices again on the current connection. Phone default sends remain available.")
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private var guidance: String? {
+    switch status {
+    case .permissionRequired:
+      "To choose a SIM, allow Phone access on your phone: aniCe → Settings → Permissions → SIM selection."
+    case .failed:
+      "SIM choices could not be read on your phone. Phone default sending remains available."
+    case .unanswered:
+      "Your phone did not answer the SIM request. Refresh SIMs on the current connection."
+    case .unknown, .checking, .ready:
+      nil
+    }
+  }
 }

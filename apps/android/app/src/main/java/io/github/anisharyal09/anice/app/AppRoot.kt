@@ -4,7 +4,6 @@ package io.github.anisharyal09.anice.app
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.selection.selectable
@@ -12,14 +11,11 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
@@ -33,21 +29,14 @@ import kotlinx.coroutines.launch
 import androidx.lifecycle.repeatOnLifecycle
 import io.github.anisharyal09.anice.R
 import io.github.anisharyal09.anice.ui.theme.AniCeWordmark
-import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityScreen
 import io.github.anisharyal09.anice.features.deviceidentity.DeviceIdentityViewModel
-import io.github.anisharyal09.anice.features.discovery.DiscoveryScreen
 import io.github.anisharyal09.anice.features.discovery.DiscoveryViewModel
-import io.github.anisharyal09.anice.features.pairing.PairingScreen
 import io.github.anisharyal09.anice.features.pairing.PairingViewModel
 import io.github.anisharyal09.anice.features.pairing.completedPairingPeer
-import io.github.anisharyal09.anice.features.session.SessionPanel
 import io.github.anisharyal09.anice.features.session.SessionViewModel
 import io.github.anisharyal09.anice.features.backgroundprobe.rememberCompanionSetup
 import io.github.anisharyal09.anice.features.backgroundprobe.CompanionSetupEffects
 import io.github.anisharyal09.anice.features.backgroundprobe.CompanionSetupStatus
-import io.github.anisharyal09.anice.ui.theme.Appearance
-import io.github.anisharyal09.anice.ui.theme.appearancePreference
-import io.github.anisharyal09.anice.ui.theme.saveAppearance
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,9 +63,8 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     val uiPreferences = remember { context.getSharedPreferences("ui_preferences", android.content.Context.MODE_PRIVATE) }
     val navigation = rememberSaveable(saver = AppNavigation.saver) {
         AppNavigation().also {
-            val savedFavs = uiPreferences.getString("favourite_features", null)
-            it.favouriteFeatures = if (savedFavs.isNullOrEmpty()) AppFeature.DEFAULT_FAVOURITES else savedFavs
-            it.featureOrder = uiPreferences.getString("feature_order", "").orEmpty()
+            it.favouriteFeatures = AppFeature.favouritePreference(uiPreferences.getString("favourite_features", null))
+            it.featureOrder = AppFeature.migrateStored(uiPreferences.getString("feature_order", "").orEmpty())
         }
     }
     LaunchedEffect(navigation.favouriteFeatures) {
@@ -93,6 +81,9 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
             navigation.openFeature(AppFeature.AudioSharing)
             session.audioSharing.workspaceOpened()
         }
+    }
+    LaunchedEffect(session.transfer.openWorkspaceRequest) {
+        if (session.transfer.workspaceOpened()) navigation.openFeature(AppFeature.Files)
     }
     LaunchedEffect(identity.state.snapshot?.identity?.fingerprint) {
         if (identity.state.snapshot != null) pairing.refresh()
@@ -209,15 +200,19 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                     AniCeWordmark(style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp))
                 }
             }, navigationIcon = {
-                if ((navigation.destination == AppDestination.Devices &&
-                        navigation.route != DeviceRoute.Overview && navigation.route != DeviceRoute.Pairing) ||
-                    (navigation.destination == AppDestination.Settings && navigation.settingsRoute != SettingsRoute.Overview) ||
-                    (navigation.destination == AppDestination.Features && navigation.featurePanel != null)) {
+                if (showsAppBarBack(navigation.destination, navigation.route,
+                        navigation.settingsRoute, navigation.featurePanel)) {
                     IconButton(onClick = { back() }) {
                         Icon(painterResource(R.drawable.ic_back), contentDescription = "Back")
                     }
                 }
             }, actions = {
+                if (navigation.destination != AppDestination.Guide) {
+                    IconButton(onClick = { navigation.openGuide(currentGuideTopic(navigation)) }) {
+                        Icon(painterResource(R.drawable.ic_help), contentDescription = "Open Guide",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                    }
+                }
                 if (navigation.destination != AppDestination.About) {
                     IconButton(onClick = { navigation.select(AppDestination.About, pairing.peers.isEmpty()) }) {
                         Icon(painterResource(R.drawable.ic_about), contentDescription = "About aniCe",
@@ -321,9 +316,15 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
                 }
             }
             Box(Modifier.weight(1f)) {
+                val destination = navigation.destination
+                // Retain the Guide while the activity is recreated, within a single visit.
+                if (destination == AppDestination.Guide) {
+                    GuideScreen(navigation.guideTopic)
+                    return@Box
+                }
                 // Destination keys retain scroll and local presentation state while another section is shown.
-                pageState.SaveableStateProvider(navigation.destination.name) {
-                    when (navigation.destination) {
+                pageState.SaveableStateProvider(destination.name) {
+                    when (destination) {
                         AppDestination.Home, AppDestination.Devices -> pageState.SaveableStateProvider("devices-" + navigation.route.name) {
                             DevicesScreen(pairing, discovery, session, navigation, nearbyOwner, automaticAfterPairing, { automaticAfterPairing=it }, automaticLanAfterPairing, { automaticLanAfterPairing=it }, identity = identity,
                                 nearbySetup = {
@@ -358,6 +359,45 @@ fun AppRoot(identity: DeviceIdentityViewModel, discovery: DiscoveryViewModel,
     }
 }
 
+private fun currentGuideTopic(navigation: AppNavigation): GuideTopic? {
+    if ((navigation.destination == AppDestination.Features || navigation.destination == AppDestination.Favourites) &&
+        navigation.featurePanel != null
+    ) {
+        return when (navigation.featurePanel) {
+            AppFeature.PhoneInput -> GuideTopic.ControlMac
+            AppFeature.DeskDeck -> GuideTopic.MacDeskDeck
+            AppFeature.Files -> GuideTopic.FilesAndEdgeDrop
+            AppFeature.Clipboard -> GuideTopic.ClipboardAndQuickSend
+            AppFeature.Playback, AppFeature.AudioSharing -> GuideTopic.NowPlayingAndAudio
+            AppFeature.Sms -> GuideTopic.MessagesAndSms
+            null -> null
+        }
+    }
+    return when (navigation.destination) {
+        AppDestination.Home, AppDestination.Features, AppDestination.Favourites,
+        AppDestination.About, AppDestination.Guide -> null
+        AppDestination.Devices -> GuideTopic.PairingAndConnection
+        AppDestination.Settings -> when (navigation.settingsRoute) {
+            SettingsRoute.About -> null
+            SettingsRoute.Identity -> GuideTopic.PairingAndConnection
+            SettingsRoute.NotificationApps -> GuideTopic.NotificationsAndCalls
+            SettingsRoute.Overview -> when (navigation.settingsSection) {
+                "Permissions" -> GuideTopic.Permissions
+                "Do Not Disturb" -> GuideTopic.DndSync
+                "Clipboard" -> GuideTopic.ClipboardAndQuickSend
+                "Messages" -> GuideTopic.MessagesAndSms
+                "Notification sync" -> GuideTopic.NotificationsAndCalls
+                "File transfer" -> GuideTopic.FilesAndEdgeDrop
+                "Connection" -> GuideTopic.PairingAndConnection
+                else -> when (navigation.settingsCategory) {
+                    "Permissions" -> GuideTopic.Permissions
+                    else -> null
+                }
+            }
+        }
+    }
+}
+
 private fun AppDestination.icon(selected: Boolean): Int = when (this) {
     AppDestination.Home -> if (selected) R.drawable.ic_home else R.drawable.ic_home_outline
     AppDestination.Devices -> if (selected) R.drawable.ic_devices else R.drawable.ic_devices_outline
@@ -365,6 +405,7 @@ private fun AppDestination.icon(selected: Boolean): Int = when (this) {
     AppDestination.Favourites -> if (selected) R.drawable.ic_star_filled else R.drawable.ic_star
     AppDestination.Settings -> if (selected) R.drawable.ic_settings else R.drawable.ic_settings_outline
     AppDestination.About -> R.drawable.ic_about
+    AppDestination.Guide -> R.drawable.ic_help
 }
 
 @Composable

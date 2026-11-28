@@ -3,6 +3,344 @@
 import AppKit
 import SwiftUI
 
+enum NativeGlassStyle: String, CaseIterable {
+  case standard = "Standard", vibrant = "Vibrant"
+  static func stored(_ value: String) -> Self { Self(rawValue: value) ?? .standard }
+  func navigationBackingOpacity(_ scheme: ColorScheme) -> Double {
+    switch self {
+    case .standard: scheme == .dark ? 0.45 : 0.35
+    case .vibrant: scheme == .dark ? 0.08 : 0.06
+    }
+  }
+}
+
+/// Keeps setting labels and helpers together, with intrinsic controls on the trailing edge.
+struct AniCePreferenceRow<Control: View>: View {
+  let title: String
+  let description: String?
+  let fontScale: Double
+  let control: Control
+  @Environment(\.colorScheme) private var scheme
+
+  init(_ title: String, description: String? = nil, fontScale: Double = 1,
+    @ViewBuilder control: () -> Control) {
+    self.title = title
+    self.description = description
+    self.fontScale = fontScale
+    self.control = control()
+  }
+
+  var body: some View {
+    ViewThatFits(in: .horizontal) {
+      HStack(alignment: .top, spacing: 12) {
+        labels(fixedTitle: true).frame(maxWidth: .infinity, alignment: .leading)
+        control.fixedSize(horizontal: true, vertical: false).frame(minHeight: 32)
+      }
+      VStack(alignment: .leading, spacing: 8) {
+        labels(fixedTitle: false)
+        control.fixedSize(horizontal: true, vertical: false)
+          .frame(maxWidth: .infinity, minHeight: 32, alignment: .trailing)
+      }
+    }
+    .font(.system(size: 13 * fontScale))
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private func labels(fixedTitle: Bool) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text(title).fixedSize(horizontal: fixedTitle, vertical: true)
+        .frame(minHeight: 32, alignment: .leading)
+      if let description {
+        Text(description).font(.system(size: 12 * fontScale))
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+          // Helper length must not force a dropdown onto its own row when the title and control fit.
+          .frame(minWidth: 0, idealWidth: 0, maxWidth: .infinity, alignment: .leading)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+    }
+  }
+}
+
+struct AniCePreferenceToggleStyle: ToggleStyle {
+  var description: String? = nil
+  @Environment(\.colorScheme) private var scheme
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
+
+  func makeBody(configuration: Configuration) -> some View {
+    Button { configuration.isOn.toggle() } label: {
+      HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 6) {
+          configuration.label
+          if let description {
+            Text(description).font(.system(size: 12 * fontScale))
+              .foregroundStyle(AniCePalette.secondaryText(scheme))
+              .fixedSize(horizontal: false, vertical: true)
+          }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        AniCeCapsuleToggleFace(isOn: configuration.isOn).fixedSize()
+      }
+      .frame(minHeight: 28).contentShape(Rectangle())
+    }
+    .buttonStyle(AniCeToggleButtonStyle())
+    // Label, helper and capsule share one action and one native switch accessibility target.
+    .accessibilityRepresentation {
+      Toggle(isOn: configuration.$isOn) { configuration.label }
+        .toggleStyle(.switch).accessibilityHint(description ?? "")
+    }
+  }
+}
+
+private struct AniCeCapsuleToggleFace: View {
+  let isOn: Bool
+  @Environment(\.colorScheme) private var scheme
+  @Environment(\.colorSchemeContrast) private var contrast
+  @Environment(\.layoutDirection) private var direction
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    Capsule().fill(isOn ? AniCePalette.subtleAccent(scheme) : AniCePalette.track(scheme))
+      .overlay {
+        if isOn {
+          Capsule().fill(AniCePalette.accent(scheme).opacity(scheme == .dark ? 0.34 : 0.78))
+        }
+      }
+      .overlay {
+        Capsule().stroke(AniCePalette.secondaryText(scheme)
+          .opacity(contrast == .increased ? 1 : (isOn ? 0 : 0.35)),
+          lineWidth: contrast == .increased ? 1 : 0.5)
+      }
+      .overlay {
+        Circle().fill(isOn
+          ? (scheme == .dark ? AniCePalette.accent(scheme) : AniCePalette.background(scheme))
+          : AniCePalette.secondaryText(scheme))
+          .frame(width: 18, height: 18)
+          .offset(x: (isOn ? 8 : -8) * (direction == .rightToLeft ? -1 : 1))
+      }
+      .frame(width: 38, height: 22)
+      .frame(width: 44, height: 28)
+      .contentShape(Rectangle())
+      .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isOn)
+  }
+}
+
+/// Thematic segmented navigation: selected segments use accent ink, inactive segments stay muted.
+struct AniCeSegmentedControl<Value: Hashable>: View {
+  let options: [(value: Value, title: String)]
+  @Binding var selection: Value
+  var fontScale: Double = 1
+  var size: ControlSize = .small
+  var accessibilityLabel: String? = nil
+  var help: String? = nil
+  @Environment(\.colorScheme) private var scheme
+
+  var body: some View {
+    HStack(spacing: 2) {
+      ForEach(options, id: \.value) { option in
+        Button { if selection != option.value { selection = option.value } } label: {
+          AniCeSegmentFace(
+            title: option.title, selected: option.value == selection, fontScale: fontScale, size: size)
+        }
+        .buttonStyle(AniCeToggleButtonStyle(prominent: option.value == selection, cornerRadius: 6))
+        .accessibilityLabel(option.title)
+        .accessibilityAddTraits(option.value == selection ? [.isSelected] : [])
+      }
+    }
+    .padding(2)
+    .background(AniCePalette.secondarySurface(scheme), in: RoundedRectangle(cornerRadius: 8))
+    .help(help ?? "")
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel(accessibilityLabel ?? "")
+  }
+}
+
+private struct AniCeSegmentFace: View {
+  let title: String
+  let selected: Bool
+  let fontScale: Double
+  let size: ControlSize
+  @Environment(\.colorScheme) private var scheme
+
+  var body: some View {
+    Text(title)
+      .font(.system(size: (size == .regular ? 13 : 12) * fontScale, weight: selected ? .medium : .regular))
+      .foregroundStyle(selected ? AniCePalette.onAccent(scheme) : AniCePalette.secondaryText(scheme))
+      .fixedSize(horizontal: true, vertical: false)
+      .frame(minWidth: size == .regular ? 68 : nil, minHeight: size == .regular ? 32 : 26)
+      .padding(.horizontal, size == .regular ? 12 : 8)
+      .background(AniCePalette.accent(scheme).opacity(selected ? 1 : 0),
+        in: RoundedRectangle(cornerRadius: 6))
+      .contentShape(RoundedRectangle(cornerRadius: 6))
+  }
+}
+
+private struct AniCeToggleButtonStyle: ButtonStyle {
+  var prominent = false
+  var cornerRadius: CGFloat = 7
+  func makeBody(configuration: Configuration) -> some View {
+    AniCeToggleButtonFeedback(label: configuration.label, pressed: configuration.isPressed,
+      prominent: prominent, cornerRadius: cornerRadius)
+  }
+}
+
+private struct AniCeToggleButtonFeedback<Label: View>: View {
+  let label: Label
+  let pressed: Bool
+  let prominent: Bool
+  let cornerRadius: CGFloat
+  @Environment(\.colorScheme) private var scheme
+  @Environment(\.isEnabled) private var enabled
+  @Environment(\.isFocused) private var focused
+
+  var body: some View {
+    label
+      .aniCeControlFeedback(pressed: pressed, prominent: prominent, cornerRadius: cornerRadius)
+      .overlay {
+        if enabled && focused {
+          RoundedRectangle(cornerRadius: cornerRadius)
+            .stroke(prominent ? AniCePalette.onAccent(scheme) : AniCePalette.accent(scheme), lineWidth: 2)
+            .allowsHitTesting(false)
+        }
+      }
+      .opacity(enabled ? 1 : 0.45)
+  }
+}
+
+enum NativeGlassPresentation: Equatable {
+  case solid, material, glass
+
+  static func resolve(enabled: Bool, reduceTransparency: Bool, supportsGlass: Bool) -> Self {
+    guard enabled, !reduceTransparency else { return .solid }
+    return supportsGlass ? .glass : .material
+  }
+}
+
+extension View {
+  func aniCeAppearance() -> some View {
+    modifier(AniCeHostAppearance())
+  }
+
+  func aniCeSurface(cornerRadius: CGFloat = 0, secondary: Bool = false) -> some View {
+    modifier(AniCeNativeSurface(cornerRadius: cornerRadius, secondary: secondary))
+  }
+}
+
+private struct AniCeHostAppearance: ViewModifier {
+  @AppStorage("window.appearance") private var appearance = WindowAppearance.system.rawValue
+  @State private var systemAppearance = SystemAppearance()
+
+  func body(content: Content) -> some View {
+    content.preferredColorScheme(WindowAppearance.stored(appearance)
+      .colorScheme(system: systemAppearance.colorScheme))
+  }
+}
+
+private struct AniCeNativeSurface: ViewModifier {
+  let cornerRadius: CGFloat
+  let secondary: Bool
+  @AppStorage("ui.nativeGlass") private var enabled = true
+  @AppStorage("ui.nativeGlassStyle") private var savedStyle = NativeGlassStyle.standard.rawValue
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  @Environment(\.colorScheme) private var scheme
+
+  func body(content: Content) -> some View {
+    let shape = RoundedRectangle(cornerRadius: cornerRadius)
+    let surface = secondary ? AniCePalette.secondarySurface(scheme) : AniCePalette.surface(scheme)
+    let presentation = NativeGlassPresentation.resolve(
+      enabled: enabled, reduceTransparency: reduceTransparency, supportsGlass: supportsGlass)
+    if presentation == .solid {
+      content.background(surface, in: shape)
+    } else if secondary {
+      let style = NativeGlassStyle.stored(savedStyle)
+      content.background {
+        NativeNavigationMaterial()
+          .overlay(surface.opacity(style.navigationBackingOpacity(scheme)).allowsHitTesting(false))
+      }
+    } else if #available(macOS 26.0, *) {
+      if NativeGlassStyle.stored(savedStyle) == .vibrant {
+        content.glassEffect(.regular.tint(AniCePalette.accent(scheme).opacity(scheme == .light ? 0.22 : 0.12)), in: shape)
+      } else {
+        content.glassEffect(.regular, in: shape)
+      }
+    } else {
+      content.background(.regularMaterial, in: shape)
+        .overlay {
+          if NativeGlassStyle.stored(savedStyle) == .vibrant {
+            shape.fill(AniCePalette.subtleAccent(scheme).opacity(0.15)).allowsHitTesting(false)
+          }
+        }
+    }
+  }
+
+  private var supportsGlass: Bool {
+    if #available(macOS 26.0, *) { return true }
+    return false
+  }
+}
+
+/// Large navigation surfaces use native window vibrancy, not a tinted floating glass card.
+private struct NativeNavigationMaterial: NSViewRepresentable {
+  @Environment(\.colorScheme) private var scheme
+
+  func makeNSView(context: Context) -> NSVisualEffectView { NSVisualEffectView() }
+  func updateNSView(_ view: NSVisualEffectView, context: Context) {
+    view.material = .sidebar
+    view.blendingMode = .behindWindow
+    view.state = .followsWindowActiveState
+    view.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+  }
+}
+
+struct NativeGlassPreferencesView: View {
+  @AppStorage("ui.nativeGlass") private var enabled = true
+  @AppStorage("ui.nativeGlassStyle") private var savedStyle = NativeGlassStyle.standard.rawValue
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+  var body: some View {
+    NativeGlassPreferencesRows(enabled: $enabled, savedStyle: $savedStyle,
+      fontScale: fontScale, reduceTransparency: reduceTransparency)
+  }
+}
+
+struct NativeGlassPreferencesRows: View {
+  @Binding var enabled: Bool
+  @Binding var savedStyle: String
+  let fontScale: Double
+  let reduceTransparency: Bool
+  @Environment(\.colorScheme) private var scheme
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Toggle("Native Glass", isOn: Binding(
+          get: { enabled && !reduceTransparency },
+          set: { if !reduceTransparency { enabled = $0 } }))
+          .toggleStyle(AniCePreferenceToggleStyle())
+          .disabled(reduceTransparency)
+      if reduceTransparency {
+        Text("Locked to Normal by macOS System Settings")
+          .font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(scheme))
+          .fixedSize(horizontal: false, vertical: true)
+      } else if enabled {
+        AniCePreferenceRow("Glass style", fontScale: fontScale) {
+          stylePicker
+        }
+      }
+    }.font(.system(size: 13 * fontScale)).padding(.vertical, 8)
+  }
+
+  private var stylePicker: some View {
+    AniCeSegmentedControl(
+      options: NativeGlassStyle.allCases.map { (value: $0, title: $0.rawValue) },
+      selection: Binding(
+        get: { NativeGlassStyle.stored(savedStyle) }, set: { savedStyle = $0.rawValue }),
+      fontScale: fontScale,
+      accessibilityLabel: "Glass style",
+      help: "Standard is softly backed. Vibrant lets more of the background show through."
+    )
+  }
+}
+
 enum AniCePalette {
   static func background(_ scheme: ColorScheme) -> Color {
     color(light: 0xF4F3EF, dark: 0x1B1E1E, scheme: scheme)
@@ -163,7 +501,7 @@ private struct AniCeButtonFace<Label: View>: View {
       .foregroundStyle(prominent ? AniCePalette.onAccent(scheme) : AniCePalette.primaryText(scheme))
       .padding(.horizontal, quiet ? 0 : (compact ? 6 : 12)).padding(.vertical, compact ? 5 : 7)
       .frame(minWidth: compact ? 32 : nil, minHeight: (quiet || compact) ? 30 : 32)
-      .background(prominent ? AniCePalette.accent(scheme) : (quiet ? .clear : AniCePalette.surface(scheme)), in: RoundedRectangle(cornerRadius: 7))
+      .background(prominent ? AniCePalette.accent(scheme) : (quiet ? .clear : AniCePalette.secondarySurface(scheme)), in: RoundedRectangle(cornerRadius: 7))
       .overlay {
         if !quiet || focused {
           RoundedRectangle(cornerRadius: 7).stroke(focused ? AniCePalette.accent(scheme) : AniCePalette.separator(scheme), lineWidth: focused ? 2 : 1)
@@ -173,6 +511,37 @@ private struct AniCeButtonFace<Label: View>: View {
       .aniCeControlFeedback(pressed: pressed, prominent: prominent, cornerRadius: 7)
       .opacity(enabled ? 1 : 0.45)
   }
+}
+
+/// Wraps measured shortcut faces in stable order without horizontal overflow.
+struct ShortcutFlowLayout: Layout {
+  var spacing: CGFloat = 8
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    arrange(width: proposal.width ?? 680, subviews: subviews).size
+  }
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    let result = arrange(width: bounds.width, subviews: subviews)
+    for (index, point) in result.points.enumerated() {
+      subviews[index].place(at: CGPoint(x: bounds.minX + point.x, y: bounds.minY + point.y),
+        proposal: ProposedViewSize(width: min(bounds.width, subviews[index].sizeThatFits(.unspecified).width), height: nil))
+    }
+  }
+  private func arrange(width: CGFloat, subviews: Subviews) -> (size: CGSize, points: [CGPoint]) {
+    var points: [CGPoint] = []
+    var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
+    for view in subviews {
+      let size = view.sizeThatFits(ProposedViewSize(width: min(max(0, width), view.sizeThatFits(.unspecified).width), height: nil))
+      if x > 0 && x + size.width > width { x = 0; y += rowHeight + spacing; rowHeight = 0 }
+      points.append(CGPoint(x: x, y: y))
+      x += size.width + spacing
+      rowHeight = max(rowHeight, size.height)
+    }
+    return (CGSize(width: max(0, width), height: y + rowHeight), points)
+  }
+}
+
+enum AniCeSupport {
+  static let url = URL(string: "https://anisharyal09.com.np/support?from=anice")!
 }
 
 struct AniCeHoverButtonStyle: ButtonStyle {
@@ -218,7 +587,7 @@ private struct AniCeControlFeedback: ViewModifier {
       .overlay {
         RoundedRectangle(cornerRadius: cornerRadius)
           .fill((prominent ? AniCePalette.onAccent(scheme) : AniCePalette.accent(scheme))
-            .opacity(enabled ? (pressed ? 0.12 : (hovered ? 0.055 : 0)) : 0))
+            .opacity(enabled ? (pressed ? 0.18 : (hovered ? 0.10 : 0)) : 0))
           // Feedback may extend around bare labels without intercepting their native control.
           .padding(-feedbackPadding).allowsHitTesting(false)
       }

@@ -74,18 +74,13 @@ struct MacComparisonCard: View {
   }
 }
 
-/// Native glass belongs only to the floating overlay; in-app security content keeps its solid surface.
+/// Floating pairing follows appearance preferences; in-app security content remains solid.
 private struct ComparisonSurface: ViewModifier {
   let floating: Bool
   @Environment(\.colorScheme) private var scheme
-  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   func body(content: Content) -> some View {
-    if floating && !reduceTransparency {
-      if #available(macOS 26.0, *) {
-        content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
-      } else {
-        content.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-      }
+    if floating {
+      content.aniCeSurface(cornerRadius: 14)
     } else {
       content.background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(AniCePalette.separator(scheme), lineWidth: 1))

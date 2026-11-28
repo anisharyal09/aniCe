@@ -121,6 +121,7 @@ enum TransferEvent: Equatable {
       default: force = false
       }
       checkpoint(force: force)
+      onStateChanged?()
     }
   }
   var activeChannel: (any SecuredChannel)?
@@ -140,6 +141,7 @@ enum TransferEvent: Equatable {
   /// External event sink for native notification and Edge Drop bridges. Completed and failed are
   /// emitted only when receiving; a verified send emits sentFromDrop instead.
   var onEvent: ((TransferEvent) -> Void)?
+  @ObservationIgnored var onStateChanged: (() -> Void)?
   /// Returns whether a bounded automatic LAN attempt was accepted by the connection owner.
   var onLanRequired: () -> Bool = { false }
   /// A new local send is a distinct user action, unlike recovery or ordinary feature traffic.

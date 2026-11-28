@@ -95,6 +95,10 @@ enum EdgeDropGeometry {
   }
 }
 
+enum EdgeDropFeedbackPhase: Equatable {
+  case preparing, waiting, sending, verifying, paused, ended
+}
+
 @Observable @MainActor final class MacEdgeDropController {
   let model: MacTransferModel
   let preferences: EdgeDropPreferences
@@ -103,6 +107,7 @@ enum EdgeDropGeometry {
   private(set) var hasFileURLs = false
   private(set) var hasPromisedFiles = false
   private(set) var sentFeedback: TransferBatch?
+  private(set) var acceptedDrop: (count: Int, peerName: String)?
 
   @ObservationIgnored private var started = false
   @ObservationIgnored private var sleeping = false
@@ -184,6 +189,17 @@ enum EdgeDropGeometry {
     if let sentFeedback {
       return "Sent \(sentFeedback.files.count) file\(sentFeedback.files.count == 1 ? "" : "s") to"
     }
+    if let acceptedDrop {
+      let files = "\(acceptedDrop.count) file\(acceptedDrop.count == 1 ? "" : "s")"
+      switch acceptedDropPhase {
+      case .preparing: return "Preparing \(files) for"
+      case .waiting: return "Waiting for approval from"
+      case .sending: return "Sending \(files) to"
+      case .verifying: return "Verifying \(files) with"
+      case .paused: return "Transfer paused"
+      case .ended: return "Transfer ended"
+      }
+    }
     if hasPromisedFiles { return "Save files before sending" }
     if selectionHasUnsupportedItems { return "Drop files only" }
     if !hasFileURLs { return "Drop a file to send" }
@@ -196,12 +212,27 @@ enum EdgeDropGeometry {
     return "Send \(draggedFileCount) file\(draggedFileCount == 1 ? "" : "s") to"
   }
 
+  var acceptedDropPhase: EdgeDropFeedbackPhase {
+    // Presentation follows only the reservation that created this shelf, never another batch.
+    guard pendingDropID != nil, model.dropSourceID == pendingDropID, !model.receiving else { return .ended }
+    if model.preparing { return .preparing }
+    switch model.state {
+    case .idle: return .preparing
+    case .waitingForPeerApproval: return .waiting
+    case .transferring(let batch, _, _, _, _, let bytes, _):
+      return bytes >= batch.totalBytes ? .verifying : .sending
+    case .paused: return .paused
+    case .incomingOffer, .completed, .rejected, .failed, .cancelled: return .ended
+    }
+  }
+
   var edgeHint: String {
-    sentFeedback == nil ? "\(preferences.edge.title.uppercased()) EDGE · DROP HERE" : "Edge Drop"
+    sentFeedback == nil && acceptedDrop == nil ? "\(preferences.edge.title.uppercased()) EDGE · DROP HERE" : "Edge Drop"
   }
 
   var shelfDetail: String {
     if let sentFeedback { return sentFeedback.peerName }
+    if let acceptedDrop { return "\(acceptedDrop.peerName) · Follow progress in aniCe" }
     if hasPromisedFiles { return "Promised files aren’t supported." }
     if selectionHasUnsupportedItems { return "Every item in the drop must be a local file." }
     if !hasFileURLs { return "Drag saved files from Finder." }
@@ -213,6 +244,15 @@ enum EdgeDropGeometry {
 
   var shelfSymbol: String {
     if sentFeedback != nil { return "checkmark.circle" }
+    if acceptedDrop != nil {
+      switch acceptedDropPhase {
+      case .preparing, .verifying: return "arrow.triangle.2.circlepath"
+      case .sending: return "paperplane"
+      case .waiting: return "hourglass"
+      case .paused: return "pause.circle"
+      case .ended: return "info.circle"
+      }
+    }
     if hasPromisedFiles || draggedFileCount > 128 { return "doc.badge.ellipsis" }
     if model.preparing { return "arrow.triangle.2.circlepath" }
     if model.isBusy { return "hourglass" }
@@ -221,10 +261,11 @@ enum EdgeDropGeometry {
   }
 
   var shelfColorScheme: ColorScheme { selectedColorScheme }
-  var presentationSize: NSSize { sentFeedback == nil ? EdgeDropGeometry.shelfSize : EdgeDropGeometry.feedbackSize }
+  var presentationSize: NSSize { sentFeedback == nil && acceptedDrop == nil ? EdgeDropGeometry.shelfSize : EdgeDropGeometry.feedbackSize }
 
   func updateNativeDrag(_ pasteboard: NSPasteboard) -> NSDragOperation {
     sentFeedback = nil
+    acceptedDrop = nil
     refreshCandidate(from: pasteboard)
     return canAcceptCurrentDrag ? .copy : []
   }
@@ -236,13 +277,22 @@ enum EdgeDropGeometry {
 
   func finishDrop(_ urls: [URL]) -> Bool {
     let point = shelfFrame.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
+    let recipient = model.connectedAndroidRecipient
+    let previousReservation = model.dropReservation
     let accepted = TransferDropSubmission.receive(urls: urls, model: model)
-    if accepted, let reservation = model.dropReservation {
+    let reserved = accepted && model.dropReservation != nil && model.dropReservation != previousReservation
+    if reserved, let reservation = model.dropReservation {
       pendingDropID = reservation
       feedbackPoint = point
     }
     dismissShelf()
     resetCandidate()
+    if reserved, let recipient, preferences.enabled, !sleeping {
+      acceptedDrop = (urls.count, recipient.displayName)
+      if started, let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) ?? NSScreen.main {
+        showShelf(on: screen, near: point)
+      }
+    }
     return accepted
   }
 
@@ -254,6 +304,8 @@ enum EdgeDropGeometry {
     pendingDropID = nil
     guard preferences.enabled, !sleeping else { return }
     sentFeedback = batch
+    acceptedDrop = nil
+    NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
     guard started, let point = feedbackPoint,
       let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) ?? NSScreen.main else { return }
     showShelf(on: screen, near: point)
@@ -442,7 +494,7 @@ enum EdgeDropGeometry {
   }
 
   private func scheduleDismiss(after interval: TimeInterval) {
-    guard sentFeedback == nil else { return }
+    guard sentFeedback == nil, acceptedDrop == nil else { return }
     dismissTimer?.invalidate()
     dismissTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
       MainActor.assumeIsolated { self?.dismissShelf() }
@@ -457,6 +509,7 @@ enum EdgeDropGeometry {
     shelf = nil
     shelfFrame = nil
     sentFeedback = nil
+    acceptedDrop = nil
   }
 
   private func resetCandidate() {
@@ -492,7 +545,11 @@ enum EdgeDropGeometry {
   }
 
   override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-    controller?.enterNativeDrag(sender.draggingPasteboard) ?? []
+    let operation = controller?.enterNativeDrag(sender.draggingPasteboard) ?? []
+    if operation == .copy {
+      NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+    }
+    return operation
   }
 
   override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -510,7 +567,11 @@ enum EdgeDropGeometry {
   override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
     guard let controller else { return false }
     let urls = MacEdgeDropController.fileURLs(from: sender.draggingPasteboard)
-    return controller.finishDrop(urls)
+    let accepted = controller.finishDrop(urls)
+    if accepted {
+      NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+    }
+    return accepted
   }
 }
 
@@ -523,7 +584,8 @@ private struct EdgeDropShelfView: View {
       Image(systemName: controller.shelfSymbol)
         .font(.system(size: 28, weight: .medium))
         .foregroundStyle(controller.sentFeedback != nil ? AniCePalette.success(scheme) :
-          controller.canAcceptCurrentDrag ? AniCePalette.accent(scheme) : AniCePalette.warning(scheme))
+          controller.canAcceptCurrentDrag || controller.acceptedDrop != nil
+            ? AniCePalette.accent(scheme) : AniCePalette.warning(scheme))
         .frame(width: 38)
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 6) {
@@ -544,7 +606,7 @@ private struct EdgeDropShelfView: View {
     }
     .padding(.horizontal, 20)
     .frame(width: controller.presentationSize.width, height: controller.presentationSize.height)
-    .background(AniCePalette.surface(scheme), in: RoundedRectangle(cornerRadius: 16))
+    .aniCeSurface(cornerRadius: 16)
     .overlay {
       RoundedRectangle(cornerRadius: 16).stroke(AniCePalette.separator(scheme), lineWidth: 1)
     }
@@ -560,29 +622,24 @@ struct EdgeDropSettingsView: View {
   @Environment(\.colorScheme) private var scheme
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 2) {
+    VStack(alignment: .leading, spacing: 8) {
       Toggle("Edge Drop", isOn: Binding(
         get: { controller.preferences.enabled },
         set: { controller.setEnabled($0) }))
-        .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3)
-        .controlSize(.regular).frame(minHeight: 32, alignment: .leading)
-      HStack {
-        Text("Shelf edge")
-        Spacer()
+        .toggleStyle(AniCePreferenceToggleStyle())
+        .frame(minHeight: 32, alignment: .leading)
+      AniCePreferenceRow("Shelf edge", description: controller.preferences.enabled
+        ? "Drag files to the selected edge and drop them on the shelf."
+        : "Turn on to send files from Finder.", fontScale: settingsFontScale ?? 1) {
         Picker("Shelf edge", selection: Binding(
           get: { controller.preferences.edge },
           set: { controller.setEdge($0) })) {
           ForEach(EdgeDropEdge.allCases) { edge in Text(edge.title).tag(edge) }
         }
-        .labelsHidden().pickerStyle(.menu).controlSize(.regular).frame(width: 112)
+        .labelsHidden().pickerStyle(.menu).controlSize(.regular)
           .accessibilityLabel("Shelf edge")
+          .aniCeControlFeedback()
       }
-      .frame(minHeight: 32)
-      Text(controller.preferences.enabled
-        ? "Drag files to the selected edge and drop them on the shelf."
-        : "Turn on to send files from Finder.")
-        .font(settingsFontScale.map { Font.system(size: 12 * $0) } ?? .caption).foregroundStyle(AniCePalette.secondaryText(scheme))
-        .fixedSize(horizontal: false, vertical: true)
       if let error = controller.monitorError {
         Text(error).font(settingsFontScale.map { Font.system(size: 12 * $0) } ?? .caption).foregroundStyle(AniCePalette.error(scheme))
       }

@@ -10,6 +10,7 @@ import java.util.Locale
 sealed interface PhoneInputTextAction {
     data class Commit(val value: String) : PhoneInputTextAction
     data class Backspace(val count: Int) : PhoneInputTextAction
+    data class MoveCursor(val delta: Int) : PhoneInputTextAction
 }
 
 class PhoneInputTextPlan internal constructor(val actions: List<PhoneInputTextAction>)
@@ -52,8 +53,12 @@ class PhoneInputTextSync(
     private val segmenter: PhoneInputGraphemeSegmenter = AndroidPhoneInputGraphemes(),
 ) {
     private var sentText = ""
+    private var sentCaret = 0
 
-    fun reset() { sentText = "" }
+    fun reset() {
+        sentText = ""
+        sentCaret = 0
+    }
 
     /** Chunks commits to the receiver's negotiated per-record text limit. */
     fun plan(nextText: String, maxCommitBytes: Int = MAX_COMMIT_BYTES): PhoneInputTextResult {
@@ -71,28 +76,68 @@ class PhoneInputTextSync(
 
         val oldCount = oldBoundaries.size - 1
         val newCount = newBoundaries.size - 1
-        var common = 0
-        while (common < oldCount && common < newCount) {
-            val oldCluster = sentText.substring(oldBoundaries[common], oldBoundaries[common + 1])
-            val newCluster = nextText.substring(newBoundaries[common], newBoundaries[common + 1])
-            if (oldCluster != newCluster) break
-            common++
+        fun oldCluster(index: Int) = sentText.substring(oldBoundaries[index], oldBoundaries[index + 1])
+        fun newCluster(index: Int) = nextText.substring(newBoundaries[index], newBoundaries[index + 1])
+
+        var commonPrefix = 0
+        while (commonPrefix < oldCount && commonPrefix < newCount &&
+            oldCluster(commonPrefix) == newCluster(commonPrefix)
+        ) {
+            commonPrefix++
         }
 
-        val backspaces = oldCount - common
-        if (backspaces > MAX_CORRECTION_GRAPHEMES) return PhoneInputTextResult.CorrectionTooLarge
-        val suffixStart = newBoundaries[common]
-        val suffix = nextText.substring(suffixStart)
-        val suffixBoundaries = newBoundaries.drop(common).map { it - suffixStart }
-        if (suffixBoundaries.zipWithNext().any { (start, end) ->
-                suffix.substring(start, end).toByteArray(Charsets.UTF_8).size > maxCommitBytes
+        val maxSuffix = minOf(oldCount - commonPrefix, newCount - commonPrefix)
+        var commonSuffix = 0
+        while (commonSuffix < maxSuffix &&
+            oldCluster(oldCount - 1 - commonSuffix) == newCluster(newCount - 1 - commonSuffix)
+        ) {
+            commonSuffix++
+        }
+
+        // Preserve edits directly at sentCaret when repeated clusters make prefix/suffix placement ambiguous.
+        if (sentCaret in 0..oldCount) {
+            val suffixLen = oldCount - sentCaret
+            if (suffixLen > commonSuffix && newCount >= suffixLen &&
+                (0 until suffixLen).all { i -> oldCluster(oldCount - 1 - i) == newCluster(newCount - 1 - i) }
+            ) {
+                val maxPrefixAtCaret = minOf(sentCaret, newCount - suffixLen)
+                var prefixAtCaret = 0
+                while (prefixAtCaret < maxPrefixAtCaret && oldCluster(prefixAtCaret) == newCluster(prefixAtCaret)) {
+                    prefixAtCaret++
+                }
+                commonPrefix = prefixAtCaret
+                commonSuffix = suffixLen
+            }
+        }
+
+        val rewriteTailCount = oldCount - commonPrefix
+        val useCursorNavigation = commonSuffix > 2 || sentCaret < oldCount || rewriteTailCount > MAX_CORRECTION_GRAPHEMES
+        val effectiveSuffix = if (useCursorNavigation) commonSuffix else 0
+
+        val editEndOld = oldCount - effectiveSuffix
+        val cursorDelta = editEndOld - sentCaret
+        val backspaces = editEndOld - commonPrefix
+        if (backspaces > MAX_CORRECTION_GRAPHEMES || kotlin.math.abs(cursorDelta) > MAX_CORRECTION_GRAPHEMES) {
+            return PhoneInputTextResult.CorrectionTooLarge
+        }
+
+        val insertStartByte = newBoundaries[commonPrefix]
+        val insertEndIndex = newCount - effectiveSuffix
+        val insertEndByte = newBoundaries[insertEndIndex]
+        val insertSlice = nextText.substring(insertStartByte, insertEndByte)
+        val insertBoundaries = newBoundaries.subList(commonPrefix, insertEndIndex + 1).map { it - insertStartByte }
+        if (insertBoundaries.zipWithNext().any { (start, end) ->
+                insertSlice.substring(start, end).toByteArray(Charsets.UTF_8).size > maxCommitBytes
             }) return PhoneInputTextResult.GraphemeTooLarge
+
         val actions = buildList {
+            if (cursorDelta != 0) add(PhoneInputTextAction.MoveCursor(cursorDelta))
             if (backspaces > 0) add(PhoneInputTextAction.Backspace(backspaces))
-            appendCommitChunks(suffix, suffixBoundaries, maxCommitBytes, this)
+            appendCommitChunks(insertSlice, insertBoundaries, maxCommitBytes, this)
         }
         val plan = PhoneInputTextPlan(actions)
         sentText = nextText
+        sentCaret = insertEndIndex
         return if (actions.isEmpty()) PhoneInputTextResult.Unchanged else PhoneInputTextResult.Ready(plan)
     }
 

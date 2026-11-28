@@ -72,6 +72,56 @@ import SwiftUI
 }
 
 final class KeyboardTrackpadTests: XCTestCase {
+  @MainActor func testVerticalScrollMomentumContinuesButCannotResumeAfterCaptureLoss() async throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let model = readyModel(peer: peer, transport: transport)
+    defer { model.shutdown() }
+    model.connect()
+    model.scrollSpeed = .standard
+    model.requestControl(on: .pad)
+    model.scrollGesture(deltaX: 0, deltaY: 24, phase: .began, precise: true, momentum: false)
+    model.scrollGesture(deltaX: 0, deltaY: 0, phase: .ended, precise: true, momentum: false)
+    try await Task.sleep(for: .milliseconds(40))
+    let before = transport.writes.count
+    model.scrollGesture(deltaX: 0, deltaY: 24, phase: [], precise: true, momentum: true)
+    try await Task.sleep(for: .milliseconds(40))
+    XCTAssertGreaterThan(transport.writes.count, before)
+    model.stopControlling()
+    model.requestControl(on: .pad)
+    let stopped = transport.writes.count
+    model.scrollGesture(deltaX: 0, deltaY: 24, phase: [], precise: true, momentum: true)
+    try await Task.sleep(for: .milliseconds(40))
+    XCTAssertEqual(transport.writes.count, stopped)
+  }
+
+  @MainActor func testCombinedPadAcceptsTypingAndModeChangeReleasesCapture() throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let preferences = testDefaults()
+    let model = MacKeyboardTrackpadModel(transport: transport, preferences: preferences)
+    defer { model.shutdown() }
+    model.updateTargets([peer], connectedPeerIDs: [peer.deviceId], peerContextID: nil)
+    model.refreshPairedDevices()
+    XCTAssertTrue(model.link(paired(peer)))
+    model.connect()
+    model.requestControl(on: .pad)
+    XCTAssertTrue(model.combinedInput)
+    model.keyDown(usage: 4, modifiers: 2)
+    model.pointerButtonDown()
+    XCTAssertTrue(transport.writes.contains(.keyboard(2, [4])))
+    XCTAssertTrue(transport.writes.contains(.mouse(1, 0, 0, 0)))
+    model.combinedInput = false
+    XCTAssertFalse(model.isControlling)
+    XCTAssertFalse(preferences.bool(forKey: "keyboardTrackpad.combinedInput"))
+    model.requestControl(on: .pad)
+    let count = transport.writes.count
+    model.keyDown(usage: 5, modifiers: 0)
+    XCTAssertEqual(transport.writes.count, count)
+  }
+
   @MainActor func testActiveBlePhoneIsTheAutomaticDefaultWithoutReroutingLiveInput() throws {
     let a = try phone("A"), b = try phone("B")
     let transport = FakeKeyboardTrackpadTransport()
@@ -1123,6 +1173,7 @@ final class KeyboardTrackpadTests: XCTestCase {
     let transport = FakeKeyboardTrackpadTransport()
     transport.devices = [paired(peer)]
     let model = readyModel(peer: peer, transport: transport)
+    model.combinedInput = false
     defer { model.shutdown() }
     let host = NSHostingView(rootView: MacKeyboardTrackpadView(model: model).frame(width: 700, height: 760))
     let window = KeyboardTrackpadTestWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 760), styleMask: [.borderless], backing: .buffered, defer: false)
@@ -1189,6 +1240,7 @@ final class KeyboardTrackpadTests: XCTestCase {
     let transport = FakeKeyboardTrackpadTransport()
     transport.devices = [paired(peer)]
     let model = readyModel(peer: peer, transport: transport)
+    model.combinedInput = false
     defer { model.shutdown() }
     let host = NSHostingView(rootView: ScrollView { MacKeyboardTrackpadView(model: model).padding(24) })
     let window = KeyboardTrackpadTestWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 800), styleMask: [.borderless], backing: .buffered, defer: false)
@@ -1212,6 +1264,30 @@ final class KeyboardTrackpadTests: XCTestCase {
     }
   }
 
+  @MainActor func testCombinedLayoutHidesKeyboardAndRestoresItWhenDisabled() async throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let model = readyModel(peer: peer, transport: transport)
+    defer { model.shutdown() }
+    let host = NSHostingView(rootView: MacKeyboardTrackpadView(model: model).frame(width: 700, height: 760))
+    let window = KeyboardTrackpadTestWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 760),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.contentView = host
+    defer { window.contentView = nil }
+    func keyboards(_ view: NSView) -> [KeyboardInputNSView] {
+      (view as? KeyboardInputNSView).map { [$0] } ?? view.subviews.flatMap(keyboards)
+    }
+    try await Task.sleep(for: .milliseconds(80))
+    host.layoutSubtreeIfNeeded()
+    XCTAssertTrue(model.combinedInput)
+    XCTAssertTrue(keyboards(host).isEmpty)
+    model.combinedInput = false
+    try await Task.sleep(for: .milliseconds(80))
+    host.layoutSubtreeIfNeeded()
+    XCTAssertEqual(keyboards(host).count, 1)
+  }
+
   @MainActor func testFailedWriteAfterCaptureEndsStopsPendingShortcut() throws {
     let peer = try phone("Phone")
     let transport = FakeKeyboardTrackpadTransport()
@@ -1228,6 +1304,42 @@ final class KeyboardTrackpadTests: XCTestCase {
     XCTAssertEqual(model.failureMessage, "Link failed")
     XCTAssertEqual(transport.writes, [.keyboard(0, [4])], "A failed connection must not send the queued shortcut")
     XCTAssertFalse(model.canSendShortcut)
+  }
+
+  @MainActor func testCombinedPadCapsLockUsesEachActivationClickAsItsBaseline() throws {
+    let peer = try phone("Phone")
+    let transport = FakeKeyboardTrackpadTransport()
+    transport.devices = [paired(peer)]
+    let model = readyModel(peer: peer, transport: transport)
+    defer { model.shutdown() }
+    model.connect()
+    let pad = MousePadNSView()
+    pad.model = model
+    model.enterPanel(id: pad.presentationID, automaticallyConnect: false, refreshPairedDevices: false)
+    let window = KeyboardTrackpadTestWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 100),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.contentView = pad
+    defer { window.contentView = nil }
+    for initial: NSEvent.ModifierFlags in [[.capsLock], [], [.capsLock]] {
+      model.stopControl(owner: pad.captureOwner)
+      let click = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: .zero,
+        modifierFlags: initial, timestamp: 0, windowNumber: window.windowNumber, context: nil,
+        eventNumber: 0, clickCount: 1, pressure: 1))
+      pad.mouseDown(with: click)
+      XCTAssertTrue(model.isControlling(owner: pad.captureOwner))
+      transport.writes.removeAll()
+      let next: NSEvent.ModifierFlags = initial.isEmpty ? [.capsLock] : []
+      let event = try XCTUnwrap(NSEvent.keyEvent(with: .flagsChanged, location: .zero,
+        modifierFlags: next, timestamp: 0, windowNumber: window.windowNumber, context: nil,
+        characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 0x39))
+      pad.flagsChanged(with: event)
+      pad.flagsChanged(with: event)
+      XCTAssertEqual(transport.writes, [.keyboard(0, [0x39]), .keyboard(0, [])])
+      model.stopControl(owner: pad.captureOwner)
+      transport.writes.removeAll()
+      pad.flagsChanged(with: event)
+      XCTAssertTrue(transport.writes.isEmpty)
+    }
   }
 
   @MainActor func testCapsLockChangesSendOneTapAndPreserveHeldKeys() throws {

@@ -938,6 +938,68 @@ class AndroidReportFreshnessTests(unittest.TestCase):
                     suite.run_android_jvm({}, root)
                 command.assert_not_called()
 
+    def test_hosted_emulator_requires_the_synthetic_lan_regression_to_pass(self):
+        identity = next(iter(suite.HOSTED_EMULATOR_REQUIRED_TESTS))
+        test_class, test_name = identity.split("#")
+        for outcome in ("passed", "skipped", "missing"):
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                report = root / "app/build/outputs/androidTest-results/connected/TEST-LAN.xml"
+
+                def gradle(*args, **kwargs):
+                    report.parent.mkdir(parents=True)
+                    result = '<testcase name="anotherTest"/>'
+                    if outcome != "missing":
+                        status = "<skipped/>" if outcome == "skipped" else ""
+                        result = f'<testcase classname="pkg.{test_class}" name="{test_name}">{status}</testcase>'
+                    report.write_text(f'<testsuite tests="1">{result}</testsuite>')
+
+                with patch.object(suite, "ANDROID", root), \
+                     patch.object(suite, "MINIMUM_CONNECTED", 1), \
+                     patch.object(suite, "run_step", side_effect=gradle), \
+                     patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}), \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    if outcome == "passed":
+                        self.assertEqual(suite.run_connected_android({}, root, (identity,), preview=True), (1, 0))
+                    else:
+                        with self.assertRaisesRegex(suite.GateError, "Hosted emulator did not pass"):
+                            suite.run_connected_android({}, root, (identity,), preview=True)
+                    self.assertTrue((root / "android-connected-tests.json").is_file())
+
+    def test_failed_gradle_run_surfaces_failing_junit_tests_and_persists_json(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = root / 'artifacts'
+            artifacts.mkdir()
+            reports = root / 'app/build/outputs/androidTest-results/connected'
+
+            def failing_gradle(*args, **kwargs):
+                reports.mkdir(parents=True, exist_ok=True)
+                (reports / 'TEST-fail.xml').write_text(
+                    '<testsuite name="pkg.Suite" tests="2" failures="1" errors="0" skipped="0">'
+                    '<testcase classname="pkg.Suite" name="passes"/>'
+                    '<testcase classname="pkg.Suite" name="crashes">'
+                    '<failure message="\n  bad state\n::notice::injected">stack</failure></testcase>'
+                    '</testsuite>'
+                )
+                raise suite.GateError('Android connected tests failed with exit 1; log: fake.log')
+
+            stderr = io.StringIO()
+            with patch.object(suite, 'ANDROID', root), \
+                 patch.object(suite, 'run_step', side_effect=failing_gradle), \
+                 patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'}), \
+                 contextlib.redirect_stderr(stderr):
+                with self.assertRaises(suite.GateError) as raised:
+                    suite.run_connected_android({}, artifacts, ())
+
+            message = str(raised.exception)
+            self.assertIn('1 failing test(s)', message)
+            self.assertIn('pkg.Suite#crashes: bad state', message)
+            self.assertIn('::error::Android connected: pkg.Suite#crashes', stderr.getvalue())
+            self.assertNotIn('\n::notice::injected', stderr.getvalue())
+            saved = json.loads((artifacts / 'android-connected-tests.json').read_text())
+            self.assertEqual([row['name'] for row in saved], ['passes', 'crashes'])
+
     def test_find_adb_discovers_custom_env_and_linux_paths(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1033,7 +1095,7 @@ class VectorGateTests(unittest.TestCase):
     def test_acceptance_scripts_do_not_use_optimization_removable_assertions(self):
         paths = list((suite.ROOT / "protocol/test-vectors").rglob("generate*.py"))
         paths.extend(suite.SCRIPTS / name for name in (
-            "verify-suite.py", "verify-identity-interchange.py", "verify-session-interchange.py",
+            "verify-suite.py", "ci_changes.py", "verify-identity-interchange.py", "verify-session-interchange.py",
             "verify-lan-interchange.py", "publish_release.py"))
         for path in paths:
             with self.subTest(path=path):

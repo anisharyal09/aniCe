@@ -70,4 +70,42 @@ class ReleaseNotesTest {
             assertTrue(rendered.getLinkAnnotations(0, rendered.length).isEmpty())
         }
     }
+
+    @Test fun horizontalRulesAndDuplicateVersionHeadingAreNormalized() {
+        val raw = "# aniCe v0.9.0-beta.2\n## What's changed\n---\n- **Fixed** rendering\n***\n___"
+        val blocks = ReleaseNotes.blocks(raw, version = "v0.9.0-beta.2")
+        assertEquals(5, blocks.size)
+        assertEquals(2, blocks[0].heading)
+        assertEquals("What's changed", blocks[0].text)
+        assertTrue(blocks[1].divider)
+        assertEquals("•", blocks[2].marker)
+        assertTrue(blocks[3].divider)
+        assertTrue(blocks[4].divider)
+        assertEquals("No release notes provided.", ReleaseNotes.blocks("# aniCe v0.9.0-beta.2", version = "v0.9.0-beta.2").single().text)
+    }
+
+    @Test(timeout = 2000) fun blockLineAndInlineSpanCapsBoundAdversarialMarkdown() {
+        val manyItems = (1..300).joinToString("\n") { "- Item $it" }
+        val blockCapped = ReleaseNotes.blocks(manyItems)
+        assertEquals(ReleaseNotes.MAX_BLOCKS, blockCapped.size)
+        assertEquals("Release notes truncated. Open on GitHub for full notes.", blockCapped.last().text)
+
+        val manyLines = (1..350).joinToString("\n") { "Line $it" }
+        val lineCapped = ReleaseNotes.blocks(manyLines)
+        assertTrue(lineCapped.size <= ReleaseNotes.MAX_BLOCKS)
+        assertEquals("Release notes truncated. Open on GitHub for full notes.", lineCapped.last().text)
+
+        val sourceFlood = "<!--" + " ".repeat(20_000) + "still visible"
+        assertEquals(sourceFlood, ReleaseNotes.blocks(sourceFlood).single().text)
+
+        val manySpans = (1..120).joinToString(" ") { "**Bold$it**" }
+        val budget = intArrayOf(500)
+        val rendered = ReleaseNotes.annotated(manySpans, Color.Red, budget)
+        assertEquals(ReleaseNotes.MAX_INLINE_SPANS_PER_BLOCK, rendered.spanStyles.size)
+        assertEquals(500 - ReleaseNotes.MAX_INLINE_SPANS_PER_BLOCK, budget[0])
+
+        val unclosedStars = "**".repeat(4_000) + "tail"
+        val plain = ReleaseNotes.annotated(unclosedStars, Color.Red)
+        assertEquals(unclosedStars, plain.text)
+    }
 }

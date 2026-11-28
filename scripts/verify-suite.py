@@ -45,6 +45,7 @@ MINIMUMS = {
     "python": 150,
     "ci-policy": 30,
 }
+# Documented instrumentation skips do not count toward the passing floor.
 MINIMUM_CONNECTED = 30
 
 # A workflow lane is the only unit CI selects.  Keeping this mapping in the
@@ -138,12 +139,34 @@ DOCUMENTED_ANDROID_SKIPS = {
     "PhysicalSessionNavigationTest#physicalReplySubscription",
     "PhysicalSessionNavigationTest#automaticOwnerSurvivesRecentsRemovalAndQuietKeepalive",
     "PhysicalSessionNavigationTest#authenticatedConnectionSurvivesPresentationHandoffs",
+    # Runs in the synthetic fixture when the local installation has automatic LAN enabled.
+    "LanOwnershipTest#restoredAddressesRequestOneAttemptAndRespectBackgroundAndDisconnect",
+    # These native regressions require a usable Wi-Fi network or Bluetooth support.
+    "LanOwnershipTest#lostNetworkRetiresOwnerAndIgnoresStaleCallbacks",
+    "LanOwnershipTest#changedInterfaceRetiresOwnerAndIgnoresStaleCallbacks",
+    "LanOwnershipTest#disconnectCancelsDiscoveryAndReleasesReservation",
+    "LanOwnershipTest#anotherStartedPresentationKeepsLanUntilFinalStop",
+    "LanOwnershipTest#approvedWorkSurvivesBackgroundUntilItsLeaseEnds",
+    "LanOwnershipTest#pickerSurvivesBackgroundUntilItsLeaseEnds",
+    "LanOwnershipTest#serviceLossRetiresBackgroundWork",
+    "LanOwnershipTest#securityInvalidationRetiresLanOwner",
+    "LanOwnershipTest#discoveryOpeningIsIdleAndScanPreservesLanUntilDeviceCancellation",
+    "LanSocketPolicyRegressionTest#configuringTcpUserTimeoutKeepsTheOriginalSocketUsable",
+    "PairedBleHandoffTest#locatorIsConsumedOnceAndCannotSurviveMismatchExpiryOrDiscard",
+    "NearbyPermissionTest#firstPromptIsPersistedAndDenialSurvivesAReplacementPresentation",
+}
+
+# A fresh hosted emulator has automatic LAN enabled; its synthetic address test must execute.
+HOSTED_EMULATOR_REQUIRED_TESTS = {
+    "LanOwnershipTest#restoredAddressesRequestOneAttemptAndRespectBackgroundAndDisconnect",
 }
 
 DOCUMENTED_MACOS_SKIPS = {
     "MediaTests#testPackagedOwnerAgainstCurrentlyPlayingSource",
     "CapabilityRepairTests#testExplicitPackagedPlayerToggleAndSeekAcceptance",
     "OutputVolumeTests#testExplicitPackagedOutputVolumeRoundTrip",
+    # The test first checks whether the host exposes accessibility children for a native switch.
+    "PreferenceToggleTests#testAccessibleControlMatchesNativeSwitchAndDoesNotDuplicateLabelActions",
 }
 
 
@@ -814,21 +837,50 @@ def run_rust(env, artifacts):
     return cargo_results(log)
 
 
+def _raise_with_junit_diagnostics(roots, json_output, label, step_error):
+    """Surface failing JUnit test identifiers when Gradle fails after executing tests."""
+    paths = collect_junit_reports(roots)
+    if not paths:
+        raise step_error
+    try:
+        results = parse_junit_files(paths)
+        write_json(json_output, [asdict(result) for result in results])
+    except (GateError, OSError):
+        raise step_error
+    failed = [result for result in results if result.outcome in ("failed", "error")]
+    if not failed:
+        raise step_error
+    preview_lines = []
+    for result in failed[:15]:
+        detail = next((line.strip() for line in result.detail.splitlines() if line.strip()), "")
+        diagnostic = result.identifier + (": " + detail if detail else "")
+        workflow_error(GateError(f"{label}: {diagnostic}"))
+        preview_lines.append("  " + diagnostic)
+    if len(failed) > 15:
+        preview_lines.append("  ... and %d more failing test(s)" % (len(failed) - 15))
+    raise GateError(
+        "%s (%d failing test(s)):\n%s" % (step_error, len(failed), "\n".join(preview_lines))
+    ) from step_error
+
+
 def run_android_jvm(env, artifacts):
     reports = ANDROID / "app/build/test-results/testDebugUnitTest"
     # Old XML could make a runner that executes nothing appear successful. Cleanup errors must fail.
     for folder in (reports, ANDROID / "app/build/reports/tests/testDebugUnitTest"):
         if folder.exists():
             shutil.rmtree(folder)
-    run_step(
-        "Android JVM tests, lint, and test compilation",
-        # Dependency caches remain usable, but cached task outputs must not replace test execution.
-        [
-            ANDROID / "gradlew", "--console=plain", "--no-build-cache",
-            "cleanTestDebugUnitTest", "testDebugUnitTest", "lintDebug", "assembleDebugAndroidTest",
-        ],
-        artifacts, cwd=ANDROID, env=env, timeout=2400,
-    )
+    try:
+        run_step(
+            "Android JVM tests, lint, and test compilation",
+            # Dependency caches remain usable, but cached task outputs must not replace test execution.
+            [
+                ANDROID / "gradlew", "--console=plain", "--no-build-cache",
+                "cleanTestDebugUnitTest", "testDebugUnitTest", "lintDebug", "assembleDebugAndroidTest",
+            ],
+            artifacts, cwd=ANDROID, env=env, timeout=2400,
+        )
+    except GateError as step_error:
+        _raise_with_junit_diagnostics([reports], artifacts / "android-tests.json", "Android JVM", step_error)
     paths = collect_junit_reports([reports])
     if not paths:
         raise GateError(
@@ -958,27 +1010,37 @@ def run_connected_checks(args, env, artifacts, documented_android):
 
 def run_connected_android(env, artifacts, documented, preview=False):
     # Connected tests need fresh reports for the same reason as the host JVM suite.
-    for folder in (
+    report_roots = [
         ANDROID / "app/build/outputs/androidTest-results/connected",
         ANDROID / "app/build/test-results/connectedDebugAndroidTest",
+    ]
+    for folder in (
+        *report_roots,
         ANDROID / "app/build/reports/androidTests/connected",
     ):
         if folder.exists():
             shutil.rmtree(folder)
-    run_step(
-        "Android connected tests",
-        [ANDROID / "gradlew", "--console=plain", "--no-build-cache",
-         *(["-PanicePreview=true"] if preview else []), "connectedDebugAndroidTest"],
-        artifacts, cwd=ANDROID, env=env, timeout=3600,
-    )
-    paths = collect_junit_reports([
-        ANDROID / "app/build/outputs/androidTest-results/connected",
-        ANDROID / "app/build/test-results/connectedDebugAndroidTest",
-    ])
+    try:
+        run_step(
+            "Android connected tests",
+            [ANDROID / "gradlew", "--console=plain", "--no-build-cache",
+             *(["-PanicePreview=true"] if preview else []), "connectedDebugAndroidTest"],
+            artifacts, cwd=ANDROID, env=env, timeout=3600,
+        )
+    except GateError as step_error:
+        _raise_with_junit_diagnostics(
+            report_roots, artifacts / "android-connected-tests.json", "Android connected", step_error
+        )
+    paths = collect_junit_reports(report_roots)
     if not paths:
         raise GateError("Android connected run produced no JUnit reports; the tests did not execute")
     results = parse_junit_files(paths)
     write_json(artifacts / "android-connected-tests.json", [asdict(result) for result in results])
+    if preview and os.environ.get("GITHUB_ACTIONS") == "true":
+        passed_tests = {result.short_identifier for result in results if result.outcome == "passed"}
+        missing = HOSTED_EMULATOR_REQUIRED_TESTS - passed_tests
+        if missing:
+            raise GateError("Hosted emulator did not pass required tests: " + ", ".join(sorted(missing)))
     return validate_results(
         results, "Android connected", MINIMUM_CONNECTED,
         documented=documented,

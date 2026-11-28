@@ -29,9 +29,6 @@ struct CompanionView: View {
         AniCeWordmark(size: 15, weight: .semibold)
         Spacer()
         Menu {
-          Button("Quick Paste Tray (⌥⌘V)") {
-            PasteTrayController.shared.show()
-          }
           Button("Manage devices") { navigation.open(.devices, present: openMain) }
           Button("Settings") { navigation.open(.settings, present: openMain) }
           Button("Quit aniCe") { NSApp.terminate(nil) }
@@ -66,8 +63,9 @@ struct CompanionView: View {
     }
     .padding(16)
     .frame(width: 350)
-    .background(AniCePalette.surface(colorScheme))
+    .background(CompanionMaterialBackground())
     .tint(AniCePalette.primaryText(colorScheme))
+    .aniCeAppearance()
     .task {
       if !IdentityView.isTesting {
         await identity.load()
@@ -102,7 +100,7 @@ struct CompanionView: View {
         .buttonStyle(AniCeButtonStyle(compact: true))
         .frame(maxWidth: .infinity)
         .accessibilityLabel("Open clipboard tray")
-        .help("Open clipboard tray (⌥⌘V)")
+        .help("Open clipboard tray (\(GlobalShortcutPreferences.shared.binding(.tray).label))")
       }
 
       HStack(spacing: 8) {
@@ -125,7 +123,7 @@ struct CompanionView: View {
         .buttonStyle(AniCeButtonStyle(compact: true))
         .frame(maxWidth: .infinity)
         .accessibilityLabel(floatingKeyboard.isVisible ? "Hide Floating Key" : "Show Floating Key")
-        .help("Show Floating Key to type directly on Android; right-click for full controls including trackpad (⌥⌘K).")
+        .help("Show Floating Key (\(GlobalShortcutPreferences.shared.binding(.floatingKey).label)) or toggle active typing (\(GlobalShortcutPreferences.shared.binding(.floatingKeyInput).label)); right-click for trackpad controls.")
       }
     }
   }
@@ -136,8 +134,7 @@ struct CompanionView: View {
       VStack(alignment: .leading, spacing: 4) {
         Text("Quick actions").font(.system(size: 11 * fontScale, weight: .medium))
           .foregroundStyle(AniCePalette.secondaryText(colorScheme))
-        ScrollView(.horizontal) {
-          HStack(spacing: 6) {
+          ShortcutFlowLayout(spacing: 6) {
             ForEach(pinned) { feature in
               Button {
                 executeQuickAction(feature)
@@ -153,8 +150,6 @@ struct CompanionView: View {
               .buttonStyle(AniCeHoverButtonStyle())
             }
           }
-        }
-        .scrollIndicators(.hidden)
       }
     }
   }
@@ -243,6 +238,7 @@ struct CompanionView: View {
   private var footer: some View {
     VStack(spacing: 12) {
       Divider()
+      HStack(spacing: 12) {
       Button(action: openMain) {
         HStack(spacing: 5) {
           Text("Open")
@@ -251,8 +247,49 @@ struct CompanionView: View {
           Image(systemName: "arrow.up.right").accessibilityHidden(true)
         }.contentShape(Rectangle())
       }.buttonStyle(AniCeHoverButtonStyle()).foregroundStyle(AniCePalette.accent(colorScheme))
+      Link(destination: AniCeSupport.url) {
+        Image(systemName: "heart").frame(width: 28, height: 28)
+      }.buttonStyle(AniCeHoverButtonStyle())
+        .foregroundStyle(AniCePalette.secondaryText(colorScheme))
+        .help("Support aniCe").accessibilityLabel("Support aniCe")
+      }
     }
   }
+}
+
+/// Behind-window vibrancy allows the companion to sample the desktop rather than an opaque hosting surface.
+private struct CompanionMaterialBackground: NSViewRepresentable {
+  @AppStorage("ui.nativeGlass") private var enabled = true
+  @AppStorage("ui.nativeGlassStyle") private var style = NativeGlassStyle.standard.rawValue
+  @Environment(\.accessibilityReduceTransparency) private var reduced
+  @Environment(\.colorScheme) private var scheme
+  func makeNSView(context: Context) -> CompanionMaterialView {
+    CompanionMaterialView()
+  }
+  func updateNSView(_ view: CompanionMaterialView, context: Context) {
+    let preset = NativeGlassStyle.stored(style)
+    view.blendingMode = .behindWindow
+    view.material = .menu
+    view.state = enabled && !reduced ? .active : .inactive
+    view.wantsLayer = true
+    view.layer?.backgroundColor = enabled && !reduced ? nil : NSColor(AniCePalette.surface(scheme)).cgColor
+    // A semantic backing distinguishes density without tinting macOS's sampled material.
+    view.backing.frame = view.bounds
+    view.backing.layer?.backgroundColor = enabled && !reduced
+      ? NSColor(AniCePalette.surface(scheme)).withAlphaComponent(preset.navigationBackingOpacity(scheme)).cgColor : nil
+  }
+}
+
+private final class CompanionMaterialView: NSVisualEffectView {
+  let backing = NSView()
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    backing.wantsLayer = true
+    backing.autoresizingMask = [.width, .height]
+    addSubview(backing)
+  }
+  required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 // Owns status-item presentation only; closing either surface leaves shared sessions running.
@@ -264,6 +301,8 @@ struct CompanionView: View {
   private let popover = NSPopover()
   private let playback: MacPlaybackModel
   private let floatingKeyboard: FloatingKeyboardController
+  private let clipboard: MacClipboardModel
+  private let navigation: ConnectionNavigation
   private let onOpen: () -> Void
   private let onManage: () -> Void
   private var handoffCompletion: (() -> Void)?
@@ -272,6 +311,8 @@ struct CompanionView: View {
   init(content: CompanionView, floatingKeyboard: FloatingKeyboardController, onOpen: @escaping () -> Void,
     onManage: @escaping () -> Void) {
     self.playback = content.playback
+    self.clipboard = content.clipboard
+    self.navigation = content.navigation
     self.floatingKeyboard = floatingKeyboard
     self.onOpen = onOpen
     self.onManage = onManage
@@ -302,7 +343,22 @@ struct CompanionView: View {
     if Self.showsContextMenu(eventType: event?.type,
       modifiers: event?.modifierFlags ?? []) {
       popover.performClose(nil)
-      item.popUpMenu(Self.makeMenu(target: self, floatingKeyboardVisible: floatingKeyboard.isVisible))
+      let menu = Self.makeMenu(target: self, floatingKeyboardVisible: floatingKeyboard.isVisible)
+      let history = NSMenuItem(title: "Clipboard history", action: nil, keyEquivalent: "")
+      let submenu = NSMenu()
+      if clipboard.history.collectionPaused {
+        let resume = NSMenuItem(title: "Resume history", action: #selector(resumeHistory), keyEquivalent: "")
+        resume.target = self; submenu.addItem(resume)
+      }
+      for (index, duration) in ClipboardPauseDuration.allCases.enumerated() {
+        let entry = NSMenuItem(title: duration.rawValue, action: #selector(pauseHistory(_:)), keyEquivalent: "")
+        entry.tag = index; entry.target = self; submenu.addItem(entry)
+      }
+      let custom = NSMenuItem(title: "Custom…", action: #selector(openHistorySettings), keyEquivalent: "")
+      custom.target = self; submenu.addItem(custom)
+      history.submenu = submenu
+      menu.insertItem(history, at: max(0, menu.items.count - 2))
+      item.popUpMenu(menu)
     } else if popover.isShown {
       popover.performClose(nil)
     } else {
@@ -325,7 +381,7 @@ struct CompanionView: View {
       menu.addItem(entry)
     }
 
-    let keyboard = NSMenuItem(title: (floatingKeyboardVisible ? "Hide Floating Key" : "Show Floating Key") + "  ⌥⌘K",
+    let keyboard = NSMenuItem(title: (floatingKeyboardVisible ? "Hide Floating Key" : "Show Floating Key") + "  " + GlobalShortcutPreferences.shared.binding(.floatingKey).label,
       action: #selector(toggleFloatingKeyboard), keyEquivalent: "")
     keyboard.target = target
     menu.addItem(keyboard)
@@ -349,6 +405,21 @@ struct CompanionView: View {
     onManage()
   }
   @objc private func toggleFloatingKeyboard() { floatingKeyboard.toggleVisibility() }
+  @objc private func resumeHistory() { clipboard.history.resumeCollection() }
+  @objc private func pauseHistory(_ sender: NSMenuItem) {
+    let choices = ClipboardPauseDuration.allCases
+    guard choices.indices.contains(sender.tag) else { return }
+    clipboard.history.pauseCollection(seconds: choices[sender.tag].seconds)
+  }
+  @objc private func openHistorySettings() {
+    popover.performClose(nil)
+    navigationToHistory()
+  }
+  private func navigationToHistory() {
+    navigation.openSettings(section: "clipboard")
+    onOpen()
+    NSApp.activate(ignoringOtherApps: true)
+  }
   @objc private func quitApp() { NSApp.terminate(nil) }
   func close() { popover.performClose(nil) }
 

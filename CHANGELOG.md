@@ -19,12 +19,27 @@ Shared product changes, repository structure, documentation and development conv
   to the Mac with one-time Android capture consent.
 - Add opt-in Transfer Preview diagnostics for capture, sending and playback.
 
+### Changed
+
+- Add a categorized offline Guide with contextual help, wrapping sticky filters and entry points in Features and Settings. Explain connection, permission and device limits for clipboard sharing, input, notifications and Find Device.
+- Optimize Android **Control Mac** text reconciliation (`PhoneInputTextSync`) to navigate middle edits with Left/Right arrow transitions (`0x50` / `0x4F`) instead of deleting and retyping trailing text, and add a **Clear** button in **Type on Mac** and fullscreen trackpad to reset the local buffer without altering text on the Mac.
+- Refine Android **Mac Desk Deck** onto calm `surfaceContainer` sheets with soft catchlight highlights, grouped Output device and tabular volume readout, and inline **Ping Mac**.
+- Bound release-note Markdown parsing and native inline styling across Mac and Android, and prevent stale update reviews from resurrecting or duplicating.
+- Refine native notification attribution, quiet updates, and operation-bound actions for mirrored alerts, Messages, and file transfers.
+- Merge Android Find Mac into Desk Deck and align persistent preference switches, segmented controls, Permissions organization, and Mac Native Glass surfaces.
+- Select native CI, dependency review and CodeQL work by changed inputs while preserving an always-reported merge gate and exact-commit release evidence. Share Cargo downloads across compatible jobs.
+- Skip redundant nightly Android emulator runs after successful verification, retain full weekly checks, and run the physical device lab on demand.
+
 ### Fixed
 
 - Keep more phone audio queued during short background stalls and resume Mac
   playback after brief queue drains without another prefill.
 - Keep Mac-to-phone startup from waiting on completed or cancelled transfers.
   Pace active transfers based on playback health.
+- Keep Guide filter and expansion choices through Android recreation, make Guide bulk actions apply to every topic, and keep obsolete update actions from clearing a newer release notice.
+- Explain why mirrored call alerts may appear outside the selected-app list and show actionable feedback when an alert tap expires, fails or goes unconfirmed.
+- Include failing Android test names in GitHub annotations and preserve JUnit results when Gradle reports test failures.
+- Prevent the Messages UI test from blocking while sending a synthetic click, and report when the hosted macOS runner cannot inspect a native switch.
 
 **Known limits:** Phone-to-Mac playback can stutter in the background.
 Bluetooth headphones can add delay when listening to Mac audio on Android.

@@ -44,7 +44,7 @@ Drop files to your screen edge to share them, sync clipboards instantly, reply t
 
 - **[Edge Drop](docs/features/FILE_TRANSFER.md#sending):** On by default at the right edge. Drag regular Finder files to the Mac screen edge to send them to the selected compatible phone; change the edge or turn the shelf off in Settings → File transfer.
 - **[Quick Paste Tray](docs/features/CLIPBOARD.md#quick-paste-tray-on-macos):** `⌥⌘V` opens searchable local clipboard history with previews, filters and pins. Copy a selection for ordinary paste, even without a connected phone.
-- **[Floating Key](docs/features/KEYBOARD_TRACKPAD.md#floating-key):** `⌥⌘K` toggles a floating button to send input directly to your phone from your Mac keyboard in a click—with an expandable trackpad control.
+- **[Floating Key](docs/features/KEYBOARD_TRACKPAD.md#floating-key):** `⌥⌘K` toggles the floating keyboard button, and `⌃⌘K` starts or stops active typing directly without clicking—with an expandable trackpad control.
 - **Menu Bar Companion:** Click the menu bar icon to check phone battery and connection state, control active media playback, track transfer progress, access pinned features directly and quickly send files or clipboard text.
 
 ### File sharing and clipboard
@@ -69,7 +69,7 @@ Drop files to your screen edge to share them, sync clipboards instantly, reply t
 - **[Now Playing](docs/features/NOW_PLAYING.md):** Control your Mac’s playback from your phone with live track details, album artwork, automatic or manual player selection, and supported play/pause, skip and seek controls. Adjust supported player and Mac output volume, including with the phone’s volume buttons. Use the full player or Android notification/lock-screen controls when background ownership permits; optionally show playback in the Mac companion. Artwork uses LAN; audio keeps playing on the Mac.
 - **[Audio Sharing](docs/features/AUDIO_SHARING.md) (Experimental):** Send Mac audio to Android headphones or the phone speaker, or share eligible phone media to your Mac over an encrypted local connection. Phone-to-Mac sharing leaves phone playback on and excludes calls and the microphone.
 - **[Do Not Disturb sync](docs/features/DND_SYNC.md):** Relay phone DND changes to configured Mac Shortcuts.
-- **[Find Device](docs/features/FIND_DEVICE.md):** Ring a connected phone or notify a connected Mac through an existing trusted connection.
+- **[Find Device](docs/features/FIND_DEVICE.md):** Ring a connected phone from Mac, or notify a connected Mac from Android Desk Deck's Find Mac control, through an existing trusted connection.
 
 ## Technical foundation & security
 

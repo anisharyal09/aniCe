@@ -11,11 +11,12 @@ struct PasteTrayCopyToast: View {
       .font(.callout)
       .padding(.horizontal, 14)
       .frame(width: 260, height: 42)
-      .background(.regularMaterial, in: Capsule())
+      .aniCeSurface(cornerRadius: 21)
       .overlay(Capsule().stroke(AniCePalette.separator(scheme)))
       .shadow(color: .black.opacity(0.16), radius: 10, y: 4)
       .accessibilityElement(children: .ignore)
       .accessibilityLabel("Copied to clipboard. Paste with Command V.")
+      .aniCeAppearance()
   }
 }
 

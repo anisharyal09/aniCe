@@ -2,6 +2,93 @@
 // Composes the device overview, nested management and settings through application-scoped owners.
 import SwiftUI
 import AppKit
+import UserNotifications
+
+struct MacPermissionSummary: View {
+  let clipboard: MacClipboardModel
+  let notifications: UNAuthorizationStatus?
+  let showGranted: Bool
+  var onPermissionsChanged: () -> Void = {}
+  @State private var requestingNotifications = false
+  @State private var notificationError: String?
+  @Environment(\.colorScheme) private var scheme
+  @AppStorage("ui.fontScale") private var fontScale = 1.0
+
+  static func notificationsAllowed(_ status: UNAuthorizationStatus?) -> Bool {
+    status == .authorized || status == .provisional
+  }
+
+  private var notificationStatus: String {
+    switch notifications {
+    case .authorized?, .provisional?: "Allowed"
+    case .denied?: "Not allowed"
+    case .notDetermined?: "Not requested"
+    case nil: "Checking"
+    default: "Unavailable"
+    }
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      if showGranted || notifications != nil && !Self.notificationsAllowed(notifications) {
+        permission("Notifications", status: notificationStatus,
+          purpose: "Show phone alerts, Messages, Find Device, transfers and updates.")
+        if notifications == .notDetermined {
+          Button("Allow notifications") {
+            guard !requestingNotifications else { return }
+            requestingNotifications = true
+            notificationError = nil
+            Task {
+              defer { requestingNotifications = false }
+              do { _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) }
+              catch { notificationError = "Notification access could not be requested. Open notification settings." }
+              onPermissionsChanged()
+            }
+          }.buttonStyle(AniCeButtonStyle()).disabled(requestingNotifications)
+        } else if notifications != nil, !Self.notificationsAllowed(notifications) {
+          Button("Notification settings") {
+            openSettings("x-apple.systempreferences:com.apple.Notifications-Settings.extension")
+          }.buttonStyle(AniCeButtonStyle())
+        }
+        if let notificationError {
+          Text(notificationError).font(.system(size: 12 * fontScale))
+            .foregroundStyle(AniCePalette.error(scheme)).fixedSize(horizontal: false, vertical: true)
+          Button("Notification settings") {
+            openSettings("x-apple.systempreferences:com.apple.Notifications-Settings.extension")
+          }.buttonStyle(AniCeButtonStyle())
+        }
+      }
+      if showGranted || !clipboard.automaticAccessAllowed {
+        permission("Automatic pasteboard reading",
+          status: clipboard.automaticAccessAllowed ? "Available" : "Not allowed",
+          purpose: "Read copied text for enabled history or automatic sharing.")
+        if !clipboard.automaticAccessAllowed {
+          Button("Pasteboard settings") {
+            openSettings("x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension")
+          }.buttonStyle(AniCeButtonStyle())
+        }
+      }
+    }
+  }
+  private func permission(_ title: String, status: String, purpose: String) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(alignment: .firstTextBaseline, spacing: 12) {
+        Text(title)
+        Spacer(minLength: 8)
+        Text(status).foregroundStyle(AniCePalette.secondaryText(scheme))
+          .fixedSize(horizontal: true, vertical: false)
+      }
+      if showGranted {
+        Text(purpose).font(.system(size: 12 * fontScale))
+          .foregroundStyle(AniCePalette.secondaryText(scheme))
+          .fixedSize(horizontal: false, vertical: true)
+      }
+    }.frame(maxWidth: .infinity, alignment: .leading)
+  }
+  private func openSettings(_ address: String) {
+    if let url = URL(string: address) { NSWorkspace.shared.open(url) }
+  }
+}
 
 struct AboutFeedbackLinks: View {
   var reportURL: URL
@@ -62,7 +149,7 @@ struct AboutSupportLinks: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      Link(destination: URL(string: "https://anisharyal09.com.np/support?from=anice")!) {
+      Link(destination: AniCeSupport.url) {
         HStack(spacing: 6) {
           Image(systemName: "heart").font(.system(size: 13 * fontScale)).accessibilityHidden(true)
           AniCeWordmark(size: 13 * fontScale, weight: .regular, prefix: "Support ", suffix: " :)")
@@ -260,7 +347,6 @@ extension MainWindowView {
            .contextMenu { Button("Edit name…") { editingLocalName = true } }
            .highPriorityGesture(LongPressGesture().onEnded { _ in editingLocalName = true })
            .accessibilityAction(named: "Edit device name") { editingLocalName = true }
-        Divider()
       }.padding(28).frame(maxWidth: .infinity, alignment: .leading)
     }
     .sheet(isPresented: Binding(get: { navigation.deviceRoute == .pairing }, set: { if !$0 { navigation.show(.devices) } })) {
@@ -294,7 +380,7 @@ extension MainWindowView {
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
         Text("About").font(.system(size: 18 * fontScale, weight: .medium))
-        Text("Android + Mac, like never before.")
+        Text("Connect Android and Mac seamlessly, like never before.")
           .font(.system(size: 14 * fontScale, weight: .regular))
           .foregroundStyle(AniCePalette.secondaryText(colorScheme))
         VStack(spacing: 0) {
@@ -436,40 +522,26 @@ extension MainWindowView {
     } else {
       Group {
         GeometryReader { geometry in
-          let expanded = geometry.size.width >= 880
           ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-              let jumps = [
-                ("appearance", "Appearance"), ("updates", "Updates"), ("connection", "Connection"), ("permissions", "Permissions"), ("desk-deck", "Desk Deck"),
-                ("dnd-sync", "Do Not Disturb"), ("clipboard", "Clipboard"),
-                ("messages", "Messages"), ("file-transfer", "File transfer"),
-                ("now-playing", "Now Playing"), ("this-device", "This device")
-              ]
               ViewThatFits(in: .horizontal) {
                 HStack(spacing: 6) {
-                  ForEach(jumps, id: \.0) { id, label in settingsJump(label, id: id) }
+                  ForEach(MacSettingsCategory.allCases, id: \.self) { category in settingsCategoryButton(category) }
                 }
-                .fixedSize(horizontal: true, vertical: false)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120 * fontScale), alignment: .leading)], alignment: .leading, spacing: 6) {
-                  ForEach(jumps, id: \.0) { id, label in settingsJump(label, id: id) }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 110 * fontScale))]) {
+                  ForEach(MacSettingsCategory.allCases, id: \.self) { category in settingsCategoryButton(category) }
                 }
-              }
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .padding(.bottom, 16)
-              .overlay(alignment: .bottom) { AniCePalette.separator(colorScheme).frame(height: 0.5) }
-              .padding(.bottom, 18)
-
-              SettingsSectionLayout(columns: expanded ? 2 : 1) {
+              }.padding(.bottom, 12)
+              VStack(alignment: .leading, spacing: 0) {
+                settingsCategoryHeading(.general)
                 preferenceSection("Appearance", id: "appearance") {
                   VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                      Text("Window appearance").font(.system(size: 13 * fontScale))
-                      Spacer()
+                    AniCePreferenceRow("Window appearance", fontScale: fontScale) {
                       Picker("Window appearance", selection: Binding(
                         get: { WindowAppearance.stored(appearance).rawValue }, set: { appearance = $0 })) {
                           ForEach(WindowAppearance.allCases, id: \.self) { Text($0.rawValue).tag($0.rawValue) }
                       }
-                      .labelsHidden().pickerStyle(.menu).frame(width: 130)
+                      .labelsHidden().pickerStyle(.menu).aniCeControlFeedback()
                     }.frame(minHeight: 40)
                     Divider()
                     HStack(spacing: 8) {
@@ -489,6 +561,8 @@ extension MainWindowView {
                           .foregroundStyle(AniCePalette.secondaryText(colorScheme))
                       }
                     }.frame(minHeight: 40)
+                    Divider()
+                    NativeGlassPreferencesView()
                   }
                 }
                 preferenceSection("Updates", id: "updates") {
@@ -521,17 +595,54 @@ extension MainWindowView {
                   }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                 }
                 preferenceSection("Connection", id: "connection") {
-                  VStack(alignment: .leading, spacing: 5) {
-                    Toggle("Use local network automatically", isOn: Binding(get: { lan.automatic }, set: { lan.setAutomatic($0) }))
-                      .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3)
-                    Text("Enable on both devices to use Wi-Fi.").font(.system(size: 12 * fontScale))
-                      .foregroundStyle(AniCePalette.secondaryText(colorScheme)).padding(.leading, 20)
-                  }.frame(minHeight: 48, alignment: .leading)
+                  Toggle("Use local network automatically", isOn: Binding(get: { lan.automatic }, set: { lan.setAutomatic($0) }))
+                    .toggleStyle(AniCePreferenceToggleStyle(description: "Enable on both devices to use Wi-Fi."))
+                    .padding(.vertical, 10)
                 }
-                preferenceSection("Permissions", id: "permissions") {
-                  MacPhoneInputView(model: phoneInput, onOpenDevices: { navigation.show(.devices) })
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                preferenceSection("This device", id: "this-device") {
+                  Button { showingLocalIdentity = true } label: {
+                    HStack(spacing: 10) {
+                      VStack(alignment: .leading, spacing: 2) {
+                        Text(identity.local?.identity.deviceName ?? "This Mac")
+                        Text("Identity and security").font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                      }
+                      Spacer()
+                      Image(systemName: "chevron.right").font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AniCePalette.secondaryText(colorScheme)).accessibilityHidden(true)
+                    }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
+                  }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("This device, identity and security")
                 }
+                preferenceSection("Guide", id: "guide") {
+                  Button { navigation.openGuide(nil) } label: {
+                    HStack(spacing: 10) {
+                      VStack(alignment: .leading, spacing: 2) {
+                        Text("aniCe Guide")
+                        Text("Features, Quick Settings tile, shortcuts, and setup")
+                          .font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
+                      }
+                      Spacer()
+                      Image(systemName: "chevron.right").font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AniCePalette.secondaryText(colorScheme)).accessibilityHidden(true)
+                    }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
+                  }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("aniCe Guide")
+                }
+                if settingsCategory == .permissions || hasMissingPermissions {
+                  settingsCategoryHeading(.permissions)
+                  preferenceSection("Access", id: "permissions") {
+                    VStack(alignment: .leading, spacing: 24) {
+                      if settingsCategory == .permissions || phoneInput.needsPostEventAccess {
+                        MacPhoneInputView(model: phoneInput, showGranted: settingsCategory == .permissions)
+                      }
+                      if settingsCategory == .permissions || !clipboard.automaticAccessAllowed ||
+                        notificationPermissionStatus.map({ !MacPermissionSummary.notificationsAllowed($0) }) == true {
+                        MacPermissionSummary(clipboard: clipboard, notifications: notificationPermissionStatus,
+                          showGranted: settingsCategory == .permissions,
+                          onPermissionsChanged: { Task { await refreshPermissionStatus() } })
+                      }
+                    }.padding(.vertical, 14)
+                  }
+                }
+                settingsCategoryHeading(.features)
                 preferenceSection("Desk Deck", id: "desk-deck") {
                   DeskDeckSettingsView(model: deskDeck, peers: pairing.peers)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
@@ -563,25 +674,16 @@ extension MainWindowView {
                 }
                 preferenceSection("Now Playing", id: "now-playing") {
                   Toggle("Show on Overview and menu bar", isOn: Binding(get: { playback.showOnMac }, set: { playback.setShowOnMac($0) }))
-                    .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).frame(minHeight: 48)
+                    .toggleStyle(AniCePreferenceToggleStyle())
                 }
-                preferenceSection("This device", id: "this-device") {
-                  Button { showingLocalIdentity = true } label: {
-                    HStack(spacing: 10) {
-                      VStack(alignment: .leading, spacing: 2) {
-                        Text(identity.local?.identity.deviceName ?? "This Mac")
-                        Text("Identity and security").font(.system(size: 12 * fontScale)).foregroundStyle(AniCePalette.secondaryText(colorScheme))
-                      }
-                      Spacer()
-                      Image(systemName: "chevron.right").font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(AniCePalette.secondaryText(colorScheme)).accessibilityHidden(true)
-                    }.frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
-                  }.buttonStyle(AniCeHoverButtonStyle()).accessibilityLabel("This device, identity and security")
+                settingsCategoryHeading(.shortcuts)
+                preferenceSection("Shortcuts", id: "shortcuts") {
+                  GlobalShortcutSettingsView()
                 }
               }
             }
             .padding(24)
-            .frame(maxWidth: expanded ? 1120 : 680, alignment: .leading)
+            .frame(maxWidth: 680, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .top)
           }
         }
@@ -593,7 +695,30 @@ extension MainWindowView {
         guard !Task.isCancelled else { return }
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) { focusedSettingsSection = nil }
       }
+      .task(id: navigation.settingsSection) {
+        guard let section = navigation.settingsSection else { return }
+        settingsCategory = MacSettingsCategory.category(for: section)
+        settingsScroller.request(section) {
+          focusedSettingsSection = section
+          settingsFocusToken = UUID()
+        }
+      }
+      .task { await refreshPermissionStatus() }
+      .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+        Task { await refreshPermissionStatus() }
+      }
     }
+  }
+
+  private var hasMissingPermissions: Bool {
+    phoneInput.needsPostEventAccess || !clipboard.automaticAccessAllowed ||
+      notificationPermissionStatus.map { !MacPermissionSummary.notificationsAllowed($0) } == true
+  }
+
+  private func refreshPermissionStatus() async {
+    notificationPermissionStatus = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+    phoneInput.refreshAccessState()
+    clipboard.refreshAccess()
   }
 
   @ViewBuilder private func preferenceSection<Content: View>(
@@ -601,86 +726,69 @@ extension MainWindowView {
     id: String,
     @ViewBuilder content: () -> Content
   ) -> some View {
-    let focused = focusedSettingsSection == id
-    let group = VStack(alignment: .leading, spacing: 0, content: content)
-      .font(.system(size: 13 * fontScale))
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.horizontal, 14)
-      .background(focused ? AniCePalette.subtleAccent(colorScheme) : AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 10))
-      .overlay { RoundedRectangle(cornerRadius: 10).stroke(focused ? AniCePalette.accent(colorScheme) : AniCePalette.separator(colorScheme), lineWidth: focused ? 1 : 0.5) }
-      .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: focused)
-    VStack(alignment: .leading, spacing: 8) {
-      Text(title).font(.system(size: 13 * fontScale, weight: .medium)).foregroundStyle(AniCePalette.primaryText(colorScheme))
-      group
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.bottom, 18)
-    .background(SettingsScrollAnchor(id: id, coordinator: settingsScroller))
-    .id(id)
-  }
-
-  private func settingsJump(_ label: String, id: String) -> some View {
-    let selected = activeSettingsSection == id
-    let hovered = hoveredSettingsSection == id
-    return Button {
-      activeSettingsSection = id
-      focusedSettingsSection = nil
-      settingsScroller.scroll(to: id, animated: !reduceMotion) {
-        // An older scroll completion must not highlight a section superseded by another shortcut.
-        guard activeSettingsSection == id else { return }
-        focusedSettingsSection = id
-        settingsFocusToken = UUID()
+    if settingsCategory == .all || MacSettingsCategory.category(for: id) == settingsCategory {
+      let focused = focusedSettingsSection == id
+      let group = VStack(alignment: .leading, spacing: 0, content: content)
+        .font(.system(size: 13 * fontScale))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .background(focused ? AniCePalette.subtleAccent(colorScheme) : AniCePalette.surface(colorScheme), in: RoundedRectangle(cornerRadius: 10))
+        .overlay { RoundedRectangle(cornerRadius: 10).stroke(focused ? AniCePalette.accent(colorScheme) : AniCePalette.separator(colorScheme), lineWidth: focused ? 1 : 0.5) }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: focused)
+      VStack(alignment: .leading, spacing: 8) {
+        if id != "permissions" {
+          Text(title).font(.system(size: 13 * fontScale, weight: .medium)).foregroundStyle(AniCePalette.primaryText(colorScheme))
+        }
+        group
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.bottom, 18)
+      .background(SettingsScrollAnchor(id: id, coordinator: settingsScroller))
+      .id(id)
+    }
+  }
+
+  private func settingsCategoryButton(_ category: MacSettingsCategory) -> some View {
+    Button {
+      settingsCategory = category
+      focusedSettingsSection = nil
     } label: {
-      Text(label)
-        .font(.system(size: 12 * fontScale, weight: selected ? .medium : .regular))
-        .fixedSize(horizontal: true, vertical: false)
-        .foregroundStyle(selected || hovered ? AniCePalette.primaryText(colorScheme) : AniCePalette.secondaryText(colorScheme))
+      Text(category.rawValue)
+        .font(.system(size: 12 * fontScale, weight: settingsCategory == category ? .semibold : .regular))
         .padding(.horizontal, 9).padding(.vertical, 8)
-        .background(selected ? AniCePalette.subtleAccent(colorScheme) : .clear, in: RoundedRectangle(cornerRadius: 6))
-        .overlay { RoundedRectangle(cornerRadius: 6).stroke(selected ? AniCePalette.separator(colorScheme) : .clear, lineWidth: 0.75) }
-        .contentShape(RoundedRectangle(cornerRadius: 6))
-    }
-    .buttonStyle(AniCeHoverButtonStyle())
-    .onHover { isHovered in hoveredSettingsSection = isHovered ? id : (hoveredSettingsSection == id ? nil : hoveredSettingsSection) }
-    .animation(.easeOut(duration: 0.14), value: hovered)
-    .accessibilityAddTraits(selected ? .isSelected : [])
-    .accessibilityHint("Scroll to \(label) settings")
+        .background(settingsCategory == category ? AniCePalette.subtleAccent(colorScheme) : .clear,
+          in: RoundedRectangle(cornerRadius: 6))
+    }.buttonStyle(AniCeHoverButtonStyle())
+      .accessibilityAddTraits(settingsCategory == category ? .isSelected : [])
   }
-}
 
+  @ViewBuilder private func settingsCategoryHeading(_ category: MacSettingsCategory) -> some View {
+    if settingsCategory == .all || settingsCategory == category {
+      Text(category.rawValue)
+        .font(.system(size: 16 * fontScale, weight: .semibold))
+        .foregroundStyle(AniCePalette.primaryText(colorScheme))
+        .accessibilityAddTraits(.isHeader)
+        .padding(.top, 12).padding(.bottom, 16)
+    }
+  }
 
-// Eager, balanced columns keep section anchors available without leaving gaps beside tall groups.
-private struct SettingsSectionLayout: Layout {
-  let columns: Int
-  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-    let width = proposal.width ?? 680
-    let cellWidth = max(0, (width - CGFloat(columns - 1) * 24) / CGFloat(columns))
-    var columnHeights = Array(repeating: CGFloat.zero, count: columns)
-    for subview in subviews {
-      let column = columnHeights.enumerated().min { $0.element < $1.element }?.offset ?? 0
-      columnHeights[column] += subview.sizeThatFits(ProposedViewSize(width: cellWidth, height: nil)).height
-    }
-    return CGSize(width: width, height: columnHeights.max() ?? 0)
-  }
-  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-    let width = max(0, (bounds.width - CGFloat(columns - 1) * 24) / CGFloat(columns))
-    var columnHeights = Array(repeating: CGFloat.zero, count: columns)
-    for index in subviews.indices {
-      let column = columnHeights.enumerated().min { $0.element < $1.element }?.offset ?? 0
-      let size = subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil))
-      subviews[index].place(
-        at: CGPoint(x: bounds.minX + CGFloat(column) * (width + 24), y: bounds.minY + columnHeights[column]),
-        anchor: .topLeading,
-        proposal: ProposedViewSize(width: width, height: size.height))
-      columnHeights[column] += size.height
-    }
-  }
 }
 
 
 @MainActor final class SettingsScrollCoordinator {
   var anchors: [String: NSView] = [:]
+  private var pending: (String, @MainActor @Sendable () -> Void)?
+
+  func request(_ id: String, completion: @escaping @MainActor @Sendable () -> Void) {
+    pending = (id, completion)
+    resolvePending()
+  }
+
+  func resolvePending() {
+    guard let (id, completion) = pending, anchors[id]?.enclosingScrollView != nil else { return }
+    pending = nil
+    scroll(to: id, animated: false, completion: completion)
+  }
 
   func scroll(to id: String, animated: Bool, completion: @escaping @MainActor @Sendable () -> Void) {
     guard let anchor = anchors[id], let scroll = anchor.enclosingScrollView,
@@ -702,7 +810,8 @@ private struct SettingsSectionLayout: Layout {
     let lower = document.bounds.minY
     let upper = max(lower, document.bounds.maxY - clip.bounds.height)
     let origin = NSPoint(x: clip.bounds.origin.x, y: min(upper, max(lower, desired)))
-    if animated {
+    // Detached or reduced-motion views reveal directly; AppKit cannot reliably complete offscreen animations.
+    if animated, scroll.window?.isVisible == true, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
       NSAnimationContext.runAnimationGroup { context in
         context.duration = 0.18
         clip.animator().setBoundsOrigin(origin)
@@ -724,11 +833,33 @@ private struct SettingsScrollAnchor: NSViewRepresentable {
   let id: String
   let coordinator: SettingsScrollCoordinator
   func makeNSView(context: Context) -> NSView {
-    let view = NSView()
+    let view = SettingsAnchorView()
+    view.didAttach = { [weak coordinator] in coordinator?.resolvePending() }
+    view.didDetach = { [weak coordinator, weak view] in
+      if coordinator?.anchors[id] === view { coordinator?.anchors.removeValue(forKey: id) }
+    }
     coordinator.anchors[id] = view
     return view
   }
-  func updateNSView(_ view: NSView, context: Context) { coordinator.anchors[id] = view }
+  func updateNSView(_ view: NSView, context: Context) {
+    coordinator.anchors[id] = view
+  }
+  static func dismantleNSView(_ view: NSView, coordinator: ()) {
+    (view as? SettingsAnchorView)?.didAttach = {}
+    (view as? SettingsAnchorView)?.didDetach()
+    (view as? SettingsAnchorView)?.didDetach = {}
+  }
+}
+
+@MainActor private final class SettingsAnchorView: NSView {
+  var didAttach: () -> Void = {}
+  var didDetach: () -> Void = {}
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    if window != nil {
+      DispatchQueue.main.async { [weak self] in self?.didAttach() }
+    } else { didDetach() }
+  }
 }
 
 private struct DeskDeckSettingsView: View {

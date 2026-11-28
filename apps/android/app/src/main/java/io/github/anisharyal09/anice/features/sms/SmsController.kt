@@ -82,10 +82,13 @@ class SmsController(
         var job: Job? = null
     }
     internal val scope = CoroutineScope(SupervisorJob() + dispatcher)
+    // A cancelled platform read can still finish; serialize replacements instead of spawning overlapping binder reads.
+    private val subscriptionDispatcher = Dispatchers.IO.limitedParallelism(1)
     private val links = mutableStateMapOf<String, Link>()
     internal val servingThreads = mutableMapOf<String, Serving>()
     internal val servingHistory = mutableMapOf<String, Serving>()
     internal val servingSearch = mutableMapOf<String, Serving>()
+    internal val servingSims = mutableMapOf<String, Serving>()
     private val incomingReplies = mutableMapOf<String, Incoming>()
     private val completedReplies = mutableMapOf<String, ArrayDeque<Completed>>()
     private val pendingLive = ArrayDeque<Live>()
@@ -167,6 +170,10 @@ class SmsController(
         val waking = link.room.toList(); link.room.clear()
         waking.forEach { it.complete(Unit) }
         val k = key(descriptor.peer)
+        servingSims[k]?.takeIf { it.descriptor == descriptor }?.let {
+            servingSims.remove(k)
+            it.job?.cancel()
+        }
         if (links.values.none { key(it.channel.descriptor.peer) == k }) {
             servingThreads.remove(k)?.job?.cancel()
             servingHistory.remove(k)?.job?.cancel()
@@ -738,10 +745,15 @@ class SmsController(
         return operation
     }
 
-    /** The panel offers a SIM choice only on a multi-modem phone; the phone default needs no permission or listing. */
+    // Configured modems gate only the optional local chooser; default-SIM sending needs no listing.
     fun modemCount(): Int = try { subscriptions?.modemCount() ?: 0 } catch (_: Exception) { 0 }
 
-    fun listSubscriptions(): SmsSubscriptionListing = try { subscriptions?.list() ?: SmsSubscriptionListing(5, emptyList()) } catch (_: Exception) { SmsSubscriptionListing(5, emptyList()) }
+    suspend fun listSubscriptions(): SmsSubscriptionListing = withContext(subscriptionDispatcher) {
+        try { subscriptions?.list() ?: SmsSubscriptionListing(5, emptyList()) }
+        catch (e: CancellationException) { throw e }
+        catch (_: SecurityException) { SmsSubscriptionListing(1, emptyList()) }
+        catch (_: Exception) { SmsSubscriptionListing(5, emptyList()) }
+    }
 
     private fun refreshConversation() {
         val time = now()
@@ -834,6 +846,7 @@ class SmsController(
         servingThreads.values.forEach { it.job?.cancel() }; servingThreads.clear()
         servingHistory.values.forEach { it.job?.cancel() }; servingHistory.clear()
         servingSearch.values.forEach { it.job?.cancel() }; servingSearch.clear()
+        servingSims.values.forEach { it.job?.cancel() }; servingSims.clear()
         pendingLive.forEach { it.job?.cancel() }; pendingLive.clear()
         incomingReplies.values.forEach { it.job?.cancel() }
         incomingReplies.clear(); completedReplies.clear(); marks.clear(); displayExtras.clear(); loadedRows = emptyList()

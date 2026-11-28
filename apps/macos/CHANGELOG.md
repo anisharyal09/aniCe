@@ -11,10 +11,30 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
   off by default.
 - Play eligible phone audio with per-device receiving consent, off by default.
 - Add opt-in packet arrival and playback diagnostics in the Transfer Preview.
+- Add default-on combined keyboard/pointer control in armed native pads, with a saved exclusive-mode fallback, release on mode changes and Caps Lock transition tracking from each activation.
+- Protect pinned clips from ordinary deletion, add local history Undo/Redo that respects current capacity and preserves newer captures, and add a separate persistent history pause with custom duration.
+- Add independent sidebar feature pins, wrapping Overview/companion shortcuts and a quiet companion support link.
+- Add configurable shortcuts for Clipboard tray, Floating Key visibility and Floating Key active typing (⌃⌘K by default), with focused recording, Reset and collision feedback that preserves the last working binding.
+- Show a brief recipient-bound Edge Drop preparation acknowledgment before progress continues in aniCe; retain verified completion feedback.
+- Add light haptics at Mac file-drop targets and on verified Edge Drop completion on supported hardware.
+- Add default-on Native Glass with Standard/Vibrant styles across navigation and floating surfaces, native-material compatibility and a solid Reduce Transparency override.
+- Add Settings categories with Appearance under General, preserving access to existing preferences.
 
 ### Changed
 
 - Raise the macOS deployment target to 14.2 for system audio capture.
+- Add a categorized offline Guide with contextual help, wrapping sticky filters and entry points in Features and Settings. Explain connection, permission and device limits for clipboard sharing, input, notifications and Find Device. The Help menu also provides aniCe Guide (⌘?) and Support aniCe.
+- Bound release-note Markdown blocks, lines and inline styling with linear-time source cleanup, pre-parse view blocks once and wrap update-review actions when narrow.
+- Clear Mac update review on window close and app termination, verify notification tags and cancel unlaunched update work at shutdown without resurrecting sheets.
+- Attribute mirrored alerts and SMS to their phone with credential-scoped native grouping; keep passive revisions list-only in foreground and preserve used actions during source-icon enrichment.
+- Open SMS notifications in the original conversation with one-shot submission tokens and review-only uncertain-reply alerts; fence late native posts and preserve unrelated drafts.
+- Bind transfer review, approval/decline and Finder actions to their original local target, recheck deferred actions, bound completion targets and clear owned notices at startup/Quit.
+- Keep SIM-selection recovery in the affected Messages conversation, distinguish permission/provider/timeout outcomes and refresh choices on the current connection without changing default sending.
+- Use compact, softly filled capsule switches with fuller inset thumbs, clickable labels and native accessibility for persistent preferences while retaining explicit consent controls.
+- Use content-sized themed segments for glass style and Clipboard navigation/filters, roomier Share/History tabs and stronger theme-aware hover, pressed and focus feedback.
+- Confine granted-access descriptions to Permissions, align glass/pause controls and support broader global shortcut combinations while preserving native system/editing keys and legacy bindings.
+- Use desktop-sampling companion vibrancy, stronger light-mode Vibrant tint and quieter secondary button faces.
+- Organize Settings into ordered category sections, remove the duplicate jump strip and route the Clipboard gear to its settings.
 
 ### Fixed
 
@@ -24,6 +44,18 @@ Changes to the aniCe Mac app. Repository-wide changes are recorded in the [root 
   renewal and resume with current audio.
 - Restore normal Mac output during cleanup and prevent finished transfers
   from delaying a new stream.
+- Apply Guide bulk actions to every topic, including a manually collapsed contextual topic. Expose a single set of category filters when the filter bar is pinned.
+- Report expired, unavailable and unconfirmed mirrored actions in a single quiet native notice. Confirm call-action dispatch without implying that the call connected.
+- Keep the latest SMS conversation preview when an older message arrives out of order.
+- Release failed transfer-offer notification state so the current offer can be announced again. Ignore obsolete or untagged update taps without clearing the current notice.
+- Restore the Mac Messages gear toggle so per-phone notification settings and **Connection details** open inline inside Messages instead of redirecting to Settings.
+- Check the Messages gear and its displayed connection status directly in hosted UI tests instead of relying on screenshot text recognition.
+- Unify the Auto connect label and capsule action, and remove obsolete preference-size/theme configuration.
+- Restore 20/50/100-item history capacity menus in compact Clipboard settings and History, retain paused/off access and remove duplicate feedback layers and unused clipboard helpers.
+- Keep Shelf edge labels/helpers together, align intrinsic selector faces and Shortcut controls to the trailing edge, and reflow narrow rows without clipping.
+- Preserve vertical trackpad inertia while releasing sideways drags, and explain Event Posting, notification and pasteboard access in Permissions.
+- Keep Vibrant navigation on native window materials, hide the redundant keyboard area in combined control, remove duplicate tray overflow access and reflect live Edge Drop sending state.
+- Keep clipboard-tray history consent inside its non-activating panel, avoiding detached alerts and main-window focus handoffs.
 
 ## [v0.9.0-beta.4]
 

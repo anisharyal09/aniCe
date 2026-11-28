@@ -76,10 +76,13 @@ struct AniCeApp: App {
     _transfer = State(initialValue: transfer)
     let edgeDrop = MacEdgeDropController(model: transfer, preferences: EdgeDropPreferences(storage: .standard))
     _edgeDrop = State(initialValue: edgeDrop)
+    let navigation = ConnectionNavigation()
+    _navigation = State(initialValue: navigation)
     let transferNotifier = MacTransferNotifier(
       model: transfer,
-      openMainWindow: {
-        for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "aniCe" || window.title == MacAppStorage.applicationName {
+      openMainWindow: { [weak navigation] in
+        navigation?.openFeature(.files)
+        for window in NSApp.windows where window.isAniCeMainWindow {
           window.deminiaturize(nil)
           window.makeKeyAndOrderFront(nil)
         }
@@ -91,8 +94,6 @@ struct AniCeApp: App {
       transferNotifier?.handle(event)
       edgeDrop?.handle(event)
     }
-    let navigation = ConnectionNavigation()
-    _navigation = State(initialValue: navigation)
     let radio = CoreBluetoothPeripheralAdapter()
     let discovery = MacDiscoveryModel(adapter: radio)
     _identity = State(initialValue: identity)
@@ -165,9 +166,11 @@ struct AniCeApp: App {
     let floatingKeyboard = FloatingKeyboardController(model: keyboardTrackpad, preferences: .standard)
     _floatingKeyboard = State(initialValue: floatingKeyboard)
     sms.onLanRequired = { [weak lan] in _ = lan?.requestAutomaticConnection() }
-    smsNotifier.onOpenMessages = { [weak navigation] in
+    smsNotifier.onOpenConversation = { [weak navigation, weak sms, weak pairing] target in
+      guard let sms, let pairing,
+        sms.openNotificationConversation(target, trustedPeers: pairing.peers.map(\.peer)) else { return }
       navigation?.openFeature(.messages)
-      for window in NSApp.windows where window.identifier?.rawValue == "main" || window.title == "aniCe" || window.title == MacAppStorage.applicationName {
+      for window in NSApp.windows where window.isAniCeMainWindow {
         window.deminiaturize(nil)
         window.makeKeyAndOrderFront(nil)
       }
@@ -187,7 +190,7 @@ struct AniCeApp: App {
     }
     session.connectionClockChanged = { [weak connectionPause] in connectionPause?.reconcileTime() }
     lan.onNetworkReturn = { [weak session] in session?.reconcileConnectionPause() }
-    let features=FeatureDispatch()
+    let features = FeatureDispatch()
     if !IdentityView.isTesting {
       PeerNames.shared.configure(identity: identity.service, trust: { try await pairing.sessionStore() })
     }
@@ -212,15 +215,15 @@ struct AniCeApp: App {
     features.register(deskDeck)
     features.register(phonePower)
     session.channelStateChanged = { [weak session] in
-      if let session, let token=session.channelToken, let peer=session.authenticatedPeer {
-        features.available(ChannelDescriptor(instance:token,transport:"ble",peer:peer)) { [weak session] bytes in
+      if let session, let token = session.channelToken, let peer = session.authenticatedPeer {
+        features.available(ChannelDescriptor(instance: token, transport: "ble", peer: peer)) { [weak session] bytes in
           guard let session else { throw SessionFailure.cancelled }; try await session.sendData(bytes)
         }
       } else { features.retired("ble") }
     }
     lan.channelStateChanged = { [weak lan] in
-      if let lan, let token=lan.channelToken, let peer=lan.authenticatedPeer {
-        features.available(ChannelDescriptor(instance:token,transport:"lan",peer:peer,maximumDataBytes:SessionProfile.lanTransfer512.maximumPlaintext)) { [weak lan] bytes in
+      if let lan, let token = lan.channelToken, let peer = lan.authenticatedPeer {
+        features.available(ChannelDescriptor(instance: token, transport: "lan", peer: peer, maximumDataBytes: SessionProfile.lanTransfer512.maximumPlaintext)) { [weak lan] bytes in
           guard let lan else { throw SessionFailure.cancelled }; try await lan.sendData(bytes)
         }
       } else { features.retired("lan") }
@@ -232,8 +235,8 @@ struct AniCeApp: App {
     }
     session.applicationDataDrained = { [weak session] in await features.drain("ble", instance: session?.channelToken) }
     lan.applicationDataDrained = { [weak lan] in await features.drain("lan", instance: lan?.channelToken) }
-    session.applicationDataReceived = { [weak session] bytes in await features.handle(bytes,transport:"ble",instance:session?.channelToken) != .unrecognized }
-    lan.applicationDataReceived = { [weak lan] bytes in await features.handle(bytes,transport:"lan",instance:lan?.channelToken) != .unrecognized }
+    session.applicationDataReceived = { [weak session] bytes in await features.handle(bytes, transport: "ble", instance: session?.channelToken) != .unrecognized }
+    lan.applicationDataReceived = { [weak lan] bytes in await features.handle(bytes, transport: "lan", instance: lan?.channelToken) != .unrecognized }
     Self.configureSessionLifecycle(session: session, pairing: pairing, discovery: discovery)
     pairing.nearbyAvailabilityChanged = { [weak pairing, weak session] in
       guard session?.allowing == false else { return }
@@ -311,14 +314,19 @@ struct AniCeApp: App {
     let hotkey = GlobalHotkeyManager()
     hotkey.onPasteTray = { PasteTrayController.shared.toggle() }
     hotkey.onToggleKeyboard = { [weak floatingKeyboard] in floatingKeyboard?.toggleVisibility() }
+    hotkey.onToggleKeyboardInput = { [weak floatingKeyboard] in floatingKeyboard?.toggleCaptureFromShortcut() }
     hotkeyManager = hotkey
+    delegate.onPrepareTerminate = {
+      MacUpdateModel.shared.prepareForTermination()
+    }
     delegate.onTerminate = {
       audioSharing.shutdown()
       phoneAudio.shutdown()
       pairing.cancel()
       comparisonPresenter?.hide()
-      MacUpdateModel.shared.stopAutomaticChecks()
+      MacUpdateModel.shared.prepareForTermination()
       findNotifier.clearAll(); clipboard.invalidate(); smsNotifier.clearAll(); notificationMirrorNotifier.clearAll()
+      transferNotifier?.clearAll()
       floatingKeyboard.shutdown(); keyboardTrackpad.shutdown(); phoneInput.shutdown(); phonePower.shutdown(); edgeDrop.shutdown(); deskDeck.shutdown(); dndSync.shutdown()
       PasteTrayController.shared.hide()
     }
@@ -356,6 +364,8 @@ struct AniCeApp: App {
   }
 
   var body: some Scene {
+    let guideNavigation = navigation
+    let appDelegate = delegate
     Window(MacAppStorage.applicationName, id: "main") {
       MainWindowView(
         delegate: delegate, identity: identity, discovery: discovery, pairing: pairing,
@@ -371,6 +381,36 @@ struct AniCeApp: App {
     }
     .defaultSize(width: MainWindowSizing.defaultSize.width, height: MainWindowSizing.defaultSize.height)
     .windowResizability(.contentMinSize)
+    .commands {
+      AniCeHelpCommands(navigation: guideNavigation, delegate: appDelegate)
+    }
+  }
+}
 
+private struct AniCeHelpCommands: Commands {
+  let navigation: ConnectionNavigation
+  let delegate: AppDelegate
+
+  nonisolated init(navigation: ConnectionNavigation, delegate: AppDelegate) {
+    self.navigation = navigation
+    self.delegate = delegate
+  }
+
+  var body: some Commands {
+    let nav = navigation
+    let appDelegate = delegate
+    CommandGroup(replacing: .help) {
+      Button("aniCe Guide") {
+        Task { @MainActor in
+          nav.openGuide(nil)
+          appDelegate.openMainFromCompanion()
+        }
+      }
+      .keyboardShortcut("?", modifiers: .command)
+      Divider()
+      Button("Support aniCe") {
+        NSWorkspace.shared.open(AniCeSupport.url)
+      }
+    }
   }
 }

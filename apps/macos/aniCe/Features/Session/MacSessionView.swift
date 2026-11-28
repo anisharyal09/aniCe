@@ -396,7 +396,7 @@ struct MacSessionView: View {
         model.selectedPeer = device
         model.setAutomatic(enabled)
       }))
-      .toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).tint(AniCePalette.accent(scheme))
+      .toggleStyle(AniCePreferenceToggleStyle())
       .disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
   }
 
@@ -525,22 +525,13 @@ struct MacSessionView: View {
         }
       }.padding(.vertical, 14).padding(.bottom, 4)
       VStack(alignment: .leading, spacing: 2) {
-        HStack(spacing: 16) {
-          Button {
-            if !automaticArmed { connectionPause.clear() }
-            model.selectedPeer = device; model.setAutomatic(!automaticArmed)
-          } label: {
-            VStack(alignment: .leading, spacing: 4) {
-              Text("Auto connect")
-              Text("Reconnect when this device is available.").font(.callout).foregroundStyle(AniCePalette.secondaryText(scheme))
-            }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-          }.buttonStyle(AniCeHoverButtonStyle()).disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
-          Toggle("Auto connect", isOn: Binding(get: { automaticArmed }, set: { enabled in
-            if enabled { connectionPause.clear() }
-            model.selectedPeer = device; model.setAutomatic(enabled)
-          }))
-            .labelsHidden().toggleStyle(.checkbox).aniCeControlFeedback(feedbackPadding: 3).disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
-        }.padding(.vertical, 8)
+        Toggle("Auto connect", isOn: Binding(get: { automaticArmed }, set: { enabled in
+          if enabled { connectionPause.clear() }
+          model.selectedPeer = device; model.setAutomatic(enabled)
+        }))
+          .toggleStyle(AniCePreferenceToggleStyle(description: "Reconnect when this device is available."))
+          .disabled(androidPeers.isEmpty || !automaticEnabled || !peerAvailable)
+          .padding(.vertical, 8)
         Divider()
         transportRow("Bluetooth", symbol: "antenna.radiowaves.left.and.right", state: ownsBluetooth ? model.state : "In use by another phone",
           active: ownsBluetooth && (model.allowing || model.state == "Secured"), enabled: peerAvailable,

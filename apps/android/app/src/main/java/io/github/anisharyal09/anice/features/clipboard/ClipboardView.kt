@@ -3,21 +3,18 @@
 package io.github.anisharyal09.anice.features.clipboard
 import io.github.anisharyal09.anice.infrastructure.connections.displayName
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.semantics.Role
 import io.github.anisharyal09.anice.R
+import io.github.anisharyal09.anice.ui.AniCeSegmentedControl
 import io.github.anisharyal09.anice.infrastructure.pairing.PeerTrustRecord
 import io.github.anisharyal09.anice.ui.AutomaticConnectionToggle
 import java.time.Instant
@@ -65,11 +62,10 @@ fun ClipboardSettings(
 }
 
 @Composable
-fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
+fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>, openSettings: (() -> Unit)? = null) {
     var historyTab by remember { mutableStateOf(false) }
     var preferencesOpen by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
-    var how by remember { mutableStateOf(false) }
     var reveal by remember { mutableStateOf(false) }
     var pasted by remember { mutableStateOf("") }
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
@@ -86,16 +82,16 @@ fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
     LaunchedEffect(owner.preview?.token, owner.preview?.text) { reveal = false }
     Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Row(
-                Modifier.weight(1f).selectableGroup(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ClipboardTab("Share", selected = !historyTab, modifier = Modifier.weight(1f)) { historyTab = false }
-                ClipboardTab("History", selected = historyTab, modifier = Modifier.weight(1f)) {
-                    historyTab = true; pasted = ""; reveal = false; owner.clearPreview()
-                }
-            }
-            IconButton(onClick = { preferencesOpen = !preferencesOpen }, modifier = Modifier.size(48.dp)) {
+            AniCeSegmentedControl(
+                options = listOf(false to "Share", true to "History"),
+                selected = historyTab,
+                onSelected = { tab ->
+                    historyTab = tab
+                    if (tab) { pasted = ""; reveal = false; owner.clearPreview() }
+                },
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = { if (openSettings != null) openSettings() else preferencesOpen = !preferencesOpen }, modifier = Modifier.size(48.dp)) {
                 Icon(painterResource(R.drawable.ic_settings), contentDescription = "Clipboard preferences",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
             }
@@ -128,23 +124,7 @@ fun ClipboardView(owner: ClipboardController, peers: List<PeerTrustRecord>) {
                 OutlinedTextField(value = pasted, onValueChange = { if (it.length <= 65536) pasted = it }, label = { Text("Paste text here") }, modifier = Modifier.fillMaxWidth())
                 if (pasted.isNotEmpty()) OutlinedButton(onClick = { owner.send(pasted = pasted); pasted = "" }, enabled = available && !owner.busy) { Text("Send pasted text") }
             }
-            TextButton(onClick = { how = !how }) { Text(if (how) "How sharing works ▴" else "How sharing works ▾") }
-            if (how) Text("Manual sharing works with automatic sharing off. For text or links in another app, use Share → Send to Mac (aniCe icon). Text-selection menus also work where supported. For copied text, use the Send to Mac Quick Settings tile and tap Send in its small panel. Add the tile from More options. Connect your Mac first.\n\nFor automatic sharing, enable it on both devices, copy text, then open aniCe. Android reads copied text only while aniCe has focus. Received text replaces your clipboard, including in the background. Home shows the latest successful clipboard activity for five minutes with a short preview and local Copy for eligible text. Optional history stays on this device, organized by date with the latest items first.", style = MaterialTheme.typography.bodySmall)
         }
-    }
-}
-
-@Composable
-private fun ClipboardTab(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(6.dp)
-    Box(
-        modifier.heightIn(min = 48.dp).clip(shape)
-            .background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer)
-            .selectable(selected = selected, onClick = onClick, role = Role.Tab),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium,
-            color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -190,17 +170,7 @@ private fun HistoryPreference(history: ClipboardHistory, compact: Boolean = fals
         label = "Keep clipboard history",
         description = if (compact) "Saved on this phone. Pausing keeps saved clips." else null,
         compact = compact)
-    if (!compact) {
-        var capacityMenu by remember { mutableStateOf(false) }
-        Box {
-            TextButton(onClick = { capacityMenu = true }) { Text("History capacity: ${history.capacity} items") }
-            DropdownMenu(expanded = capacityMenu, onDismissRequest = { capacityMenu = false }) {
-                listOf(20, 50, 100).forEach { value ->
-                    DropdownMenuItem(text = { Text("$value items") }, onClick = { capacityMenu = false; history.updateCapacity(value) })
-                }
-            }
-        }
-    }
+    ClipboardHistoryCapacityPicker(history)
     if (!compact && !history.enabled && history.entries.isNotEmpty()) Text("Collection paused · Saved items are kept", style = MaterialTheme.typography.bodySmall)
     history.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     if (confirm) AlertDialog(onDismissRequest = { confirm = false }, title = { Text("Keep clipboard history?") },
@@ -210,9 +180,49 @@ private fun HistoryPreference(history: ClipboardHistory, compact: Boolean = fals
 }
 
 @Composable
+internal fun ClipboardHistoryCapacityPicker(history: ClipboardHistory) {
+    var expanded by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("History capacity", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Box {
+            TextButton(
+                onClick = { expanded = true },
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                modifier = Modifier.semantics {
+                    contentDescription = "History capacity"
+                    stateDescription = "${history.capacity} items"
+                },
+            ) {
+                Text("${history.capacity} items")
+                Spacer(Modifier.width(4.dp))
+                Icon(painterResource(R.drawable.ic_chevron_forward), contentDescription = null,
+                    modifier = Modifier.size(16.dp).rotate(90f))
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                listOf(20, 50, 100).forEach { value ->
+                    DropdownMenuItem(
+                        text = { Text("$value items") },
+                        modifier = Modifier.semantics { selected = value == history.capacity },
+                        trailingIcon = {
+                            if (value == history.capacity) Icon(painterResource(R.drawable.ic_check), contentDescription = null)
+                        },
+                        onClick = {
+                            expanded = false
+                            if (value != history.capacity) history.updateCapacity(value)
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 internal fun ClipboardHistoryView(owner: ClipboardController) {
     val history = owner.history
     var clear by remember { mutableStateOf(false) }
+    var originFilter by remember { mutableStateOf("all") }
+    val entries = history.entries.filter { originFilter == "all" || it.origin == originFilter }
     Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("${history.entries.size} of ${history.capacity} · Saved on this device", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -220,12 +230,26 @@ internal fun ClipboardHistoryView(owner: ClipboardController) {
         }
         if (history.entries.isNotEmpty()) TextButton(onClick = { clear = true }) { Text("Clear all") }
     }
+    ClipboardHistoryCapacityPicker(history)
     if (owner.status != "Ready to share text") Text(owner.status, style = MaterialTheme.typography.bodySmall)
     if (owner.busy) TextButton(onClick = owner::cancel) { Text("Cancel send") }
-    if (history.entries.isEmpty()) Text(if (history.enabled) "No clipboard history yet" else "Enable history to keep text on this device", style = MaterialTheme.typography.bodyMedium)
+    if (history.enabled || history.entries.isNotEmpty()) {
+        AniCeSegmentedControl(
+            options = listOf("all" to "All", "mac" to "Mac", "phone" to "Phone"),
+            selected = originFilter,
+            onSelected = { originFilter = it },
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+    if (entries.isEmpty()) Text(
+        if (history.entries.isNotEmpty()) "No matching clipboard items"
+        else if (history.enabled) "No clipboard history yet"
+        else "Enable history to keep text on this device",
+        style = MaterialTheme.typography.bodyMedium,
+    )
     else {
         val zone = ZoneId.systemDefault()
-        val days = history.entries.groupBy { Instant.ofEpochMilli(it.timestamp).atZone(zone).toLocalDate() }
+        val days = entries.groupBy { Instant.ofEpochMilli(it.timestamp).atZone(zone).toLocalDate() }
         days.keys.sortedDescending().forEach { day ->
             Text(day.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)), style = MaterialTheme.typography.titleSmall)
             days.getValue(day).forEach { entry ->
@@ -250,6 +274,7 @@ internal fun ClipboardHistoryView(owner: ClipboardController) {
             }
         }
     }
+    history.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     if (history.error != null && history.entries.isEmpty()) TextButton(onClick = history::clear) { Text("Clear history") }
     if (clear) AlertDialog(onDismissRequest = { clear = false }, title = { Text("Clear clipboard history?") }, text = { Text("Delete all saved text on this device.") },
         confirmButton = { TextButton(onClick = { clear = false; history.clear() }) { Text("Clear all") } },

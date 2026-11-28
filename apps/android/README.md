@@ -6,17 +6,18 @@ Kotlin, Jetpack Compose, and Material 3. Persistent identity uses Android Keysto
 
 Android 10 / API 29 or newer; compile/target API 36, JDK 21 and NDK r27d (`27.3.13750724`). Kotlin/Java target JVM 17. Background companion ownership requires API 31 or newer.
 
-Release candidate: **0.9.0-beta.4 · build 90024** (unpublished). See [installation and updates](../../docs/GETTING_STARTED.md), [feature guides](../../README.md#features) and [architecture](../../ARCHITECTURE.md).
+Latest release: **0.9.0-beta.4 · build 90024**. See [installation and updates](../../docs/GETTING_STARTED.md), [feature guides](../../README.md#features) and [architecture](../../ARCHITECTURE.md).
 
 ## Using the Android app
 
 - **Home** shows the trusted Mac, peer battery/charging status, current transfers and playback. **Devices** owns pairing, trusted devices, transport controls and diagnostics.
-- **Features** opens Control Mac, Mac Desk Deck, Send files, Clipboard, Now Playing, Messages, Find Device and Audio Sharing. **Favourites** keeps your chosen shortcuts and saved order.
+- **Features** opens Control Mac, Mac Desk Deck, Send files, Clipboard, Now Playing, Messages and Audio Sharing; Control Mac includes a **Clear** local-buffer action and cursor-aware mid-text reconciliation, and **Send to Mac** Quick Settings tile, shortcuts, pairing modes and device nicknames are covered in the offline **aniCe Guide** (top bar `?`, Features footer, and **Settings → Guide**). **Favourites** keeps your chosen shortcuts and saved order. **Mac Desk Deck → Find Mac** sends a native alert independently of telemetry freshness; former Find Device routes and shortcuts migrate to one Desk Deck entry.
 - **Now Playing** brings Mac track details, album artwork, player selection and supported transport/volume controls to Home and the full player. Phone volume buttons can adjust supported Mac output; notification and lock-screen controls require eligible background ownership. Artwork travels over LAN, and audio stays on the Mac. See [playback and background limits](../../docs/features/NOW_PLAYING.md).
 - **[Audio Sharing](../../docs/features/AUDIO_SHARING.md)** (Experimental) plays Mac audio on your phone or shares eligible phone audio with your Mac over the local network.
 - **Share → Send to Mac** accepts supported files, literal text and links. Compatible text-selection menus also expose Send to Mac. A single HTTP(S) link offers Open in Mac when supported; other applications decide whether the selection action is visible.
 - **Clipboard → Share → More options** offers setup for the Send to Mac Quick Settings tile. The tile opens a focused capture panel; it cannot read the clipboard continuously in the background. Automatic sharing and saved local history are separate, default-off preferences.
 - **Settings → Notification sync** configures Notification Access, selected source apps, incoming-call controls and optional caller ID. **Settings → Do Not Disturb** enables phone-to-Mac sync after the Mac Shortcuts are configured. Desk Deck's DND button is a separate Mac-local action.
+- **Settings → Permissions → Find Phone notifications** offers local incoming-alert recovery without gating Find Mac. Find Phone ringing and Stop remain available independently of the panel, subject to native permission and connection limits.
 
 Background ownership uses the native companion association on supported API 31+ devices. First enable or association repair requires Android's setup dialog; force-stop and reboot have no automatic-recovery promise. Background LAN defaults to Never, but network/process loss, legacy-peer expiry and explicit Disconnect still apply. Capable LAN peers renew through fresh EDHOC on the same socket; eligible authenticated BLE peers supply direct IPv4 locators before bounded mDNS fallback. See [connection management](../../docs/GETTING_STARTED.md#manage-connections), [LAN behavior](../../docs/LAN_CONNECTIONS.md) and [background policy](../../docs/BACKGROUND_CONNECTIONS.md).
 
@@ -33,7 +34,7 @@ app/
         deskdeck/                   Mac readings, controls, approved shortcuts and peer power
         dndsync/                    Phone-to-Mac DND state relay
         clipboard/                  Clipboard model, automatic/manual sharing and focus gating
-        finddevice/                 Peer ring request actions, sound player and notification lifecycle
+        finddevice/                 Independent peer alerts, incoming permission recovery, sound and notification lifecycle
         nowplaying/                 Playback, codecs, artwork and native media presentation
         notifications/              Notification listener, SIM call state/control, app selection and wire relay
         phoneinput/                 Remote Mac keyboard, text reconciliation and trackpad controls

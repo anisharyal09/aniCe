@@ -6,11 +6,11 @@ Swift 6 and SwiftUI provide persistent device identity, a main window and a menu
 
 Apple Silicon and macOS 14.2 or newer; Intel is unsupported. Swift 6, SwiftUI/AppKit and a native Rust pairing bridge.
 
-Release candidate: **0.9.0-beta.4 · build 90024** (unpublished). See [installation and updates](../../docs/GETTING_STARTED.md), [feature guides](../../README.md#features) and [architecture](../../ARCHITECTURE.md).
+Latest release: **0.9.0-beta.4 · build 90024**. See [installation and updates](../../docs/GETTING_STARTED.md), [feature guides](../../README.md#features) and [architecture](../../ARCHITECTURE.md).
 
 ## Using the Mac app
 
-- **Overview** shows the selected device and current activity; **Devices** owns pairing, trusted phones, automatic connection preferences and independent Bluetooth/LAN controls. Features and Favourites provide saved access to the implemented panels.
+- **Overview** shows the selected device and current activity; **Devices** owns pairing, trusted phones, automatic connection preferences and independent Bluetooth/LAN controls. Features and Favourites provide saved access to the implemented panels; the toolbar `?` action, Features footer (`More built into aniCe — see guide`), and **Settings → Guide** open the offline **aniCe Guide** (including pairing methods, device nicknames, Quick Settings tile, shortcuts, and settings paths).
 - The **menu-bar companion** shares connection owners with the main window. Closing the window keeps it running; Command-Q quits. It offers Send clipboard, Quick Paste Tray, Send files and Floating Key for the selected compatible phone.
 - **Control Android** uses native Classic Bluetooth HID after OS pairing and one explicit link to the trusted phone. Option–Command–K toggles Floating Key; input starts deliberately in its capture area. See [keyboard, pointer and clipboard typing](../../docs/features/KEYBOARD_TRACKPAD.md).
 - **Clipboard** offers manual sharing, separate automatic-sharing consent and optional local history. Option–Command–V opens the Quick Paste Tray even without a connected phone. Return copies selected history for normal paste; the tray does not type into another application.
@@ -145,7 +145,9 @@ python3 scripts/test_dev.py
 
 `--only macos` is the CI lane. It requires a full Xcode, rebuilds `build/native/libanice_pairing.a` for Apple Silicon (`arm64`), compiles a native Release build with codesign verification, then runs the hosted suite. The `fast --macos` form also runs the local contract and Rust checks.
 
-The Mac gate includes Keychain tests and rejects zero tests, failures, crashes and undocumented skips. It prints the real-player/manual checks that cannot run.
+The Mac gate includes Keychain tests and rejects zero tests, failures, crashes and undocumented skips. The 40-minute hosted-test command limit covers both the Debug build and the full XCTest suite.
+
+The gate reports real-player checks and the switch accessibility check when the runner cannot execute them. The switch check skips only when the runner cannot inspect even a native SwiftUI switch. `--strict-skips` rejects these omissions.
 
 Timing checks require an awake Mac. Keep the lid open; `caffeinate -i python3 scripts/verify-suite.py --only macos` prevents idle sleep for the run without changing system settings. It does not prevent forced or lid-close sleep.
 

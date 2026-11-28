@@ -17,21 +17,24 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TransferResponsivenessTest {
-    @Test fun nativeStorageNeverReportsSuccessOnPublicationDenial() = runBlocking {
+    @Test fun nativeStorageNeverReportsSuccessOnPublicationDenial(): Unit = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val folder = File(context.cacheDir, "transfer-storage-${UUID.randomUUID()}").apply { mkdirs() }
         val storage = TransferReceiveStorage(folder, null)
+        val payload = byteArrayOf(1, 2, 3)
+        val file = TransferFile(UUID.randomUUID().toString(), "received.bin", payload.size.toLong(),
+            MessageDigest.getInstance("SHA-256").digest(payload))
         try {
-            val partial = storage.create(UUID.randomUUID().toString(), UUID.randomUUID().toString()).first!!
-            storage.write(byteArrayOf(1, 2, 3))
+            val partial = storage.create(UUID.randomUUID().toString(), file.id).first!!
+            storage.write(payload)
             try {
-                storage.finish("received.bin", MessageDigest.getInstance("SHA-256").digest(byteArrayOf(1, 2, 3)))
-                assertArrayEquals(byteArrayOf(1, 2, 3), File(folder, "received.bin").readBytes())
+                storage.finish(file)
+                assertArrayEquals(payload, File(folder, file.name).readBytes())
             } catch (error: java.io.IOException) {
                 assertTrue(error.cause is java.nio.file.AccessDeniedException)
                 storage.discard()
-                assertArrayEquals(byteArrayOf(1, 2, 3), partial.readBytes())
-                assertFalse(File(folder, "received.bin").exists())
+                assertArrayEquals(payload, partial.readBytes())
+                assertFalse(File(folder, file.name).exists())
             }
         } finally { storage.discard(); folder.deleteRecursively() }
     }

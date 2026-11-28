@@ -109,7 +109,8 @@ extension MacSmsModel {
     }
     if announced { return }
     state.status = "Message received"
-    let outcome = await notifier.post(SmsNotification(identifier: smsNotificationPrefix + assembly.messageId, peerKey: key(peer),
+    if isMessagesActive() { return }
+    let outcome = await notifier.post(SmsNotification(identifier: smsNotificationIdentifier(peerKey: key(peer), messageId: assembly.messageId), peerKey: key(peer),
       peerName: peer.displayName, address: assembly.address, threadId: conversation.threadId,
       threadIdentifier: normalized, body: body, failure: false))
     guard peers[key(peer)] === state, live(assembly.descriptor) else { return }
@@ -165,6 +166,10 @@ extension MacSmsModel {
     if let index = state.threads.firstIndex(where: { $0.key == normalized }) {
       var card = state.threads[index]
       card.threadId = assembly.threadId
+      if assembly.dateMillis >= card.dateMillis || card.snippet.isEmpty {
+        card.snippet = smsTruncate(smsSanitizeText(body), maxBytes: 160)
+        card.dateMillis = max(card.dateMillis, assembly.dateMillis)
+      }
       state.threads[index] = card
     }
   }

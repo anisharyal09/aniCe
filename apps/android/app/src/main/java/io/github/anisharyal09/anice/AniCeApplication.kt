@@ -31,6 +31,8 @@ class AniCeApplication : Application() {
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityStarted(activity: android.app.Activity) { startedActivities++; updates.foregroundStarted() }
             override fun onActivityStopped(activity: android.app.Activity) { startedActivities = maxOf(0, startedActivities - 1); updates.foregroundStopped() }
+            // Transport owners update foreground eligibility inside the activity callbacks.
+            override fun onActivityPostStarted(activity: android.app.Activity) { transferNotification.updateOffer() }
             override fun onActivityCreated(activity: android.app.Activity, state: android.os.Bundle?) = Unit
             override fun onActivityResumed(activity: android.app.Activity) { updateResumedActivities(1) }
             override fun onActivityPaused(activity: android.app.Activity) { updateResumedActivities(-1) }

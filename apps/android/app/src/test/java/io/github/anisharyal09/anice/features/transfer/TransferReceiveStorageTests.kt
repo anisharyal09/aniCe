@@ -55,9 +55,10 @@ class TransferReceiveStorageTests {
 
     /** Receives [payload] into the storage's folder, publishes it as [name] and returns its digest. */
     private suspend fun receive(storage: TransferReceiveStorage, name: String): ByteArray {
-        storage.create(UUID.randomUUID().toString(), UUID.randomUUID().toString())
+        val file = TransferFile(UUID.randomUUID().toString(), name, payload.size.toLong(), digest)
+        storage.create(UUID.randomUUID().toString(), file.id)
         storage.write(payload)
-        return storage.finish(name, digest)
+        return storage.finish(file)
     }
 
     /**
@@ -88,7 +89,8 @@ class TransferReceiveStorageTests {
         }
         try {
             SessionTiming.sink = { events.add(it) }
-            val partial = execute { storage.create(UUID.randomUUID().toString(), UUID.randomUUID().toString()) }.first!!
+            val file = TransferFile(UUID.randomUUID().toString(), "complete.bin", payload.size.toLong(), digest)
+            val partial = execute { storage.create(UUID.randomUUID().toString(), file.id) }.first!!
             val cancelled = async(start = CoroutineStart.UNDISPATCHED) { storage.write(byteArrayOf(99)) }
             assertEquals(1, lane.pending)
             assertEquals(0L, partial.length())
@@ -100,7 +102,7 @@ class TransferReceiveStorageTests {
             execute { storage.flush() }
             assertTrue(execute { storage.fileIdentity() }.isNotEmpty())
             assertArrayEquals(digest, execute { storage.prefixDigest(payload.size.toLong()) })
-            assertArrayEquals(digest, execute { storage.finish("complete.bin", digest) })
+            assertArrayEquals(digest, execute { storage.finish(file) })
             execute { storage.discard() }
             execute {
                 try { storage.write(byteArrayOf(1)); fail("Closed storage accepted bytes") }
@@ -135,7 +137,9 @@ class TransferReceiveStorageTests {
         lane.runNext(); restore.await()
         assertEquals(1024L, partial.length())
         val expected = MessageDigest.getInstance("SHA-256").digest(payload.copyOf(1024))
-        val finish = async(start = CoroutineStart.UNDISPATCHED) { storage.finish("restored.bin", expected) }
+        val finish = async(start = CoroutineStart.UNDISPATCHED) {
+            storage.finish(TransferFile(file, "restored.bin", 1024L, expected))
+        }
         assertEquals(1, lane.pending); lane.runNext()
         assertArrayEquals(expected, finish.await())
         assertArrayEquals(payload.copyOf(1024), File(tempDir, "restored.bin").readBytes())
@@ -227,10 +231,11 @@ class TransferReceiveStorageTests {
     fun aDigestMismatchPublishesNothing() = runBlocking {
         val folder = File(tempDir, "downloads").apply { mkdirs() }
         val storage = TransferReceiveStorage(folder, null)
-        storage.create(UUID.randomUUID().toString(), UUID.randomUUID().toString())
+        val file = TransferFile(UUID.randomUUID().toString(), "sample.bin", payload.size.toLong(), ByteArray(32))
+        storage.create(UUID.randomUUID().toString(), file.id)
         storage.write(payload)
         try {
-            storage.finish("sample.bin", ByteArray(32))
+            storage.finish(file)
             fail("A mismatching digest must not publish")
         } catch (error: IOException) {
             assertEquals("Hash mismatch", error.message)

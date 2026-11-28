@@ -453,10 +453,8 @@ private fun NicknameEditor(model: PairingViewModel,
     OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Private nickname") },
         singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !model.savingNickname,
         supportingText = { Text("Only on this phone. Device name remains the default.") })
-    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-        Checkbox(checked = enabled, onCheckedChange = { enabled = it }, enabled = !model.savingNickname)
-        Text("Use nickname", style = MaterialTheme.typography.bodyMedium)
-    }
+    AutomaticConnectionToggle(checked = enabled, enabled = !model.savingNickname,
+        onCheckedChange = { enabled = it }, label = "Use nickname", compact = true)
     TextButton(onClick = { model.saveNickname(peer, name, enabled) },
         enabled = !model.savingNickname && name.trim().codePointCount(0, name.trim().length) <= 64 &&
             (!enabled || name.trim().isNotBlank())) { Text("Save nickname") }

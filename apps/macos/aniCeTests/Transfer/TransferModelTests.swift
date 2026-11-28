@@ -622,12 +622,31 @@ final class TransferModelTests: XCTestCase {
     let source = tempDir.appendingPathComponent("feedback.bin")
     try Data([9]).write(to: source)
     XCTAssertTrue(controller.finishDrop([source]))
+    XCTAssertEqual(controller.acceptedDrop?.count, 1)
+    XCTAssertEqual(controller.acceptedDrop?.peerName, channel.descriptor.peer.displayName)
+    XCTAssertEqual(controller.shelfTitle, "Preparing 1 file for")
+    XCTAssertEqual(controller.shelfSymbol, "arrow.triangle.2.circlepath")
+    XCTAssertNil(controller.sentFeedback, "Accepting a drop is not transfer success")
     let reservation = try XCTUnwrap(controller.pendingDropID)
     owner.cancelTransfer(local: false)
     let batch = TransferBatch(id: UUID(), files: [
       TransferFile(id: UUID(), name: "feedback.bin", size: 1,
         sha256: Data(repeating: 0, count: 32), localURL: nil)
     ], totalBytes: 1, peerName: "Pixel 9")
+    owner.dropSourceID = reservation
+    owner.preparing = false
+    owner.state = .waitingForPeerApproval(batch: batch)
+    XCTAssertEqual(controller.shelfTitle, "Waiting for approval from")
+    owner.state = .transferring(batch: batch, fileIndex: 0, fileName: "feedback.bin",
+      fileBytes: 0, fileSize: 1, totalBytes: 0, speedBps: 0)
+    XCTAssertEqual(controller.shelfTitle, "Sending 1 file to")
+    XCTAssertEqual(controller.shelfSymbol, "paperplane")
+    owner.state = .transferring(batch: batch, fileIndex: 0, fileName: "feedback.bin",
+      fileBytes: 1, fileSize: 1, totalBytes: 1, speedBps: 0)
+    XCTAssertEqual(controller.shelfTitle, "Verifying 1 file with")
+    owner.dropSourceID = UUID()
+    XCTAssertEqual(controller.acceptedDropPhase, .ended)
+    owner.state = .cancelled
 
     controller.handle(.sentFromDrop(reservation: UUID(), batch: batch))
     XCTAssertNil(controller.sentFeedback, "A different drop cannot reuse an old result")
@@ -637,11 +656,29 @@ final class TransferModelTests: XCTestCase {
     owner.state = .completed(batchId: batch.id, fileCount: 1, totalBytes: 1)
     controller.handle(.sentFromDrop(reservation: reservation, batch: batch))
     XCTAssertEqual(controller.sentFeedback, batch)
+    XCTAssertNil(controller.acceptedDrop)
     XCTAssertEqual(controller.shelfTitle, "Sent 1 file to")
     XCTAssertEqual(controller.shelfDetail, "Pixel 9")
     XCTAssertEqual(controller.shelfSymbol, "checkmark.circle")
     XCTAssertEqual(controller.edgeHint, "Edge Drop")
     XCTAssertEqual(controller.presentationSize, EdgeDropGeometry.feedbackSize)
+  }
+
+  func testEdgeDropRejectedOrBusySelectionCannotShowNewPreparation() throws {
+    let owner = MacTransferModel()
+    let controller = MacEdgeDropController(model: owner)
+    XCTAssertFalse(controller.finishDrop([]))
+    XCTAssertNil(controller.acceptedDrop)
+    let channel = MockSecuredChannel(peer: try androidPeer())
+    owner.activeChannel = channel
+    owner.peerConnected = true
+    owner.peerCompatible = true
+    let reservation = try XCTUnwrap(owner.reserveDrop(for: TransferRecipient(peer: channel.descriptor.peer)))
+    XCTAssertTrue(controller.finishDrop([tempDir.appendingPathComponent("busy.bin")]))
+    XCTAssertNil(controller.acceptedDrop)
+    XCTAssertNil(controller.pendingDropID)
+    XCTAssertEqual(owner.dropReservation, reservation)
+    owner.cancelTransfer(local: false)
   }
 
   func testCancelledDropReservationCannotSendAfterProviderLoadCompletes() async throws {

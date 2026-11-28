@@ -14,13 +14,13 @@ import androidx.core.content.ContextCompat
 /** One active SMS subscription; the label is the user-visible SIM name truncated to 40 UTF-8 bytes. */
 data class SmsSubscription(val subscriptionId: Int, val slotIndex: Int, val label: String, val isDefault: Boolean)
 
-/** [result] is a relay result code: 0 with entries, 1 when READ_PHONE_STATE is missing, 5 on failure. */
+/** [result] is 0 for a successful list (including empty), 1 for missing permission, 5 for provider failure. */
 data class SmsSubscriptionListing(val result: Long, val entries: List<SmsSubscription>)
 
 interface SmsSubscriptionSource {
     fun list(): SmsSubscriptionListing
 
-    /** Active modems need no permission; the panel offers a choice only when a multi-SIM phone can serve one. */
+    /** Configured modem count needs no permission; it does not establish active SIM count. */
     fun modemCount(): Int
 }
 

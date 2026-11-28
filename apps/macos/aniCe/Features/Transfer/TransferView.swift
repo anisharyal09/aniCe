@@ -11,14 +11,12 @@ struct TransferNotificationControls: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       Toggle("Background transfer notifications", isOn: Binding(get: { preferences.enabled }, set: { preferences.enabled = $0 }))
-        .aniCeControlFeedback(feedbackPadding: 3)
       Toggle("Play sound", isOn: Binding(get: { preferences.sound }, set: { preferences.sound = $0 }))
-        .aniCeControlFeedback(feedbackPadding: 3)
         .disabled(!preferences.enabled)
       Text("Shows incoming offers and successful receives while aniCe is in the background, including automatic receives.")
         .font(settingsFontScale.map { Font.system(size: 12 * $0) } ?? .caption).foregroundStyle(AniCePalette.secondaryText(scheme))
     }
-    .toggleStyle(.checkbox).controlSize(settingsFontScale == nil ? .small : .regular).tint(AniCePalette.accent(scheme))
+    .toggleStyle(AniCePreferenceToggleStyle())
   }
 }
 
@@ -44,13 +42,12 @@ struct TransferAutoReceiveSettings: View {
           Toggle("Android · \(label(for: record))", isOn: Binding(
             get: { preferences.enabled(for: record.peer) },
             set: { preferences.setEnabled($0, for: record.peer) }))
-            .aniCeControlFeedback(feedbackPadding: 3)
         }
         Text("Accepts incoming files without a prompt.")
           .font(settingsFontScale.map { Font.system(size: 12 * $0) } ?? .caption).foregroundStyle(AniCePalette.secondaryText(scheme))
       }
     }
-    .toggleStyle(.checkbox).controlSize(settingsFontScale == nil ? .small : .regular).tint(AniCePalette.accent(scheme))
+    .toggleStyle(AniCePreferenceToggleStyle())
   }
 
   private func label(for record: PeerTrustRecord) -> String {
@@ -332,7 +329,16 @@ private struct TransferFileDropTarget: ViewModifier {
   func body(content: Content) -> some View {
     content
       .onDrop(of: [UTType.fileURL], isTargeted: $isTargeted) { providers in
-        TransferDropSubmission.receive(providers, model: model)
+        let accepted = TransferDropSubmission.receive(providers, model: model)
+        if accepted {
+          NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+        }
+        return accepted
+      }
+      .onChange(of: isTargeted) { _, targeted in
+        if targeted {
+          NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        }
       }
       .overlay {
         if isTargeted, model.connectedAndroidRecipient != nil, !model.isBusy {
