@@ -1629,6 +1629,13 @@ final class SmsModelTests: XCTestCase {
           findNotifier: nil,
           peers: [record],
           edgeDrop: edgeDrop,
+          audioSharing: MacAudioSharingModel(preferences: nil),
+          phoneAudio: MacPhoneAudioModel(preferences: nil),
+          lan: MacLanSessionModel(identity: IdentityService(storage: PairingMemoryIdentity(),
+            deviceName: "Fixture Mac", tagPrefix: "test-sms"),
+            peers: SessionPeerReservation(), store: { throw SessionFailure.cancelled }),
+          selectedPhone: nil,
+          connectionPause: MacConnectionPauseModel(),
           navigation: navigation
         ).disclosureGroupStyle(ClickableDisclosureStyle()).environment(\.colorScheme, scheme)
           .defaultAppStorage(defaults).frame(width: width, height: 540)

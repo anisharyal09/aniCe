@@ -1416,6 +1416,13 @@ final class BetaUpdatePreferenceTests: XCTestCase {
           findNotifier: nil,
           peers: [],
           edgeDrop: edgeDrop,
+          audioSharing: MacAudioSharingModel(preferences: nil),
+          phoneAudio: MacPhoneAudioModel(preferences: nil),
+          lan: MacLanSessionModel(identity: IdentityService(storage: PairingMemoryIdentity(),
+            deviceName: "Fixture Mac", tagPrefix: "test-nav"),
+            peers: SessionPeerReservation(), store: { throw SessionFailure.cancelled }),
+          selectedPhone: nil,
+          connectionPause: MacConnectionPauseModel(),
           navigation: featNav,
           favouritesOnly: favouritesOnly
         )
