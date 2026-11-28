@@ -8,6 +8,7 @@ internal final class PhoneAudioPlaybackCounter: @unchecked Sendable {
   private struct State {
     var epoch = 0
     var pending = 0
+    var emptiedAt: UInt64?
     var scheduledPackets: Int64 = 0
     var renderedCallbacks: Int64 = 0
     var emptyPendingTransitions: Int64 = 0
@@ -19,14 +20,17 @@ internal final class PhoneAudioPlaybackCounter: @unchecked Sendable {
   var epoch: Int { lock.withLock { $0.epoch } }
   var pending: Int { lock.withLock { $0.pending } }
 
+  func backlog(at now: UInt64 = DispatchTime.now().uptimeNanoseconds) -> (pending: Int, shouldRebuffer: Bool) {
+    lock.withLock { state in
+      // A brief render-queue drain can refill without pausing for another prefill.
+      let shouldRebuffer = state.emptiedAt.map { now >= $0 && now - $0 >= 40_000_000 } ?? false
+      return (state.pending, shouldRebuffer)
+    }
+  }
+
   func resetAll() {
     lock.withLock { state in
-      state.epoch &+= 1
-      state.pending = 0
-      state.scheduledPackets = 0
-      state.renderedCallbacks = 0
-      state.emptyPendingTransitions = 0
-      state.completionMaximumMicros = nil
+      state = State(epoch: state.epoch &+ 1)
     }
   }
 
@@ -34,27 +38,30 @@ internal final class PhoneAudioPlaybackCounter: @unchecked Sendable {
     lock.withLock { state in
       state.epoch &+= 1
       state.pending = 0
+      state.emptiedAt = nil
     }
   }
 
   func enqueue(recordDiagnostics: Bool) -> Int {
     lock.withLock { state in
       state.pending += 1
+      state.emptiedAt = nil
       if recordDiagnostics { state.scheduledPackets += 1 }
       return state.epoch
     }
   }
 
-  func complete(epoch: Int, scheduledAt: UInt64?) {
+  func complete(epoch: Int, scheduledAt: UInt64?, renderedAt: UInt64 = DispatchTime.now().uptimeNanoseconds) {
     lock.withLock { state in
       guard state.epoch == epoch, state.pending > 0 else { return }
+      state.pending -= 1
+      if state.pending == 0 { state.emptiedAt = renderedAt }
       if let scheduledAt {
         state.renderedCallbacks += 1
-        if state.pending == 1 { state.emptyPendingTransitions += 1 }
-        let duration = Int64((DispatchTime.now().uptimeNanoseconds - scheduledAt) / 1000)
+        if state.pending == 0 { state.emptyPendingTransitions += 1 }
+        let duration = Int64((renderedAt - scheduledAt) / 1000)
         state.completionMaximumMicros = max(state.completionMaximumMicros ?? 0, duration)
       }
-      state.pending -= 1
     }
   }
 
@@ -105,7 +112,7 @@ extension PhoneAudioOutput {
 
 actor MacPhoneAudioOutput: PhoneAudioOutput {
   private let diagnosticsEnabled: Bool
-  private static let maximumPending = 6
+  private static let maximumPending = 8
   private static let prefillPackets = 3
   private static let fadeFrames = 240
   private let engine = AVAudioEngine()
@@ -163,12 +170,13 @@ actor MacPhoneAudioOutput: PhoneAudioOutput {
       unavailableDrops += 1
       return .unavailable
     }
-    var pending = counter.pending
+    let backlog = counter.backlog()
+    var pending = backlog.pending
     if pending >= Self.maximumPending {
       resetPlaybackQueue()
       pending = 0
       resyncs += 1
-    } else if !priming && pending == 0 {
+    } else if !priming && backlog.shouldRebuffer {
       player.pause()
       priming = true
     }

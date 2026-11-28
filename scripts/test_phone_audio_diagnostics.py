@@ -44,8 +44,8 @@ class PhoneAudioDiagnosticTests(unittest.TestCase):
     def test_malformed_duplicate_bool_integer_and_excess_queue_are_rejected(self):
         bad = [
             row(run=True), row(version=True), row(state=6), row(elapsed_ms=-1),
-            row(queued_packets=4), row(read_calls="PRIVATE"),
-            row("macos", output_queued_frames=5761),
+            row(queued_packets=7), row(maximum_queued_packets=7), row(read_calls="PRIVATE"),
+            row("macos", output_queued_frames=7681),
             row(activity_started=1), row(window_start_elapsed_ms=2000),
             row(side=[]), row(side={}), row(side=None),
         ]
@@ -54,6 +54,18 @@ class PhoneAudioDiagnosticTests(unittest.TestCase):
         rows, rejected = diagnostics.parse_lines(io.BytesIO(raw))
         self.assertEqual(rows, [])
         self.assertEqual(rejected, len(bad) + 1)
+
+    def test_old_and_current_queue_limits_are_preserved(self):
+        samples = [
+            row(queued_packets=3, maximum_queued_packets=3),
+            row("macos", output_queued_frames=5760),
+            row(queued_packets=6, maximum_queued_packets=6, activity_resumed=False),
+            row(queued_packets=3, maximum_queued_packets=6, activity_resumed=True),
+            row("macos", output_queued_frames=7680),
+        ]
+        rows, rejected = diagnostics.parse_lines(io.BytesIO(b"".join(line(sample) for sample in samples)))
+        self.assertEqual(rows, samples)
+        self.assertEqual(rejected, 0)
 
     def test_optional_missing_metrics_and_immediate_terminal_are_preserved(self):
         first = diagnostics.sanitized_row(row(elapsed=1000, queued_packets=None,

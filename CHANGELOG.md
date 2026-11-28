@@ -10,30 +10,24 @@ Shared product changes, repository structure, documentation and development conv
 
 ### Added
 
-- Add **Experimental** Audio Sharing. Listen to Mac audio on your phone or
-  share eligible phone audio to your Mac over an encrypted local connection
-  between trusted devices. Phone-to-Mac audio can stutter when switching apps
-  or running in the background. For Mac-to-phone playback, Bluetooth headphones
-  can add delay. See the [Audio Sharing guide](docs/features/AUDIO_SHARING.md).
-- Add inline automatic and manual local-network setup, active-direction Stop
-  controls, and compact playback options.
-- Add bounded, opt-in preview diagnostics for capture, sending and playback
-  without recording audio or device identifiers.
-
-### Changed
-
-- Let Android playback recover from a transient high-buffer floor,
-  trim stale software PCM on target reductions and keep valid Balanced health
-  eligible for bounded transfer-credit recovery.
-- Isolate audio admission and playback from UI work, reduce local buffer floors and recover transfer credit only with healthy audio.
-- Add opt-in lower-delay buffering and local backlog diagnostics for Mac audio on Android.
+- Add [**Experimental** Audio Sharing](docs/features/AUDIO_SHARING.md) between
+  trusted Macs and Android phones over encrypted LAN, one direction at a time.
+- Add inline automatic and manual LAN setup, clear Start/Stop controls, and a
+  sharing notification with a Stop action.
+- Play Mac audio through Android headphones or the phone speaker, with local
+  volume and Balanced or Lower delay buffering. Share eligible phone playback
+  to the Mac with one-time Android capture consent.
+- Add opt-in Transfer Preview diagnostics for capture, sending and playback.
 
 ### Fixed
 
-- Stop retired file-transfer counters from blocking a new Mac-to-Android stream;
-  keep the existing drain limit for a currently owned outgoing file.
-- Fence delayed native playback-head resets and top up route-adjusted silent
-  startup thresholds without weakening headphone checks or preparation deadlines.
+- Keep more phone audio queued during short background stalls and resume Mac
+  playback after brief queue drains without another prefill.
+- Keep Mac-to-phone startup from waiting on completed or cancelled transfers.
+  Pace active transfers based on playback health.
+
+**Known limits:** Phone-to-Mac playback can stutter in the background.
+Bluetooth headphones can add delay when listening to Mac audio on Android.
 
 ## [v0.9.0-beta.4]
 

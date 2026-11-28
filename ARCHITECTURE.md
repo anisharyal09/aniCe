@@ -103,9 +103,10 @@ Transfer also admits authenticated chunk-shaped DATA to its existing bounded FIF
 
 Phone Audio reverses the direction using its own `"aniCe phone audio"` envelope.
 Android's locally granted single-use MediaProjection service owns eligible
-playback capture and a shared job-scoped LAN lease, with three unsent PCM packets
-plus one in-flight send on a serialized off-main dispatcher. Mac's default-off receiving
-consent binds the local identity and full phone credential; its owner fences
+playback capture and a shared job-scoped LAN lease. The sender holds three
+unsent PCM packets when an activity is resumed or six when none is resumed,
+plus one in-flight send on a serialized off-main dispatcher. Mac's default-off
+receiving consent binds the local identity and full phone credential; its owner fences
 native preparation/cleanup, retired stream IDs and output-device loss. Both
 directions refuse conflicting starts, including native cleanup, rather than
 silently replacing one another. Retained-channel renewal clears obsolete audio;

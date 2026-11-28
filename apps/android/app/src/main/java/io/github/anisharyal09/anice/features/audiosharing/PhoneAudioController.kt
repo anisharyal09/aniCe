@@ -44,18 +44,30 @@ internal interface PhoneAudioCaptureControl {
 
 internal data class PhoneAudioPacket(val sequence: Long, val pcm: ByteArray, val capturedAtNanos: Long? = null)
 
-/** Keeps three unsent packets plus at most one in-flight send; overflow drops the oldest unsealed PCM. */
-internal class PhoneAudioSendWindow(private val capacity: Int = UNSENT_CAPACITY) {
+/** Holds the newest unsent PCM; the sender can own one additional packet. */
+internal class PhoneAudioSendWindow {
     private val packets = ArrayDeque<PhoneAudioPacket>()
+    private var capacity = FOREGROUND_CAPACITY
     var dropped = 0L
         private set
 
     fun offer(packet: PhoneAudioPacket) {
-        if (packets.size >= capacity) {
-            packets.removeFirst()
-            dropped += 1
-        }
         packets.addLast(packet)
+        trim()
+    }
+
+    fun foregroundChanged(foreground: Boolean): Long {
+        capacity = if (foreground) FOREGROUND_CAPACITY else BACKGROUND_CAPACITY
+        val before = dropped
+        trim()
+        return dropped - before
+    }
+
+    private fun trim() {
+        while (packets.size > capacity) {
+            packets.removeFirst()
+            dropped++
+        }
     }
 
     fun take(): PhoneAudioPacket? = packets.removeFirstOrNull()
@@ -64,7 +76,10 @@ internal class PhoneAudioSendWindow(private val capacity: Int = UNSENT_CAPACITY)
 
     val size get() = packets.size
 
-    internal companion object { const val UNSENT_CAPACITY = 3 }
+    private companion object {
+        const val FOREGROUND_CAPACITY = 3
+        const val BACKGROUND_CAPACITY = 6
+    }
 }
 
 internal class PhoneAudioRequest(
@@ -379,6 +394,18 @@ class PhoneAudioController internal constructor(
         }
     }
 
+    internal fun foregroundChanged(foreground: Boolean) {
+        val trimmed = synchronized(lock) {
+            val dropped = window.foregroundChanged(foreground)
+            current?.let {
+                it.droppedPackets += dropped
+                it.diagnostics?.queued(window.size, dropped)
+            }
+            dropped
+        }
+        if (trimmed > 0) syncPresentation()
+    }
+
     /** Called from the capture worker; never blocks on LAN or Main UI rendering. */
     internal fun capturePacket(request: PhoneAudioRequest, sequence: Long, pcm: ByteArray) {
         val droppedNow = synchronized(lock) {
@@ -596,28 +623,31 @@ class PhoneAudioController internal constructor(
             try {
                 wakeDiagnostics?.senderReady(wakeAt)
                 while (true) {
-                    var capturedAt: Long? = null
+                    var packet: PhoneAudioPacket? = null
                     var request: PhoneAudioRequest? = null
                     var capacityAtSend = 0L
-                    val message = synchronized(lock) {
+                    val control = synchronized(lock) {
                         if (token != generation || channel.maintenance?.active == true) return@synchronized null
                         request = current
                         capacityAtSend = capacityRevision
                         val next = terminal?.also { terminal = null } ?: outgoing.removeFirstOrNull()
-                            ?: request?.takeIf { it.ready && canForwardAudio(it, channel.maintenance) }?.let { active ->
-                                window.take()?.let { packet ->
-                                    capturedAt = packet.capturedAtNanos
-                                    reverse(AudioSharingMessage.audio(active.id, packet.sequence, packet.pcm))
-                                }
-                            }
-                        inFlightKind = next?.kind
+                        if (next == null && request?.let { it.ready && canForwardAudio(it, channel.maintenance) } == true) {
+                            packet = window.take()
+                        }
+                        inFlightKind = next?.kind ?: packet?.let { 3L }
                         next
-                    } ?: break
-                    val isAudio = message.kind == 3L
+                    }
+                    val audio = packet
+                    if (control == null && audio == null) break
+                    val isAudio = audio != null
                     if (!isAudio) syncPresentation()
                     val diagnostics = if (isAudio) request?.diagnostics else null
-                    diagnostics?.dequeued(capturedAt)
+                    diagnostics?.dequeued(audio?.capturedAtNanos)
                     val encodeStarted = diagnostics?.timestamp()
+                    val message = control ?: run {
+                        val captured = requireNotNull(audio)
+                        reverse(AudioSharingMessage.audio(requireNotNull(request).id, captured.sequence, captured.pcm))
+                    }
                     val encoded = message.encode()
                     diagnostics?.encoded(encodeStarted)
                     val submissionStarted = diagnostics?.timestamp()

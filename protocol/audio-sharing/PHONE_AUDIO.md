@@ -51,8 +51,10 @@ destruction, sleep and Quit stop locally first, never await network cleanup.
 No reconnect starts capture automatically. Stale completion cannot revive output.
 
 Source sequence advances even for packets dropped before sealing. Keep only
-bounded current audio: three unsent packets plus one send; Mac's native output
-reservation is at most six packets/120 ms, not an end-to-end latency estimate.
+bounded current audio: Android holds three unsent packets with a resumed
+activity or six without one, plus one send. On return to the foreground it
+keeps the newest three unsent packets. Mac queues at most eight packets
+(160 ms) waiting to render. These are local limits, not end-to-end latency.
 Already sealed records remain session-owned and ordered, never replayed.
 Overflow drops obsolete unsealed PCM; underflow is silence, not historical replay.
 Control messages survive pre-seal backpressure and wait for capacity rather than
@@ -61,9 +63,12 @@ sender; the bounded audio window owns all unsent PCM.
 Mac output treats a native configuration/device change as unavailable: it stops
 the operation and requires an explicit new Start. Playback starts or resumes
 with up to three packets of prefill; an 80-ms fallback starts playback with fewer.
-At the six-packet cap of audio waiting to render it clears queued older PCM
-and begins a new prefill, counting that resync. The player fades in new PCM at
-startup, after a sequence gap, or after re-buffering. Android capture reports
+After a brief render-queue drain, playback continues on the next packet without
+a new prefill. If the queue has been empty for at least 40 ms when the next
+packet reaches the player, it starts a new prefill. A packet arriving at the
+eight-packet cap clears the older queue and starts a new prefill, counting a
+resync. The player fades in at startup, after a sequence gap, or after
+re-buffering. Android capture reports
 LOCAL, REVOKED or FAILURE teardown; Stop/close unblocks reads normally, empty
 reads retry and persistent native failures end with a failure cause.
 

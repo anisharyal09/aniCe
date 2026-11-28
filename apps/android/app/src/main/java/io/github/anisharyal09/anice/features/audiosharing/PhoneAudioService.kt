@@ -27,6 +27,7 @@ import io.github.anisharyal09.anice.features.audiosharing.AudioSharingAudioWorke
 import io.github.anisharyal09.anice.features.audiosharing.PhoneAudioCapture
 import io.github.anisharyal09.anice.features.audiosharing.PhoneAudioCaptureControl
 import io.github.anisharyal09.anice.features.audiosharing.PhoneAudioRequest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -44,10 +45,9 @@ class PhoneAudioService : Service() {
     private var capture: PhoneAudioCapture? = null
     private var captureWorker: AudioSharingAudioWorker? = null
     private var job: Job? = null
-    private var powerJob: Job? = null
-    private var wake: PowerManager.WakeLock? = null
+    private var notificationJob: Job? = null
+    private var wakeJob: Job? = null
     private var modeListener: Any? = null
-    private var powerRefreshAt = 0L
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val id = intent?.getStringExtra(STREAM) ?: return rejectStart(startId)
@@ -122,8 +122,8 @@ class PhoneAudioService : Service() {
                 modeListener = listener
                 audio.addOnModeChangedListener(mainExecutor, listener)
             }
-            acquireWake()
-            powerJob = scope.launch {
+            startWake(ticket)
+            notificationJob = scope.launch {
                 var displayedState = 1L
                 var displayedCall = controller.callActive
                 while (request === ticket && controller.request(id, instance) === ticket) {
@@ -134,7 +134,6 @@ class PhoneAudioService : Service() {
                         displayedCall = controller.callActive
                         manager.notify(ID, notification(ticket))
                     }
-                    if (android.os.SystemClock.elapsedRealtime() - powerRefreshAt >= 30000) acquireWake()
                     delay(1000)
                 }
             }
@@ -206,27 +205,36 @@ class PhoneAudioService : Service() {
             .build()
     }
 
-    private fun acquireWake() {
-        if (wake == null) {
-            wake = getSystemService(PowerManager::class.java).newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK, "$packageName:phone-audio").apply {
-                setReferenceCounted(false)
+    private fun startWake(ticket: PhoneAudioRequest) {
+        val owner = controller
+        wakeJob = scope.launch(Dispatchers.IO) {
+            try {
+                val lock = getSystemService(PowerManager::class.java).newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK, "$packageName:phone-audio").apply {
+                    setReferenceCounted(false)
+                }
+                try {
+                    while (owner.request(ticket.id, ticket.descriptor.instance) === ticket) {
+                        lock.acquire(WAKE_TIMEOUT_MILLIS)
+                        delay(WAKE_REFRESH_MILLIS)
+                    }
+                } finally {
+                    try { if (lock.isHeld) lock.release() } catch (_: RuntimeException) {}
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: RuntimeException) {
+                scope.launch { owner.captureFailed(ticket, "Phone audio could not stay awake.") }
             }
         }
-        wake?.acquire(60000)
-        powerRefreshAt = android.os.SystemClock.elapsedRealtime()
-    }
-
-    private fun releaseWake() {
-        try { if (wake?.isHeld == true) wake?.release() } catch (_: Exception) {}
-        wake = null
     }
 
     override fun onDestroy() {
         val ticket = request
         request = null
         job?.cancel(); job = null
-        powerJob?.cancel(); powerJob = null
+        notificationJob?.cancel(); notificationJob = null
+        wakeJob?.cancel(); wakeJob = null
         try {
             if (Build.VERSION.SDK_INT >= 31) {
                 (modeListener as? AudioManager.OnModeChangedListener)?.let {
@@ -241,15 +249,12 @@ class PhoneAudioService : Service() {
                 try { captureWorker?.close() }
                 finally {
                     captureWorker = null
-                    try { releaseWake() }
+                    try { ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE) }
                     finally {
-                        try { ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE) }
+                        try { if (ticket != null) controller.serviceDestroyed(ticket, this) }
                         finally {
-                            try { if (ticket != null) controller.serviceDestroyed(ticket, this) }
-                            finally {
-                                scope.coroutineContext[Job]?.cancel()
-                                super.onDestroy()
-                            }
+                            scope.coroutineContext[Job]?.cancel()
+                            super.onDestroy()
                         }
                     }
                 }
@@ -268,5 +273,7 @@ class PhoneAudioService : Service() {
         private const val CHANNEL = "phone_audio_v1"
         private const val ID = 4103
         private const val STOP = "io.github.anisharyal09.anice.STOP_PHONE_AUDIO"
+        private const val WAKE_TIMEOUT_MILLIS = 90_000L
+        private const val WAKE_REFRESH_MILLIS = 20_000L
     }
 }

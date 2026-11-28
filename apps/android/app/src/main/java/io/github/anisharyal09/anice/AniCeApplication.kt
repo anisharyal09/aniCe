@@ -32,8 +32,8 @@ class AniCeApplication : Application() {
             override fun onActivityStarted(activity: android.app.Activity) { startedActivities++; updates.foregroundStarted() }
             override fun onActivityStopped(activity: android.app.Activity) { startedActivities = maxOf(0, startedActivities - 1); updates.foregroundStopped() }
             override fun onActivityCreated(activity: android.app.Activity, state: android.os.Bundle?) = Unit
-            override fun onActivityResumed(activity: android.app.Activity) { resumedActivities++ }
-            override fun onActivityPaused(activity: android.app.Activity) { resumedActivities = maxOf(0, resumedActivities - 1) }
+            override fun onActivityResumed(activity: android.app.Activity) { updateResumedActivities(1) }
+            override fun onActivityPaused(activity: android.app.Activity) { updateResumedActivities(-1) }
             override fun onActivitySaveInstanceState(activity: android.app.Activity, state: android.os.Bundle) = Unit
             override fun onActivityDestroyed(activity: android.app.Activity) = Unit
         })
@@ -111,6 +111,15 @@ class AniCeApplication : Application() {
             }
         }
     }
+    private fun updateResumedActivities(change: Int) {
+        val wasForeground = resumedActivities > 0
+        resumedActivities = maxOf(0, resumedActivities + change)
+        val foreground = resumedActivities > 0
+        if (foreground != wasForeground && phoneAudioOwner.isInitialized()) {
+            phoneAudioOwner.value.foregroundChanged(foreground)
+        }
+    }
+
     private fun updateTransferOwnership() {
         val transport = transfer.activeChannel?.descriptor?.transport
         val connecting = transfer.state is io.github.anisharyal09.anice.features.transfer.TransferState.Connecting
@@ -213,6 +222,7 @@ class AniCeApplication : Application() {
     val audioSharing get() = listeningOwner.value
     private val phoneAudioOwner: Lazy<io.github.anisharyal09.anice.features.audiosharing.PhoneAudioController> = lazy {
         io.github.anisharyal09.anice.features.audiosharing.PhoneAudioController().also { reverse ->
+            reverse.foregroundChanged(resumedActivities > 0)
             val probe = io.github.anisharyal09.anice.features.audiosharing.PhoneAudioDiagnostics
             reverse.diagnosticsEnabled = probe.allowed(
                 applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0,

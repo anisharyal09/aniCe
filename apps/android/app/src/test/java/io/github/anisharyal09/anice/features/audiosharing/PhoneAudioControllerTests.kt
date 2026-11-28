@@ -252,6 +252,34 @@ class PhoneAudioControllerTests {
         h.owner.stop()
     }
 
+    @Test fun backgroundHoldsSixUnsentPacketsAndReturningKeepsOnlyTheNewestThree() = runBlocking {
+        val h = Harness()
+        h.enable()
+        h.begin()
+        val ticket = requireNotNull(h.request)
+        h.owner.serviceAttached(ticket, h, Control())
+        h.owner.handle(h.channel.descriptor, result(ticket.id, 0))
+        h.owner.foregroundChanged(false)
+        h.channel.gated = true
+        for (sequence in 1L..7L) h.owner.capturePacket(ticket, sequence, ByteArray(3840))
+        assertEquals(0L, h.owner.droppedPackets)
+        h.owner.capturePacket(ticket, 8L, ByteArray(3840))
+        assertEquals(1L, h.owner.droppedPackets)
+        h.channel.release()
+        assertEquals(listOf(1L) + (3L..8L),
+            h.channel.sent.filter { it.kind == 3L }.map { it.number(1) })
+
+        h.channel.sent.clear()
+        h.channel.gated = true
+        for (sequence in 9L..15L) h.owner.capturePacket(ticket, sequence, ByteArray(3840))
+        h.owner.foregroundChanged(true)
+        assertEquals(4L, h.owner.droppedPackets)
+        h.channel.release()
+        assertEquals(listOf(9L, 13L, 14L, 15L),
+            h.channel.sent.filter { it.kind == 3L }.map { it.number(1) })
+        h.owner.stop()
+    }
+
     @Test fun captureWorkerQueuesAtMostOneSenderWake() = runBlocking {
         val dispatcher = QueuedDispatcher()
         val h = Harness(dispatcher)

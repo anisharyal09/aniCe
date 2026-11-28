@@ -442,6 +442,26 @@ private actor PhoneModelOutput: PhoneAudioOutput {
     XCTAssertEqual(snapshot.renderedCallbacks, 3)
   }
 
+  func testOnlyASustainedEmptyRenderQueueRequiresRebuffering() {
+    let counter = PhoneAudioPlaybackCounter()
+    XCTAssertFalse(counter.backlog(at: 0).shouldRebuffer)
+    let epoch = counter.enqueue(recordDiagnostics: false)
+    counter.complete(epoch: epoch, scheduledAt: nil, renderedAt: 100_000_000)
+    XCTAssertFalse(counter.backlog(at: 139_999_999).shouldRebuffer)
+    XCTAssertTrue(counter.backlog(at: 140_000_000).shouldRebuffer)
+
+    _ = counter.enqueue(recordDiagnostics: false)
+    XCTAssertFalse(counter.backlog(at: 140_000_000).shouldRebuffer)
+    counter.complete(epoch: epoch, scheduledAt: nil, renderedAt: 150_000_000)
+    counter.resetQueue()
+    let nextEpoch = counter.enqueue(recordDiagnostics: false)
+    counter.complete(epoch: epoch, scheduledAt: nil, renderedAt: 160_000_000)
+    XCTAssertEqual(counter.backlog(at: 210_000_000).pending, 1)
+    XCTAssertFalse(counter.backlog(at: 210_000_000).shouldRebuffer)
+    counter.complete(epoch: nextEpoch, scheduledAt: nil, renderedAt: 210_000_000)
+    XCTAssertTrue(counter.backlog(at: 250_000_000).shouldRebuffer)
+  }
+
   private func harness(preferences: UserDefaults? = nil, local: String = "local-identity",
     peer replacement: DeviceIdentity? = nil) async throws -> (MacPhoneAudioModel, PhoneModelOutput, PhoneModelChannel) {
     let helper = SessionFixtures()

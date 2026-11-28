@@ -6,20 +6,19 @@ Shared contract changes and compatibility implications, grouped by application v
 
 ### Added
 
-- Define separate Phone Audio v1 Android-to-Mac envelopes and explicit projection,
-  source-policy, output-consent and no-source-muting limits.
-- Add independent reverse Phone Audio fixtures for canonical envelopes, malformed
-  timelines, tag isolation and bounded Mac output resync semantics.
-- Clarify reverse single-use channel-bound consent, native cleanup exclusion,
-  bounded control retries and current-audio renewal; no additional wire fields.
-- Define Audio Sharing v1 Mac-to-Android LAN DATA with six bound message kinds, 960-frame stereo PCM16 packets, checked source timelines and retained-channel maintenance semantics.
+- Define [Audio Sharing v1](audio-sharing/README.md) for Mac-to-Android
+  playback with stream-bound Start/Ready/Stop, playback health reports, and
+  bounded PCM over authenticated LAN DATA.
+- Define [Phone Audio v1](audio-sharing/PHONE_AUDIO.md) for Android playback
+  capture, with a separate envelope, one-time consent, and one active
+  direction at a time.
 
 ### Changed
 
-- Document Android built-in speaker admission and same-stream route recovery
-  without changing wire bytes.
-- Refine local listening buffer targets and healthy-audio transfer pacing; unchanged six-message PCM, cryptographic and session contracts.
-- Clarify local lower-delay buffering profiles and native startup floors for Mac-to-Android streams; all six wire messages and crypto/session bounds are unchanged.
+- Document verified Android speaker fallback, adaptive buffering, and
+  transfer pacing without changing wire bytes.
+- Document bounded background sending and Mac render queues. Retained LAN
+  renewal preserves the stream and clears stale audio.
 
 ## [v0.9.0-beta.4]
 

@@ -1,14 +1,20 @@
 # Performance
 
-This guide describes the BLE/LAN record path, resource budgets and instrumentation. Wire limits belong to the linked contracts. Performance targets are not guaranteed device throughput.
+This guide describes the BLE/LAN record path, resource budgets and instrumentation. Wire limits belong to the linked contracts.
 
-## Targets and bounds
+## Performance targets
+
+The LAN benchmark targets **8 MiB/s in each direction**. It transfers data in
+memory; real file transfers also depend on the network, devices and storage.
+The connected-idle CPU goal is **0.5% of one core**; the control round-trip
+goal is **100 ms with 25 ms of added latency**. Neither is a current
+measurement. See the [LAN benchmark](../protocol/lan/BENCHMARK.md) for
+measurement scope and earlier throughput samples.
+
+## Protocol bounds
 
 | Item | Value | Source |
 | --- | --- | --- |
-| LAN throughput target | 8 MiB/s in each direction | [Benchmark tool](../protocol/lan/BENCHMARK.md) |
-| Connected-idle CPU target | 0.5% of one core | Local profiling |
-| Control RTT target | 100 ms with 25 ms added latency | Local profiling |
 | Standard plaintext | 4,000 bytes | [Session](../protocol/session/README.md) |
 | LAN profile 3 / 4 plaintext | 262,144 / 524,416 bytes | [LAN profiles](../protocol/lan/TRANSFER_PROFILE.md) |
 | Session lifetime / record bound | 3,600 seconds / `2^20` records per direction | [Session](../protocol/session/README.md) |
@@ -18,6 +24,10 @@ This guide describes the BLE/LAN record path, resource budgets and instrumentati
 | CBOR structure | 512 items, 8 levels; profile-specific byte limit | [Session](../protocol/session/README.md) |
 | Receive credit | Four 3,072-byte BLE chunks; up to eight negotiated LAN chunks | [Transfer](../protocol/transfer/README.md) |
 | Audio Sharing (Mac → Android) | 50 packets/second; 960 stereo frames / 3,840 PCM bytes; at most 3,927 Audio CBOR bytes | [Mac-to-Android audio contract](../protocol/audio-sharing/README.md) |
+
+Both audio directions use 48 kHz stereo PCM16: **192 kB/s (1.536 Mb/s)** of
+audio payload, or about **691 MB per hour** of uninterrupted streaming over LAN.
+Packet encoding, encryption and network headers add overhead.
 
 Larger records amortize per-record validation. At 8 MiB/s:
 
@@ -136,13 +146,10 @@ The native worker requests an effective AudioTrack size and startup floor at thr
 
 Android opts into bounded worker-side Audio admission after shared record authentication, using an immutable channel route and stream-bound admission fence. Other lifecycle/control DATA stays on the existing ordered Main delivery path; file-chunk admission uses its existing bounded FIFO. Focus, maintenance, retired streams and trust/channel invalidation fence the worker before output writes; presentation receives coalesced receipt notifications and one-second health snapshots. The native player uses a service-owned, audio-priority single-thread scheduler rather than competing with UI/file work on the shared Default pool. Actual output routes remain checked before audible writes and on native routing callbacks. These changes do not bypass native identity/trust validation or increase sealed-record budgets.
 
-The Android panel's app/native backlog, adaptive target, skipped-packet and underrun counts identify local buffering pressure. They do not measure speaker-to-headphone or video-to-headphone delay. A smaller configured target must be tested against actual route, screen-off jitter and native underruns, not described as a measured latency improvement before physical comparison.
+The Android panel shows local backlog, buffer target, skipped packets and
+underruns. These values do not measure end-to-end latency.
 
 File chunks can enter the existing ingress FIFO on that same worker hook while capacity is available. A full FIFO falls back to existing suspending admission, never drops accepted file data and keeps resume/barrier ordering. Transport capacity events coalesce before presentation so frequent writes cannot accumulate per-record UI tasks. Mac capture reuses prepared conversion buffers off-callback, holds a stream-scoped latency activity and restores unmuted tap output before teardown. Focus and LAN maintenance still close audible writes until fresh route verification.
-
-AudioTrack capacity/start-threshold rounding, partial writes, silent route verification, bounded native stalls and pause/resume are exercised through a native-track adapter fake; these worker tests do not open an audio device. Native UI render fixtures likewise require an isolated emulator. Actual output latency and route behavior still require physical checks.
-
-The stability regression simulates ten minutes of ±0.1% output-clock drift and recurring packet bursts through the bounded queue/resampler. It checks advancing source sequence, learned buffer floors and no growing backlog; it is not a screen-off, Wi-Fi or Bluetooth hardware measurement.
 
 An elevated learned audio floor may decrease by one 960-frame packet after two
 continuous healthy minutes; interruption, rebuffering or a new underrun resets
@@ -161,7 +168,24 @@ and existing delayed-path qualification remain authoritative.
 
 ## Phone Audio sender and receiver
 
-Android reads PCM16 on a dedicated `THREAD_PRIORITY_AUDIO` capture worker and sends 960-frame packets through a three-packet window plus one in-flight send. A serialized off-main dispatcher handles encoding and submission; LAN lifecycle mutations stay on the connection owner. The Mac player starts after three packets or an 80-ms fallback, re-buffers on an empty player queue, and fades in over 5 ms at startup, after a sequence gap, or after re-buffering. Its six-packet (120-ms) cap counts audio still waiting to render at the player node. Downstream output-device latency does not count toward the cap. Neither path persists PCM.
+Android reads PCM16 in 20-ms packets on a dedicated `THREAD_PRIORITY_AUDIO`
+worker. Android's playback-capture path can ignore the requested AudioRecord
+buffer size; use the effective frame count for device comparisons. The sender
+keeps the newest three unsent packets with a resumed activity or six without
+one, plus one in-flight send. Packet construction and encoding
+run on the serialized sender outside the capture queue lock. Shared LAN owns
+record sealing and submission. The foreground service requests a 90-second
+partial wake lock and refreshes it every 20 seconds off the UI thread until
+capture ends or the service releases it. A partial wake lock does not control
+CPU scheduling, and Android may ignore it in Doze.
+
+The Mac player starts after three packets or an 80-ms fallback. If the render
+queue drains for less than 40 ms, it can continue without another prefill.
+Longer drains rebuffer; startup, sequence gaps and rebuffering use a 5-ms
+fade-in. The eight-packet (160-ms) cap counts buffers still waiting to render,
+excluding downstream output-device latency. The player uses the 48-kHz wire
+rate; the Mac's mixer or output device can still resample. Neither path
+persists PCM.
 
 The preview's opt-in counters separate capture read time, capture interval,
 sender wake-up wait (the legacy `presentation_wait` field), queue age at dequeue, encoding and submission on
@@ -171,10 +195,6 @@ intervals; phone and Mac clocks are not synchronized, submission completion is
 not measured delivery, and Mac empty-queue transitions are not measured audible
 gaps. Correlating them with manual phase notes can show which stage stalls, not
 why, and the instrumentation itself can perturb scheduling.
-
-## Observed costs
-
-Measured on Debug builds, the optional Mac Home/companion Now Playing display used about 15–20% of one app CPU during playback, peaking near 35% with a concurrent phone-to-Mac transfer. Treat these as observations from earlier builds, not targets.
 
 ## Instrumentation
 
@@ -203,8 +223,6 @@ python3 scripts/verify-lan-interchange.py --serial PHONE_SERIAL \
 ```
 
 The [benchmark contract](../protocol/lan/BENCHMARK.md) defines payloads and metrics. Native interchange scripts target the normal Android test package; do not run them against an unrelated installed production app. Raw TCP excludes records, transfer credit and file storage and must not be presented as file-transfer throughput.
-
-For Audio Sharing comparisons, follow the [physical-test guide](AUDIO_SHARING_TESTING.md). `scripts/check-listening-health.py` queries an explicitly selected Transfer Preview without activating playback; optional layout-checked native track counters complement app screenshots. Filtered snapshots, Wi-Fi PHY rates and CPU ticks are diagnostics, not source-to-ear latency or file-throughput benchmarks.
 
 ## Optimization constraints
 

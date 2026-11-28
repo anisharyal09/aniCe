@@ -13,6 +13,8 @@ MAX_LINE_BYTES = 8192
 MAX_ROWS = 4096
 MAX_RUNS = 32
 MAX_INTEGER = (1 << 63) - 1
+MAX_ANDROID_QUEUED_PACKETS = 6  # PhoneAudioSendWindow, without a resumed activity.
+MAX_MAC_QUEUED_FRAMES = 8 * 960  # MacPhoneAudioOutput, frames waiting to render.
 
 TIMINGS = {
     "android": ("read", "capture_interval", "presentation_wait", "queue_age", "encode", "submission"),
@@ -93,10 +95,12 @@ def sanitized_row(value):
             result[key] = item
     if side == "android":
         for key in ("queued_packets", "maximum_queued_packets"):
-            if result.get(key) is not None and result[key] > 3:
+            if result.get(key) is not None and result[key] > MAX_ANDROID_QUEUED_PACKETS:
                 return None
-    if side == "macos" and result.get("output_queued_frames") is not None and result["output_queued_frames"] > 5760:
-        return None
+    else:
+        queued_frames = result.get("output_queued_frames")
+        if queued_frames is not None and queued_frames > MAX_MAC_QUEUED_FRAMES:
+            return None
     return result
 
 
